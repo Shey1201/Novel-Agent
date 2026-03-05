@@ -69,13 +69,12 @@ export const TopBar: React.FC<TopBarProps> = ({ onRunAgents, isProcessing }) => 
 
   return (
     <header className="flex h-12 items-center justify-between border-b border-zinc-200 bg-white px-4 shrink-0 relative">
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2">
-          <span className="text-indigo-600 text-lg">📖</span>
-          <h1 className="text-sm font-bold text-indigo-600 tracking-tight">小说工作室</h1>
-        </div>
-        <div className="h-4 w-[1px] bg-zinc-200" />
-        <h2 className="text-sm font-medium text-zinc-800">{currentNovel?.title || "Untitled Story"}</h2>
+      <div className="flex items-center gap-2">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-indigo-600">
+          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+        </svg>
+        <h1 className="text-sm font-bold tracking-tight text-indigo-600">AI Novel Studio</h1>
       </div>
 
       <div className="flex items-center gap-4">
@@ -83,21 +82,17 @@ export const TopBar: React.FC<TopBarProps> = ({ onRunAgents, isProcessing }) => 
         
         <div className="h-4 w-[1px] bg-zinc-200" />
 
-        <div className="flex items-center gap-4 text-zinc-500">
-          <button onClick={() => setShowAgentModal(true)} title="Agent 管理" className="hover:text-indigo-600 transition-colors flex items-center gap-1 text-xs font-semibold">
+        <div className="flex items-center gap-3 text-zinc-400">
+          <button onClick={() => setShowAgentModal(true)} title="Agent 管理" className="hover:text-indigo-600 transition-colors">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><polyline points="17 11 19 13 23 9"/></svg>
-            <span>Agent 管理</span>
           </button>
-          <button onClick={() => setShowSettingsModal(true)} title="系统设置" className="hover:text-indigo-600 transition-colors flex items-center gap-1 text-xs font-semibold">
+          <button onClick={handleExport} title="导出章节" className="hover:text-indigo-600 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5"/><path d="M3 12c0 1.7 4 3 9 3s9-1.3 9-3"/></svg>
+          </button>
+          <button onClick={() => setShowSettingsModal(true)} title="系统设置" className="hover:text-indigo-600 transition-colors">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-            <span>系统设置</span>
           </button>
         </div>
-
-        <button onClick={handleExport} className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-indigo-700 shadow-sm transition-all">
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          <span>Export</span>
-        </button>
       </div>
 
       {/* Agent Modal */}

@@ -15,6 +15,54 @@ export const TiptapEditor = forwardRef((props, ref) => {
   
   const [selectedTrace, setSelectedTrace] = useState<any>(null);
 
+  const saveChapterDraft = async () => {
+    if (!editor || !currentNovelId || !currentChapterId) return false;
+
+    const content = editor.getHTML();
+    const currentState = useNovelStore.getState();
+    const chapter = currentState.novels
+      .find((novel) => novel.id === currentNovelId)
+      ?.chapters.find((ch) => ch.id === currentChapterId);
+
+    updateChapterContent(currentNovelId, currentChapterId, content, chapter?.trace_data || []);
+
+    try {
+      await fetch("http://127.0.0.1:8000/api/novel/draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          novel_id: currentNovelId,
+          chapter_id: currentChapterId,
+          content,
+          trace_data: chapter?.trace_data || [],
+        }),
+      });
+
+      const { novels, currentNovelId: savedNovelId, currentChapterId: savedChapterId, constraints, agentConfigs, messages, writingMode, agents } = useNovelStore.getState();
+      localStorage.setItem(
+        "novel-storage-v2",
+        JSON.stringify({
+          state: {
+            novels,
+            currentNovelId: savedNovelId,
+            currentChapterId: savedChapterId,
+            constraints,
+            agentConfigs,
+            messages,
+            writingMode,
+            agents,
+          },
+          version: 0,
+        })
+      );
+
+      return true;
+    } catch (error) {
+      console.error("保存章节失败:", error);
+      return false;
+    }
+  };
+
   const editor = useEditor({
     extensions: [
       StarterKit,
@@ -53,6 +101,7 @@ export const TiptapEditor = forwardRef((props, ref) => {
 
   // 公开 handleRunAgents 方法
   useImperativeHandle(ref, () => ({
+    handleSaveChapter: saveChapterDraft,
     handleRunAgents: async () => {
       const { agentConfigs, constraints } = useNovelStore.getState();
       if (!editor) return;
@@ -91,6 +140,15 @@ export const TiptapEditor = forwardRef((props, ref) => {
       }
     }
   }));
+
+  useEffect(() => {
+    if (!editor || !currentNovelId || !currentChapterId) return;
+    const timer = window.setInterval(() => {
+      saveChapterDraft();
+    }, 10000);
+
+    return () => window.clearInterval(timer);
+  }, [editor, currentNovelId, currentChapterId]);
 
   return (
     <div className="w-full h-full relative">
