@@ -3,14 +3,9 @@
 import React from "react";
 import { useNovelStore } from "@/store/novelStore";
 
-interface TopBarProps {
-  onRunAgents: () => void;
-  isProcessing: boolean;
-}
-
 const WritingModeSwitch: React.FC = () => {
   const { writingMode, setWritingMode } = useNovelStore();
-  const modes = [
+  const modes: Array<{ key: "manual" | "ai-assisted" | "ai-writer"; name: string }> = [
     { key: "manual", name: "Manual" },
     { key: "ai-assisted", name: "Assist" },
     { key: "ai-writer", name: "Auto" },
@@ -21,7 +16,7 @@ const WritingModeSwitch: React.FC = () => {
       {modes.reverse().map((mode) => (
         <button
           key={mode.key}
-          onClick={() => setWritingMode(mode.key as any)}
+          onClick={() => setWritingMode(mode.key)}
           className={`px-4 py-1 text-xs font-semibold rounded-md transition-all ${
             writingMode === mode.key 
               ? "bg-indigo-600 text-white shadow-sm" 
@@ -35,9 +30,17 @@ const WritingModeSwitch: React.FC = () => {
   );
 };
 
-export const TopBar: React.FC<TopBarProps> = ({ onRunAgents, isProcessing }) => {
-  const { novels, currentNovelId, currentChapterId, agents, updateAgent, constraints, addConstraint, removeConstraint, agentConfigs, updateAgentConfig } = useNovelStore();
-  const currentNovel = novels.find(n => n.id === currentNovelId);
+
+type SliderKey =
+  | "excitement_level"
+  | "strictness"
+  | "pacing"
+  | "character_depth"
+  | "conflict_intensity"
+  | "description_density";
+
+export const TopBar: React.FC = () => {
+  const { currentNovelId, currentChapterId, agents, updateAgent, constraints, addConstraint, removeConstraint, agentConfigs, updateAgentConfig } = useNovelStore();
   const [showAgentModal, setShowAgentModal] = React.useState(false);
   const [showSettingsModal, setShowSettingsModal] = React.useState(false);
   const [newConstraint, setNewConstraint] = React.useState("");
@@ -69,35 +72,29 @@ export const TopBar: React.FC<TopBarProps> = ({ onRunAgents, isProcessing }) => 
 
   return (
     <header className="flex h-12 items-center justify-between border-b border-zinc-200 bg-white px-4 shrink-0 relative">
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2">
-          <span className="text-indigo-600 text-lg">📖</span>
-          <h1 className="text-sm font-bold text-indigo-600 tracking-tight">小说工作室</h1>
-        </div>
-        <div className="h-4 w-[1px] bg-zinc-200" />
-        <h2 className="text-sm font-medium text-zinc-800">{currentNovel?.title || "Untitled Story"}</h2>
+      <div className="flex items-center gap-2">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-indigo-600">
+          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+        </svg>
+        <h1 className="text-sm font-bold tracking-tight text-indigo-600">AI Novel Studio</h1>
       </div>
 
       <div className="flex items-center gap-4">
         <WritingModeSwitch />
-        
         <div className="h-4 w-[1px] bg-zinc-200" />
 
-        <div className="flex items-center gap-4 text-zinc-500">
-          <button onClick={() => setShowAgentModal(true)} title="Agent 管理" className="hover:text-indigo-600 transition-colors flex items-center gap-1 text-xs font-semibold">
+        <div className="flex items-center gap-3 text-zinc-400">
+          <button onClick={() => setShowAgentModal(true)} title="Agent 管理" className="hover:text-indigo-600 transition-colors">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><polyline points="17 11 19 13 23 9"/></svg>
-            <span>Agent 管理</span>
           </button>
-          <button onClick={() => setShowSettingsModal(true)} title="系统设置" className="hover:text-indigo-600 transition-colors flex items-center gap-1 text-xs font-semibold">
+          <button onClick={handleExport} title="导出章节" className="hover:text-indigo-600 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5"/><path d="M3 12c0 1.7 4 3 9 3s9-1.3 9-3"/></svg>
+          </button>
+          <button onClick={() => setShowSettingsModal(true)} title="系统设置" className="hover:text-indigo-600 transition-colors">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-            <span>系统设置</span>
           </button>
         </div>
-
-        <button onClick={handleExport} className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-indigo-700 shadow-sm transition-all">
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          <span>Export</span>
-        </button>
       </div>
 
       {/* Agent Modal */}
@@ -230,21 +227,21 @@ export const TopBar: React.FC<TopBarProps> = ({ onRunAgents, isProcessing }) => 
 
                   {/* Range Sliders */}
                   {[
-                    { label: "读者兴奋度", key: "excitement_level", low: "平淡", high: "极度刺激" },
-                    { label: "编辑严格度", key: "strictness", low: "宽松", high: "极其严苛" },
-                    { label: "叙事节奏", key: "pacing", low: "缓慢 (Slow)", high: "快速 (Fast)" },
-                    { label: "人物深度", key: "character_depth", low: "扁平", high: "多维立体" },
-                    { label: "冲突强度", key: "conflict_intensity", low: "微弱 (Low)", high: "剧烈 (High)" },
-                    { label: "描写密度", key: "description_density", low: "简练 (Low)", high: "华丽 (High)" },
+                    { label: "读者兴奋度", key: "excitement_level" as SliderKey, low: "平淡", high: "极度刺激" },
+                    { label: "编辑严格度", key: "strictness" as SliderKey, low: "宽松", high: "极其严苛" },
+                    { label: "叙事节奏", key: "pacing" as SliderKey, low: "缓慢 (Slow)", high: "快速 (Fast)" },
+                    { label: "人物深度", key: "character_depth" as SliderKey, low: "扁平", high: "多维立体" },
+                    { label: "冲突强度", key: "conflict_intensity" as SliderKey, low: "微弱 (Low)", high: "剧烈 (High)" },
+                    { label: "描写密度", key: "description_density" as SliderKey, low: "简练 (Low)", high: "华丽 (High)" },
                   ].map((slider) => (
                     <div key={slider.key} className="space-y-2">
                       <div className="flex justify-between text-[10px] font-bold text-zinc-500">
                         <span>{slider.label}</span>
-                        <span className="text-indigo-600">{(agentConfigs as any)[slider.key]}</span>
+                        <span className="text-indigo-600">{agentConfigs[slider.key]}</span>
                       </div>
                       <input 
                         type="range" min="1" max="10" 
-                        value={(agentConfigs as any)[slider.key]} 
+                        value={agentConfigs[slider.key]} 
                         onChange={(e) => updateAgentConfig({ [slider.key]: parseInt(e.target.value) })} 
                         className="w-full accent-indigo-600 h-1 bg-zinc-100 rounded-lg appearance-none cursor-pointer" 
                       />

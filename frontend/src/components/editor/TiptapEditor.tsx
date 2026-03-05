@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, forwardRef, useImperativeHandle } from "react";
+import { useEffect, useState, useCallback, forwardRef, useImperativeHandle } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import StarterKit from "@tiptap/starter-kit";
@@ -8,19 +8,37 @@ import Highlight from "@tiptap/extension-highlight";
 import BubbleMenuExtension from "@tiptap/extension-bubble-menu";
 import { useNovelStore } from "@/store/novelStore";
 
-export const TiptapEditor = forwardRef((props, ref) => {
+type TraceItem = {
+  text: string;
+  source_agent?: string;
+  revisions?: string[];
+};
+
+type AgentLog = {
+  agent: string;
+  message: string;
+};
+
+type GenerateResponse = {
+  final_text?: string;
+  trace_data?: unknown[];
+  agent_logs?: AgentLog[];
+};
+
+export type TiptapEditorRef = {
+  handleSaveChapter: () => Promise<boolean>;
+  handleRunAgents: () => Promise<void>;
+};
+
+export const TiptapEditor = forwardRef<TiptapEditorRef>((_, ref) => {
   const { novels, currentNovelId, currentChapterId, updateChapterContent, addMessage } = useNovelStore();
-  const currentNovel = novels.find(n => n.id === currentNovelId);
-  const currentChapter = currentNovel?.chapters.find(c => c.id === currentChapterId);
-  
-  const [selectedTrace, setSelectedTrace] = useState<any>(null);
+  const currentNovel = novels.find((n) => n.id === currentNovelId);
+  const currentChapter = currentNovel?.chapters.find((c) => c.id === currentChapterId);
+
+  const [selectedTrace, setSelectedTrace] = useState<TraceItem | null>(null);
 
   const editor = useEditor({
-    extensions: [
-      StarterKit,
-      Highlight.configure({ multicolor: true }),
-      BubbleMenuExtension,
-    ],
+    extensions: [StarterKit, Highlight.configure({ multicolor: true }), BubbleMenuExtension],
     content: currentChapter?.content || "<p>在这里开始你的小说创作...</p>",
     immediatelyRender: false,
     onUpdate: ({ editor }) => {
@@ -32,27 +50,91 @@ export const TiptapEditor = forwardRef((props, ref) => {
       const { from, to } = editor.state.selection;
       const text = editor.state.doc.textBetween(from, to);
       if (text && currentChapter?.trace_data) {
-        // 查找对应的 trace data
-        const trace = currentChapter.trace_data.find(t => t.text.includes(text) || text.includes(t.text));
-        setSelectedTrace(trace);
+        const trace = (currentChapter.trace_data as TraceItem[]).find(
+          (t) => t.text.includes(text) || text.includes(t.text)
+        );
+        setSelectedTrace(trace || null);
       } else {
         setSelectedTrace(null);
       }
-    }
+    },
   });
 
-  // 当当前章节 ID 改变时更新编辑器内容
+  const saveChapterDraft = useCallback(async () => {
+    if (!editor || !currentNovelId || !currentChapterId) return false;
+
+    const content = editor.getHTML();
+    const currentState = useNovelStore.getState();
+    const chapter = currentState.novels
+      .find((novel) => novel.id === currentNovelId)
+      ?.chapters.find((ch) => ch.id === currentChapterId);
+
+    updateChapterContent(currentNovelId, currentChapterId, content, chapter?.trace_data || []);
+
+    try {
+      const response = await fetch("http://127.0.0.1:8000/api/novel/draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          novel_id: currentNovelId,
+          chapter_id: currentChapterId,
+          content,
+          trace_data: chapter?.trace_data || [],
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`保存失败: ${response.status}`);
+      }
+
+      const {
+        novels,
+        currentNovelId: savedNovelId,
+        currentChapterId: savedChapterId,
+        constraints,
+        agentConfigs,
+        messages,
+        writingMode,
+        agents,
+      } = useNovelStore.getState();
+
+      localStorage.setItem(
+        "novel-storage-v2",
+        JSON.stringify({
+          state: {
+            novels,
+            currentNovelId: savedNovelId,
+            currentChapterId: savedChapterId,
+            constraints,
+            agentConfigs,
+            messages,
+            writingMode,
+            agents,
+          },
+          version: 0,
+        })
+      );
+
+      return true;
+    } catch (error) {
+      console.error("保存章节失败:", error);
+      return false;
+    }
+  }, [editor, currentNovelId, currentChapterId, updateChapterContent]);
+
   useEffect(() => {
     if (editor && currentChapter) {
       const currentContent = editor.getHTML();
       if (currentContent !== currentChapter.content) {
-        editor.commands.setContent(currentChapter.content || "<p>在这里开始你的小说创作...</p>", { emitUpdate: false });
+        editor.commands.setContent(currentChapter.content || "<p>在这里开始你的小说创作...</p>", {
+          emitUpdate: false,
+        });
       }
     }
-  }, [currentChapterId, editor]);
+  }, [currentChapterId, currentChapter, editor]);
 
-  // 公开 handleRunAgents 方法
   useImperativeHandle(ref, () => ({
+    handleSaveChapter: saveChapterDraft,
     handleRunAgents: async () => {
       const { agentConfigs, constraints } = useNovelStore.getState();
       if (!editor) return;
@@ -61,36 +143,46 @@ export const TiptapEditor = forwardRef((props, ref) => {
         const res = await fetch("http://127.0.0.1:8000/generate_chapter", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ 
+          body: JSON.stringify({
             outline,
             agent_configs: agentConfigs,
-            constraints: constraints
+            constraints,
           }),
         });
-        const data = await res.json();
+        const data: GenerateResponse = await res.json();
 
-        if (data?.final_text) {
+        if (data.final_text) {
           editor.commands.setContent(data.final_text, { emitUpdate: false });
           if (currentNovelId && currentChapterId) {
-            updateChapterContent(currentNovelId, currentChapterId, data.final_text, data.trace_data);
+            updateChapterContent(currentNovelId, currentChapterId, data.final_text, data.trace_data || []);
           }
         }
-        if (Array.isArray(data?.agent_logs)) {
-          data.agent_logs.forEach((log: any) => {
+
+        if (Array.isArray(data.agent_logs)) {
+          data.agent_logs.forEach((log) => {
             addMessage({
               id: Math.random().toString(36).substring(7),
               sender: log.agent,
-              role: 'agent',
+              role: "agent",
               content: log.message,
-              timestamp: Date.now()
+              timestamp: Date.now(),
             });
           });
         }
       } catch (error) {
         console.error("Failed to run agents:", error);
       }
-    }
+    },
   }));
+
+  useEffect(() => {
+    if (!editor || !currentNovelId || !currentChapterId) return;
+    const timer = window.setInterval(() => {
+      void saveChapterDraft();
+    }, 10000);
+
+    return () => window.clearInterval(timer);
+  }, [editor, currentNovelId, currentChapterId, saveChapterDraft]);
 
   return (
     <div className="w-full h-full relative">
@@ -105,14 +197,19 @@ export const TiptapEditor = forwardRef((props, ref) => {
                     {selectedTrace.source_agent}
                   </span>
                 </div>
-                
+
                 <div className="space-y-2">
                   <div>
-                    <span className="text-[9px] text-zinc-500 block mb-1">修改历史 ({selectedTrace.revisions?.length || 0})</span>
-                    {selectedTrace.revisions?.length > 0 ? (
+                    <span className="text-[9px] text-zinc-500 block mb-1">
+                      修改历史 ({selectedTrace.revisions?.length || 0})
+                    </span>
+                    {selectedTrace.revisions?.length ? (
                       <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
-                        {selectedTrace.revisions.map((rev: string, i: number) => (
-                          <div key={i} className="text-[10px] bg-zinc-800 p-1.5 rounded text-zinc-400 line-through decoration-zinc-600">
+                        {selectedTrace.revisions.map((rev, i) => (
+                          <div
+                            key={i}
+                            className="text-[10px] bg-zinc-800 p-1.5 rounded text-zinc-400 line-through decoration-zinc-600"
+                          >
                             {rev.substring(0, 50)}...
                           </div>
                         ))}

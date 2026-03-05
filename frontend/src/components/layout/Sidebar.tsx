@@ -31,7 +31,7 @@ export const Sidebar: React.FC = () => {
     setCurrentChapterId(newId);
   };
 
-  const startEditing = (novel: any) => {
+  const startEditing = (novel: { id: string; title: string }) => {
     setEditingNovelId(novel.id);
     setEditTitle(novel.title);
   };
