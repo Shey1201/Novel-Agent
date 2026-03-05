@@ -1,104 +1,92 @@
-## Agent 框架设计文档（版本 0.1）
+# Agent 框架设计文档（v0.2）
 
-### 1. 设计目标
+## 1. 目标与原则
 
-- **统一接口**：所有 Agent 通过统一的 `BaseAgent` 接口对外暴露 `run(input_data)` 能力，便于 Controller 与 LangGraph 集成。
-- **可插拔 LLM**：`llm` 作为构造参数传入，支持 OpenAI / DeepSeek / Claude / 本地模型等任意实现。
-- **易扩展**：新增 Agent（如 Planner / Reader / Summary）只需继承基类并实现 `run`。
+- **流程统一**：通过 `NovelPipelineService` 统一触发章节生成，避免 API 层重复编排。
+- **分层清晰**：按 `API -> Service -> Agent Graph -> Agent` 分层，降低耦合。
+- **可扩展性**：Agent 节点职责单一，便于替换真实 LLM 或新增节点。
+- **可观测性**：输出 `agent_logs` 与 `trace_data`，便于前端展示和调试。
 
-### 2. 目录结构
+---
 
-- `app/agents/`
-  - `base_agent.py`：统一的 Agent 基类。
-  - `writing_agent.py`：写作 Agent。
-  - `editor_agent.py`：编辑 Agent。
-  - `conflict_agent.py`：冲突 Agent。
-  - `graph.py`：当前 LangGraph 简易 Flow（后续会接入具体 Agent）。
+## 2. 当前后端分层
 
-### 3. BaseAgent 设计
+- `backend/app/api/`
+  - 接口定义与请求/响应映射。
+  - 不承担流程编排细节。
+- `backend/app/services/`
+  - `pipeline_service.py`：章节生成流程入口。
+  - `chapter_service.py`：草稿与 memory 持久化、导出 Word。
+- `backend/app/domain/`
+  - `pipeline_state.py`：GraphState 与初始状态构造。
+- `backend/app/agents/`
+  - 各节点 Agent 实现。
+  - `graph.py` 负责将 Agent 组装成 LangGraph 工作流。
+- `backend/app/memory/`
+  - Story Memory 结构定义（角色、时间线、章节摘要等）。
 
-文件：`app/agents/base_agent.py`
+---
 
-```python
-class BaseAgent:
-    def __init__(self, name: str, llm: Any):
-        self.name = name
-        self.llm = llm
+## 3. 流程编排（LangGraph）
 
-    def run(self, input_data: Any) -> Any:
-        raise NotImplementedError("Subclasses must implement run()")
-```
+当前顺序：
 
-- **`name`**：Agent 标识，用于日志与前端显示。
-- **`llm`**：任意可调用的大模型客户端（约定为 `llm(prompt) -> str` 或更复杂的接口）。
-- **`run(input_data)`**：
-  - 统一入口，输入/输出由具体 Agent 自行定义清晰的字段约定。
-  - 在 LangGraph 中会以 `state` 的一部分传入传出。
+1. `planner`：将输入思路扩展为计划
+2. `conflict`：生成冲突建议
+3. `writing`：生成草稿并写入 trace
+4. `editor`：润色文本并更新 trace
+5. `reader`：给出读者视角反馈
+6. `summary`：生成章节总结并回写 Story Memory
 
-### 4. 三个核心 Agent 约定
+返回字段核心包括：
+- 文本链路：`plan_text`、`draft_text`、`edited_text`、`final_text`
+- 过程信息：`conflict_suggestions`、`reader_feedback`、`agent_logs`、`trace_data`
+- 记忆信息：`story_memory`（含章节 summary 更新）
 
-#### 4.1 WritingAgent（写作 Agent）
+---
 
-文件：`app/agents/writing_agent.py`
+## 4. 关键数据结构
 
-- **输入**：`{"text": str, ...}`，其中 `text` 通常为剧情大纲/指令。
-- **输出**：
-  - `draft_text: str`：章节草稿文本。
-  - `agent: str`：固定为 `"writing-agent"`。
-- 占位逻辑：
-  - 若 `llm` 可调用：`llm(text)`。
-  - 否则：简单加前缀 `"[WritingAgent draft]\n"`。
+### 4.1 GraphState（domain）
+- 统一定义流程上下文，避免多处重复初始化。
+- 通过 `build_initial_state(input_text, story_memory)` 构造完整初始状态。
 
-#### 4.2 EditorAgent（编辑 Agent）
+### 4.2 StoryMemory（memory）
+- `story_id`
+- `bible`（world_view/rules/themes）
+- `characters`
+- `timeline`
+- `chapter_summaries`
 
-文件：`app/agents/editor_agent.py`
+说明：列表字段使用 `Field(default_factory=list)`，避免共享可变默认值。
 
-- **输入**：`{"draft_text": str, ...}`。
-- **输出**：
-  - `edited_text: str`：润色后的文本。
-  - `agent: str`：`"editor-agent"`。
-- 占位逻辑：
-  - 若 `llm` 可调用：对 `draft_text` 做一次调用。
-  - 否则：加前缀 `"[EditorAgent polished]\n"`。
+---
 
-#### 4.3 ConflictAgent（冲突 Agent）
+## 5. 典型调用链
 
-文件：`app/agents/conflict_agent.py`
+- 前端点击 “Run Agents”
+- 调用 `POST /generate_chapter`
+- API 层将 `outline/story_id` 传给 `NovelPipelineService`
+- service 组装初始状态，执行 graph
+- 返回 `final_text + trace_data + agent_logs` 给前端
+- 前端更新编辑器内容并展示 Agent 消息
 
-- **输入**：优先使用 `edited_text`，否则回退到 `draft_text`。
-- **输出**：
-  - `conflict_suggestions: List[str]`：冲突/反转建议列表。
-  - `agent: str`：`"conflict-agent"`。
-- 占位逻辑：
-  - 若 `llm` 可调用：以文本为输入，返回的结果包在列表中。
-  - 否则：返回两条固定的示例建议。
+---
 
-### 5. 与 LangGraph / Controller 的关系（当前阶段）
+## 6. 已知问题与下一步
 
-- 当前 `graph.py` 中使用的是简单的 `echo_node`，仅用于验证 LangGraph 流程。
-- 后续演进方向：
-  1. 将 `echo_node` 替换为调用 `WritingAgent`。
-  2. 在 Flow 中追加 `EditorAgent`、`ConflictAgent` 节点，形成线性或并行链路。
-  3. 由 Controller 汇总各 Agent 的输出并写回统一的 `GraphState`。
+1. `agents/base.py` 与 `agents/base_agent.py` 契约并存，建议收敛为一种。
+2. `llm_config` 尚未真正注入 service/agent。
+3. `summary` 节点 `chapter_id` 仍为占位值，需接入真实章节上下文。
+4. 缺少系统化自动化测试（流程级 + 节点级）。
 
-### 6. 扩展新 Agent 的规范
+---
 
-新增 Agent 时，应遵循以下步骤：
+## 7. 重构建议（短期）
 
-1. 在 `app/agents/` 下新增文件，例如 `planner_agent.py`。
-2. 继承 `BaseAgent`：
-
-   ```python
-   class PlannerAgent(BaseAgent):
-       def __init__(self, llm: Any = None):
-           super().__init__(name="planner-agent", llm=llm)
-
-       def run(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
-           ...
-   ```
-
-3. 明确文档中定义：
-   - 输入字段约定（从 `GraphState` 读取哪些 key）。
-   - 输出字段约定（写回哪些 key）。
-4. 在 LangGraph Flow 中注册为节点，并在 Controller 中组合调用顺序。
-
+- 引入 `PipelineContext`（story_id/chapter_id/llm_config）统一上下文。
+- 在 service 层引入 provider adapter，隔离不同模型 SDK。
+- 增加最小回归测试：
+  - API 响应字段完整性
+  - graph 执行链路完整性
+  - trace_data 非空约束

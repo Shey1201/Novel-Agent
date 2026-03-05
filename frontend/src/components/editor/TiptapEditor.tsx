@@ -1,26 +1,46 @@
 "use client";
 
-import { useEffect, useState, forwardRef, useImperativeHandle } from "react";
+import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import StarterKit from "@tiptap/starter-kit";
 import Highlight from "@tiptap/extension-highlight";
 import BubbleMenuExtension from "@tiptap/extension-bubble-menu";
-import { useNovelStore } from "@/store/novelStore";
+import { useNovelStore, type TraceItem } from "@/store/novelStore";
 
-export const TiptapEditor = forwardRef((props, ref) => {
+interface AgentLog {
+  agent?: string;
+  message?: string;
+}
+
+interface GenerateChapterResponse {
+  final_text?: string;
+  trace_data?: TraceItem[];
+  agent_logs?: AgentLog[];
+}
+
+export interface TiptapEditorHandle {
+  handleRunAgents: () => Promise<void>;
+}
+
+export const TiptapEditor = forwardRef<TiptapEditorHandle>((_, ref) => {
   const { novels, currentNovelId, currentChapterId, updateChapterContent, addMessage } = useNovelStore();
-  const currentNovel = novels.find(n => n.id === currentNovelId);
-  const currentChapter = currentNovel?.chapters.find(c => c.id === currentChapterId);
-  
-  const [selectedTrace, setSelectedTrace] = useState<any>(null);
+  const currentNovel = novels.find((n) => n.id === currentNovelId);
+  const currentChapter = currentNovel?.chapters.find((c) => c.id === currentChapterId);
+
+  const [selectedTrace, setSelectedTrace] = useState<TraceItem | null>(null);
+  const msgCounterRef = useRef(1);
+
+  const nextMessageMeta = () => {
+    msgCounterRef.current += 1;
+    return {
+      id: `agent-msg-${msgCounterRef.current}`,
+      timestamp: msgCounterRef.current,
+    };
+  };
 
   const editor = useEditor({
-    extensions: [
-      StarterKit,
-      Highlight.configure({ multicolor: true }),
-      BubbleMenuExtension,
-    ],
+    extensions: [StarterKit, Highlight.configure({ multicolor: true }), BubbleMenuExtension],
     content: currentChapter?.content || "<p>在这里开始你的小说创作...</p>",
     immediatelyRender: false,
     onUpdate: ({ editor }) => {
@@ -32,42 +52,40 @@ export const TiptapEditor = forwardRef((props, ref) => {
       const { from, to } = editor.state.selection;
       const text = editor.state.doc.textBetween(from, to);
       if (text && currentChapter?.trace_data) {
-        // 查找对应的 trace data
-        const trace = currentChapter.trace_data.find(t => t.text.includes(text) || text.includes(t.text));
-        setSelectedTrace(trace);
+        const trace = currentChapter.trace_data.find(
+          (t) => t.text.includes(text) || text.includes(t.text)
+        );
+        setSelectedTrace(trace || null);
       } else {
         setSelectedTrace(null);
       }
-    }
+    },
   });
 
-  // 当当前章节 ID 改变时更新编辑器内容
   useEffect(() => {
     if (editor && currentChapter) {
       const currentContent = editor.getHTML();
       if (currentContent !== currentChapter.content) {
-        editor.commands.setContent(currentChapter.content || "<p>在这里开始你的小说创作...</p>", { emitUpdate: false });
+        editor.commands.setContent(currentChapter.content || "<p>在这里开始你的小说创作...</p>", {
+          emitUpdate: false,
+        });
       }
     }
-  }, [currentChapterId, editor]);
+  }, [currentChapterId, currentChapter, editor]);
 
-  // 公开 handleRunAgents 方法
   useImperativeHandle(ref, () => ({
     handleRunAgents: async () => {
       const { agentConfigs, constraints } = useNovelStore.getState();
       if (!editor) return;
+
       const outline = editor.getText();
       try {
         const res = await fetch("http://127.0.0.1:8000/generate_chapter", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ 
-            outline,
-            agent_configs: agentConfigs,
-            constraints: constraints
-          }),
+          body: JSON.stringify({ outline, agent_configs: agentConfigs, constraints }),
         });
-        const data = await res.json();
+        const data = (await res.json()) as GenerateChapterResponse;
 
         if (data?.final_text) {
           editor.commands.setContent(data.final_text, { emitUpdate: false });
@@ -75,21 +93,23 @@ export const TiptapEditor = forwardRef((props, ref) => {
             updateChapterContent(currentNovelId, currentChapterId, data.final_text, data.trace_data);
           }
         }
+
         if (Array.isArray(data?.agent_logs)) {
-          data.agent_logs.forEach((log: any) => {
+          data.agent_logs.forEach((log) => {
+            const { id, timestamp } = nextMessageMeta();
             addMessage({
-              id: Math.random().toString(36).substring(7),
-              sender: log.agent,
-              role: 'agent',
-              content: log.message,
-              timestamp: Date.now()
+              id,
+              sender: log.agent || "agent",
+              role: "agent",
+              content: log.message || "",
+              timestamp,
             });
           });
         }
       } catch (error) {
         console.error("Failed to run agents:", error);
       }
-    }
+    },
   }));
 
   return (
@@ -105,14 +125,19 @@ export const TiptapEditor = forwardRef((props, ref) => {
                     {selectedTrace.source_agent}
                   </span>
                 </div>
-                
+
                 <div className="space-y-2">
                   <div>
-                    <span className="text-[9px] text-zinc-500 block mb-1">修改历史 ({selectedTrace.revisions?.length || 0})</span>
-                    {selectedTrace.revisions?.length > 0 ? (
+                    <span className="text-[9px] text-zinc-500 block mb-1">
+                      修改历史 ({selectedTrace.revisions?.length || 0})
+                    </span>
+                    {selectedTrace.revisions?.length ? (
                       <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
-                        {selectedTrace.revisions.map((rev: string, i: number) => (
-                          <div key={i} className="text-[10px] bg-zinc-800 p-1.5 rounded text-zinc-400 line-through decoration-zinc-600">
+                        {selectedTrace.revisions.map((rev, i) => (
+                          <div
+                            key={i}
+                            className="text-[10px] bg-zinc-800 p-1.5 rounded text-zinc-400 line-through decoration-zinc-600"
+                          >
                             {rev.substring(0, 50)}...
                           </div>
                         ))}

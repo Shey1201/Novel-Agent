@@ -22,9 +22,25 @@ def _memory_path(story_id: str) -> Path:
     return story_dir / "story_memory.json"
 
 
+
+
+def _memory_component_paths(story_id: str) -> dict[str, Path]:
+    story_dir = DATA_DIR / story_id
+    story_dir.mkdir(parents=True, exist_ok=True)
+    return {
+        "world": story_dir / "world.json",
+        "characters": story_dir / "characters.json",
+        "timeline": story_dir / "timeline.json",
+    }
+
 def save_memory(memory: StoryMemory):
     path = _memory_path(memory.story_id)
     path.write_text(memory.model_dump_json(indent=2), encoding="utf-8")
+
+    components = _memory_component_paths(memory.story_id)
+    components["world"].write_text(json.dumps(memory.bible.model_dump(), ensure_ascii=False, indent=2), encoding="utf-8")
+    components["characters"].write_text(json.dumps([c.model_dump() for c in memory.characters], ensure_ascii=False, indent=2), encoding="utf-8")
+    components["timeline"].write_text(json.dumps([t.model_dump() for t in memory.timeline], ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def load_memory(story_id: str) -> StoryMemory:

@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import novel_routes, generate_chapter
+from app.api import novel_routes, generate_chapter, world_routes, agent_routes
 
 app = FastAPI(title="Multi-Agent Novel Backend")
 
@@ -23,3 +23,7 @@ async def health_check():
 app.include_router(novel_routes.router)
 app.include_router(generate_chapter.router)
 
+
+app.include_router(world_routes.router)
+
+app.include_router(agent_routes.router)

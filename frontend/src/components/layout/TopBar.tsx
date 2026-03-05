@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { useNovelStore } from "@/store/novelStore";
+import { useNovelStore, type WorkspaceModule } from "@/store/novelStore";
 
 interface TopBarProps {
   onRunAgents: () => void;
@@ -10,7 +10,7 @@ interface TopBarProps {
 
 const WritingModeSwitch: React.FC = () => {
   const { writingMode, setWritingMode } = useNovelStore();
-  const modes = [
+  const modes: Array<{ key: "manual" | "ai-assisted" | "ai-writer"; name: string }> = [
     { key: "manual", name: "Manual" },
     { key: "ai-assisted", name: "Assist" },
     { key: "ai-writer", name: "Auto" },
@@ -18,10 +18,10 @@ const WritingModeSwitch: React.FC = () => {
 
   return (
     <div className="flex items-center rounded-lg bg-zinc-100 p-1 border border-zinc-200">
-      {modes.reverse().map((mode) => (
+      {[...modes].reverse().map((mode) => (
         <button
           key={mode.key}
-          onClick={() => setWritingMode(mode.key as any)}
+          onClick={() => setWritingMode(mode.key)}
           className={`px-4 py-1 text-xs font-semibold rounded-md transition-all ${
             writingMode === mode.key 
               ? "bg-indigo-600 text-white shadow-sm" 
@@ -36,11 +36,30 @@ const WritingModeSwitch: React.FC = () => {
 };
 
 export const TopBar: React.FC<TopBarProps> = ({ onRunAgents, isProcessing }) => {
-  const { novels, currentNovelId, currentChapterId, agents, updateAgent, constraints, addConstraint, removeConstraint, agentConfigs, updateAgentConfig } = useNovelStore();
+  const {
+    workspaceModule,
+    setWorkspaceModule,
+    novels,
+    currentNovelId,
+    currentChapterId,
+    agents,
+    updateAgent,
+    constraints,
+    addConstraint,
+    removeConstraint,
+    agentConfigs,
+    updateAgentConfig,
+  } = useNovelStore();
   const currentNovel = novels.find(n => n.id === currentNovelId);
   const [showAgentModal, setShowAgentModal] = React.useState(false);
   const [showSettingsModal, setShowSettingsModal] = React.useState(false);
   const [newConstraint, setNewConstraint] = React.useState("");
+  const workspaceModules: Array<{ key: WorkspaceModule; label: string }> = [
+    { key: 'novels', label: 'Novels' },
+    { key: 'agent-management', label: 'Agent Management' },
+    { key: 'story-assets', label: 'Story Assets' },
+    { key: 'settings', label: 'Settings' },
+  ];
 
   const handleExport = async () => {
     if (!currentNovelId || !currentChapterId) return;
@@ -69,13 +88,29 @@ export const TopBar: React.FC<TopBarProps> = ({ onRunAgents, isProcessing }) => 
 
   return (
     <header className="flex h-12 items-center justify-between border-b border-zinc-200 bg-white px-4 shrink-0 relative">
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-4 min-w-0">
         <div className="flex items-center gap-2">
           <span className="text-indigo-600 text-lg">📖</span>
           <h1 className="text-sm font-bold text-indigo-600 tracking-tight">小说工作室</h1>
         </div>
         <div className="h-4 w-[1px] bg-zinc-200" />
         <h2 className="text-sm font-medium text-zinc-800">{currentNovel?.title || "Untitled Story"}</h2>
+        <div className="h-4 w-[1px] bg-zinc-200" />
+        <nav className="flex items-center rounded-lg bg-zinc-100 p-1 border border-zinc-200">
+          {workspaceModules.map((module) => (
+            <button
+              key={module.key}
+              onClick={() => setWorkspaceModule(module.key)}
+              className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all whitespace-nowrap ${
+                workspaceModule === module.key
+                  ? 'bg-white text-indigo-600 shadow-sm'
+                  : 'text-zinc-500 hover:text-zinc-700'
+              }`}
+            >
+              {module.label}
+            </button>
+          ))}
+        </nav>
       </div>
 
       <div className="flex items-center gap-4">
@@ -93,6 +128,14 @@ export const TopBar: React.FC<TopBarProps> = ({ onRunAgents, isProcessing }) => 
             <span>系统设置</span>
           </button>
         </div>
+
+        <button
+          onClick={onRunAgents}
+          disabled={isProcessing}
+          className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 shadow-sm transition-all disabled:opacity-60"
+        >
+          <span>{isProcessing ? "Running..." : "Run Agents"}</span>
+        </button>
 
         <button onClick={handleExport} className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-indigo-700 shadow-sm transition-all">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -236,15 +279,17 @@ export const TopBar: React.FC<TopBarProps> = ({ onRunAgents, isProcessing }) => 
                     { label: "人物深度", key: "character_depth", low: "扁平", high: "多维立体" },
                     { label: "冲突强度", key: "conflict_intensity", low: "微弱 (Low)", high: "剧烈 (High)" },
                     { label: "描写密度", key: "description_density", low: "简练 (Low)", high: "华丽 (High)" },
-                  ].map((slider) => (
+                  ].map((slider) => {
+                    const value = agentConfigs[slider.key as keyof typeof agentConfigs] as number;
+                    return (
                     <div key={slider.key} className="space-y-2">
                       <div className="flex justify-between text-[10px] font-bold text-zinc-500">
                         <span>{slider.label}</span>
-                        <span className="text-indigo-600">{(agentConfigs as any)[slider.key]}</span>
+                        <span className="text-indigo-600">{value}</span>
                       </div>
                       <input 
                         type="range" min="1" max="10" 
-                        value={(agentConfigs as any)[slider.key]} 
+                        value={value} 
                         onChange={(e) => updateAgentConfig({ [slider.key]: parseInt(e.target.value) })} 
                         className="w-full accent-indigo-600 h-1 bg-zinc-100 rounded-lg appearance-none cursor-pointer" 
                       />
@@ -253,7 +298,8 @@ export const TopBar: React.FC<TopBarProps> = ({ onRunAgents, isProcessing }) => 
                         <span>{slider.high}</span>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>
