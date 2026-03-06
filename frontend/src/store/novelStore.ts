@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-export type WorkspaceModule = 'novels' | 'agent-management' | 'story-assets' | 'settings';
+export type WorkspaceModule = 'novels' | 'agent-management' | 'story-assets' | 'skills' | 'settings' | 'recycle-bin';
 export type SidebarView = 'chapter' | 'outline';
 export type AssetCategory = 'characters' | 'worldbuilding' | 'factions' | 'locations' | 'timeline';
 
@@ -41,6 +41,19 @@ export interface Novel {
   title: string;
   chapters: Chapter[];
   assetRefs: NovelAssetRefs;
+  locked?: boolean;
+  categoryId?: string | null;
+  mountedSkills?: string[];
+}
+
+export interface NovelCategory {
+  id: string;
+  name: string;
+  color: string;
+}
+
+export interface DeletedNovel extends Novel {
+  deletedAt: number;
 }
 
 export interface Agent {
@@ -86,6 +99,7 @@ interface NovelState {
   currentSidebarView: SidebarView;
   selectedAssetCategory: AssetCategory;
   novels: Novel[];
+  deletedNovels: DeletedNovel[];
   currentNovelId: string | null;
   currentChapterId: string | null;
   constraints: string[];
@@ -96,16 +110,23 @@ interface NovelState {
   storyAssets: StoryAssets;
   worldBible: WorldBible;
   worldApproved: boolean;
+  categories: NovelCategory[];
+  selectedCategoryId: string | null;
 
   setWorkspaceModule: (m: WorkspaceModule) => void;
   setCurrentSidebarView: (view: SidebarView) => void;
   setSelectedAssetCategory: (c: AssetCategory) => void;
   addNovel: (novel: Novel) => void;
   updateNovel: (id: string, updates: Partial<Novel>) => void;
-  deleteNovel: (id: string) => void;
-  setCurrentNovelId: (id: string) => void;
+  deleteNovel: (id: string) => void; // This will now move to recycle bin
+  restoreNovel: (id: string) => void;
+  permanentlyDeleteNovel: (id: string) => void;
+  clearRecycleBin: () => void;
+  renameNovel: (id: string, newTitle: string) => void;
+  toggleLockNovel: (id: string) => void;
+  setCurrentNovelId: (id: string | null) => void;
   addChapter: (novelId: string, chapter: Chapter) => void;
-  setCurrentChapterId: (id: string) => void;
+  setCurrentChapterId: (id: string | null) => void;
   updateChapterContent: (novelId: string, chapterId: string, content: string, trace_data?: TraceItem[]) => void;
   updateChapterTitle: (novelId: string, chapterId: string, title: string) => void;
   toggleAssetReference: (novelId: string, category: AssetCategory, assetId: string) => void;
@@ -118,6 +139,12 @@ interface NovelState {
   updateAgent: (id: string, updates: Partial<Agent>) => void;
   setWorldBible: (worldBible: WorldBible) => void;
   setWorldApproved: (approved: boolean) => void;
+  checkRecycleBin: () => void;
+  addCategory: (category: NovelCategory) => void;
+  updateCategory: (id: string, updates: Partial<NovelCategory>) => void;
+  deleteCategory: (id: string) => void;
+  setSelectedCategoryId: (id: string | null) => void;
+  setNovelCategory: (novelId: string, categoryId: string | null) => void;
 }
 
 const emptyRefs = (): NovelAssetRefs => ({
@@ -143,8 +170,10 @@ export const useNovelStore = create<NovelState>()(
             { id: 'chapter-1-2', title: '章节 2', content: '', trace_data: [] },
           ],
           assetRefs: emptyRefs(),
+          locked: false,
         },
       ],
+      deletedNovels: [],
       currentNovelId: 'novel-1',
       currentChapterId: 'chapter-1-1',
       constraints: ['禁止血腥', '禁止 OOC', '避免翻译腔'],
@@ -161,6 +190,18 @@ export const useNovelStore = create<NovelState>()(
       writingMode: 'manual',
       worldBible: { themes: [] },
       worldApproved: false,
+      categories: [
+        { id: 'cat-all', name: '全部', color: '#6366f1' },
+        { id: 'cat-technology', name: 'Technology', color: '#3b82f6' },
+        { id: 'cat-philosophy', name: 'Philosophy', color: '#8b5cf6' },
+        { id: 'cat-business', name: 'Business', color: '#10b981' },
+        { id: 'cat-biology', name: 'Biology', color: '#f59e0b' },
+        { id: 'cat-psychology', name: 'Psychology', color: '#ec4899' },
+        { id: 'cat-environment', name: 'Environment', color: '#14b8a6' },
+        { id: 'cat-linguistics', name: 'Linguistics', color: '#f97316' },
+        { id: 'cat-education', name: 'Education', color: '#06b6d4' },
+      ],
+      selectedCategoryId: 'cat-all',
       storyAssets: {
         characters: [{ id: 'char-linyuan', name: '林渊', novelId: 'novel-1' }],
         worldbuilding: [{ id: 'world-gaowu', name: '高武世界', novelId: 'novel-1' }],
@@ -182,7 +223,34 @@ export const useNovelStore = create<NovelState>()(
       setSelectedAssetCategory: (c) => set({ selectedAssetCategory: c }),
       addNovel: (novel) => set((state) => ({ novels: [...state.novels, novel] })),
       updateNovel: (id, updates) => set((state) => ({ novels: state.novels.map((n) => (n.id === id ? { ...n, ...updates } : n)) })),
-      deleteNovel: (id) => set((state) => ({ novels: state.novels.filter((n) => n.id !== id) })),
+      deleteNovel: (id) => set((state) => {
+        const novelToDelete = state.novels.find(n => n.id === id);
+        if (!novelToDelete) return state;
+        return {
+          novels: state.novels.filter((n) => n.id !== id),
+          deletedNovels: [...state.deletedNovels, { ...novelToDelete, deletedAt: Date.now() }],
+          currentNovelId: state.currentNovelId === id ? null : state.currentNovelId
+        };
+      }),
+      restoreNovel: (id) => set((state) => {
+        const novelToRestore = state.deletedNovels.find(n => n.id === id);
+        if (!novelToRestore) return state;
+        const { deletedAt, ...novel } = novelToRestore;
+        return {
+          novels: [...state.novels, novel],
+          deletedNovels: state.deletedNovels.filter(n => n.id !== id)
+        };
+      }),
+      permanentlyDeleteNovel: (id) => set((state) => ({
+        deletedNovels: state.deletedNovels.filter(n => n.id !== id)
+      })),
+      clearRecycleBin: () => set({ deletedNovels: [] }),
+      renameNovel: (id, newTitle) => set((state) => ({
+        novels: state.novels.map(n => n.id === id ? { ...n, title: newTitle } : n)
+      })),
+      toggleLockNovel: (id) => set((state) => ({
+        novels: state.novels.map(n => n.id === id ? { ...n, locked: !n.locked } : n)
+      })),
       setCurrentNovelId: (id) => set({ currentNovelId: id, currentChapterId: null }),
       addChapter: (novelId, chapter) => set((state) => ({ novels: state.novels.map((novel) => (novel.id === novelId ? { ...novel, chapters: [...novel.chapters, chapter] } : novel)) })),
       setCurrentChapterId: (id) => set({ currentChapterId: id, currentSidebarView: 'chapter' }),
@@ -213,7 +281,36 @@ export const useNovelStore = create<NovelState>()(
       updateAgent: (id, updates) => set((state) => ({ agents: state.agents.map((a) => (a.id === id ? { ...a, ...updates } : a)) })),
       setWorldBible: (worldBible) => set({ worldBible }),
       setWorldApproved: (approved) => set({ worldApproved: approved }),
+      
+      // Auto-clear logic for recycle bin (> 30 days)
+      checkRecycleBin: () => set((state) => {
+        const now = Date.now();
+        const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+        const remaining = state.deletedNovels.filter(n => (now - n.deletedAt) < thirtyDays);
+        if (remaining.length === state.deletedNovels.length) return state;
+        return { deletedNovels: remaining };
+      }),
+
+      // Category management
+      addCategory: (category) => set((state) => ({ categories: [...state.categories, category] })),
+      updateCategory: (id, updates) => set((state) => ({
+        categories: state.categories.map((c) => (c.id === id ? { ...c, ...updates } : c))
+      })),
+      deleteCategory: (id) => set((state) => ({
+        categories: state.categories.filter((c) => c.id !== id),
+        novels: state.novels.map((n) => n.categoryId === id ? { ...n, categoryId: null } : n),
+        selectedCategoryId: state.selectedCategoryId === id ? 'cat-all' : state.selectedCategoryId
+      })),
+      setSelectedCategoryId: (id) => set({ selectedCategoryId: id }),
+      setNovelCategory: (novelId, categoryId) => set((state) => ({
+        novels: state.novels.map((n) => n.id === novelId ? { ...n, categoryId } : n)
+      })),
     }),
-    { name: 'novel-storage-v3' }
+    { 
+      name: 'novel-storage-v3',
+      onRehydrateStorage: () => (state) => {
+        state?.checkRecycleBin?.();
+      }
+    }
   )
 );

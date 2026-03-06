@@ -57,7 +57,18 @@ def save_draft(draft: ChapterDraft) -> ChapterDraftResponse:
         "chapter_id": draft.chapter_id,
         "content": draft.content,
     }
+    # 保存为 JSON (含元数据)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # 同时保存为 .txt (纯文本，方便本地阅读)
+    # 简单的 HTML -> Text 转换 (仅针对段落标签)
+    text_content = draft.content.replace("<p>", "").replace("</p>", "\n").replace("<br/>", "\n").replace("<br>", "\n")
+    # 去除其它 HTML 标签
+    import re
+    text_content = re.sub(r'<[^>]+>', '', text_content)
+    
+    txt_path = path.with_suffix(".txt")
+    txt_path.write_text(text_content.strip(), encoding="utf-8")
 
     return ChapterDraftResponse(
         novel_id=draft.novel_id,

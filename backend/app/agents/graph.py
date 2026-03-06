@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from langgraph.graph import END, StateGraph
 
@@ -10,12 +10,36 @@ from app.agents.summary_agent import SummaryAgent
 from app.agents.writing_agent import WritingAgent
 from app.domain.pipeline_state import GraphState
 from app.memory.story_memory import ChapterSummary
+from app.memory.agent_skill_manager import skill_manager
 from app.services.chapter_service import save_memory
+
+
+def _get_story_id(state: GraphState) -> Optional[str]:
+    """从state中获取story_id"""
+    memory = state.get("story_memory")
+    if memory:
+        return memory.story_id
+    return None
+
+
+def _build_agent_input(state: GraphState, agent_type: str, base_input: str) -> str:
+    """构建Agent输入，注入资产技能约束"""
+    story_id = _get_story_id(state)
+    if not story_id:
+        return base_input
+
+    # 获取该Agent类型的技能约束
+    skill_prompt = skill_manager.build_agent_prompt(story_id, agent_type)
+
+    if skill_prompt:
+        return f"{base_input}\n\n{skill_prompt}"
+    return base_input
 
 
 def planner_node(state: GraphState) -> Dict[str, Any]:
     agent = PlannerAgent()
-    result = agent.run({"text": state.get("input_text", "")})
+    input_text = _build_agent_input(state, "planner", state.get("input_text", ""))
+    result = agent.run({"text": input_text})
     return {
         "plan_text": result["plan_text"],
         "agent_logs": state.get("agent_logs", []) + [result],
@@ -24,7 +48,8 @@ def planner_node(state: GraphState) -> Dict[str, Any]:
 
 def conflict_node(state: GraphState) -> Dict[str, Any]:
     agent = ConflictAgent()
-    result = agent.run({"draft_text": state.get("plan_text", "")})
+    input_text = _build_agent_input(state, "conflict", state.get("plan_text", ""))
+    result = agent.run({"draft_text": input_text})
     return {
         "conflict_suggestions": result["conflict_suggestions"],
         "agent_logs": state.get("agent_logs", []) + [result],
@@ -33,9 +58,10 @@ def conflict_node(state: GraphState) -> Dict[str, Any]:
 
 def writing_node(state: GraphState) -> Dict[str, Any]:
     agent = WritingAgent()
-    input_text = f"{state.get('plan_text', '')}\n\n[Conflict Suggestions]\n" + "\n".join(
+    base_input = f"{state.get('plan_text', '')}\n\n[Conflict Suggestions]\n" + "\n".join(
         state.get("conflict_suggestions", [])
     )
+    input_text = _build_agent_input(state, "writer", base_input)
     result = agent.run({"text": input_text})
     return {
         "draft_text": result["draft_text"],
@@ -46,9 +72,11 @@ def writing_node(state: GraphState) -> Dict[str, Any]:
 
 def editor_node(state: GraphState) -> Dict[str, Any]:
     agent = EditorAgent()
+    base_input = state.get("draft_text", "")
+    input_text = _build_agent_input(state, "editor", base_input)
     result = agent.run(
         {
-            "draft_text": state.get("draft_text", ""),
+            "draft_text": input_text,
             "trace_data": state.get("trace_data", []),
         }
     )
@@ -61,7 +89,9 @@ def editor_node(state: GraphState) -> Dict[str, Any]:
 
 def reader_node(state: GraphState) -> Dict[str, Any]:
     agent = ReaderAgent()
-    result = agent.run({"draft_text": state.get("edited_text", "")})
+    base_input = state.get("edited_text", "")
+    input_text = _build_agent_input(state, "reader", base_input)
+    result = agent.run({"draft_text": input_text})
     return {
         "reader_feedback": result["reader_feedback"],
         "agent_logs": state.get("agent_logs", []) + [result],
@@ -70,8 +100,9 @@ def reader_node(state: GraphState) -> Dict[str, Any]:
 
 def summary_node(state: GraphState) -> Dict[str, Any]:
     agent = SummaryAgent()
-    final_text = state.get("edited_text", "")
-    summary_result = agent.run(final_text)
+    base_input = state.get("edited_text", "")
+    input_text = _build_agent_input(state, "summary", base_input)
+    summary_result = agent.run(input_text)
 
     memory = state.get("story_memory")
     if memory:
@@ -85,7 +116,7 @@ def summary_node(state: GraphState) -> Dict[str, Any]:
 
     return {
         "summary_text": summary_result,
-        "final_text": final_text,
+        "final_text": state.get("edited_text", ""),
         "story_memory": memory,
         "agent_logs": state.get("agent_logs", [])
         + [

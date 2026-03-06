@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import novel_routes, generate_chapter, world_routes, agent_routes
+from app.api import novel_routes, generate_chapter, world_routes, agent_routes, asset_routes, skills
 
 app = FastAPI(title="Multi-Agent Novel Backend")
 
@@ -27,3 +27,5 @@ app.include_router(generate_chapter.router)
 app.include_router(world_routes.router)
 
 app.include_router(agent_routes.router)
+app.include_router(asset_routes.router)
+app.include_router(skills.router)

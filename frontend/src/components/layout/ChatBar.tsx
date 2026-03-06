@@ -30,12 +30,6 @@ export const ChatBar: React.FC = () => {
           </div>
         </div>
         
-        <div className="flex gap-2">
-          <button className="px-3 py-1 bg-purple-50 text-purple-600 text-[10px] font-bold rounded-full border border-purple-100 flex items-center gap-1 hover:bg-purple-100 transition-colors">✨ 生成章节</button>
-          <button className="px-3 py-1 bg-blue-50 text-blue-600 text-[10px] font-bold rounded-full border border-blue-100 flex items-center gap-1 hover:bg-blue-100 transition-colors">🔄 重写</button>
-          <button className="px-3 py-1 bg-green-50 text-green-600 text-[10px] font-bold rounded-full border border-green-100 flex items-center gap-1 hover:bg-green-100 transition-colors">⏩ 继续</button>
-        </div>
-
         <div className="relative">
           <textarea 
             rows={1}

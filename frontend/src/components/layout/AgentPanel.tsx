@@ -11,7 +11,7 @@ interface ChatResponse {
   agent_logs?: Array<{ agent?: string; message?: string; content?: string }>;
 }
 
-const AGENT_ORDER = ["Planner", "Conflict", "Writer", "Editor", "Reader"];
+
 
 export const AgentPanel: React.FC = () => {
   const { messages, addMessage, currentNovelId, currentChapterId, updateChapterContent, setWorldBible, setWorldApproved } =
@@ -20,7 +20,7 @@ export const AgentPanel: React.FC = () => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const seqRef = useRef(100);
 
-  const commands = ["/start chapter 8", "/generate outline", "/plan", "/outline", "/world", "/rewrite", "/continue", "/review", "/world approve"];
+
 
   const nextMeta = () => {
     seqRef.current += 1;
@@ -85,15 +85,8 @@ export const AgentPanel: React.FC = () => {
 
   return (
     <aside className="w-96 border-l border-zinc-200 bg-zinc-50 flex flex-col h-full shrink-0 shadow-sm">
-      <div className="p-4 border-b border-zinc-200 bg-white space-y-3 shrink-0">
+      <div className="p-4 border-b border-zinc-200 bg-white shrink-0">
         <h2 className="text-sm font-bold text-zinc-800">Agent Room（讨论 / 命令）</h2>
-        <div className="flex flex-wrap gap-1">
-          {AGENT_ORDER.map((a) => (
-            <span key={a} className="text-[10px] px-2 py-1 rounded bg-zinc-100 text-zinc-600 border border-zinc-200">
-              {a}
-            </span>
-          ))}
-        </div>
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 scroll-smooth">
@@ -109,18 +102,7 @@ export const AgentPanel: React.FC = () => {
         ))}
       </div>
 
-      <div className="p-4 bg-white border-t border-zinc-200 space-y-3 shrink-0">
-        <div className="flex flex-wrap gap-1.5">
-          {commands.map((cmd) => (
-            <button
-              key={cmd}
-              onClick={() => setEditValue(cmd + " ")}
-              className="px-2 py-1 bg-zinc-100 hover:bg-indigo-50 hover:text-indigo-600 text-[10px] font-bold text-zinc-500 rounded-md border border-zinc-200/50"
-            >
-              {cmd}
-            </button>
-          ))}
-        </div>
+      <div className="p-4 bg-white border-t border-zinc-200 shrink-0">
         <div className="relative">
           <textarea
             value={inputValue}
