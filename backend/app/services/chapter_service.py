@@ -22,9 +22,25 @@ def _memory_path(story_id: str) -> Path:
     return story_dir / "story_memory.json"
 
 
+
+
+def _memory_component_paths(story_id: str) -> dict[str, Path]:
+    story_dir = DATA_DIR / story_id
+    story_dir.mkdir(parents=True, exist_ok=True)
+    return {
+        "world": story_dir / "world.json",
+        "characters": story_dir / "characters.json",
+        "timeline": story_dir / "timeline.json",
+    }
+
 def save_memory(memory: StoryMemory):
     path = _memory_path(memory.story_id)
     path.write_text(memory.model_dump_json(indent=2), encoding="utf-8")
+
+    components = _memory_component_paths(memory.story_id)
+    components["world"].write_text(json.dumps(memory.bible.model_dump(), ensure_ascii=False, indent=2), encoding="utf-8")
+    components["characters"].write_text(json.dumps([c.model_dump() for c in memory.characters], ensure_ascii=False, indent=2), encoding="utf-8")
+    components["timeline"].write_text(json.dumps([t.model_dump() for t in memory.timeline], ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def load_memory(story_id: str) -> StoryMemory:
@@ -41,7 +57,18 @@ def save_draft(draft: ChapterDraft) -> ChapterDraftResponse:
         "chapter_id": draft.chapter_id,
         "content": draft.content,
     }
+    # 保存为 JSON (含元数据)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # 同时保存为 .txt (纯文本，方便本地阅读)
+    # 简单的 HTML -> Text 转换 (仅针对段落标签)
+    text_content = draft.content.replace("<p>", "").replace("</p>", "\n").replace("<br/>", "\n").replace("<br>", "\n")
+    # 去除其它 HTML 标签
+    import re
+    text_content = re.sub(r'<[^>]+>', '', text_content)
+    
+    txt_path = path.with_suffix(".txt")
+    txt_path.write_text(text_content.strip(), encoding="utf-8")
 
     return ChapterDraftResponse(
         novel_id=draft.novel_id,

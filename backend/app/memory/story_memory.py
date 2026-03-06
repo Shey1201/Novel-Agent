@@ -1,13 +1,13 @@
 from typing import List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Character(BaseModel):
     id: str
     name: str
-    role: Optional[str] = None  # 主角 / 反派 / 配角
-    description: Optional[str] = None  # 人设描述、性格标签等
+    role: Optional[str] = None
+    description: Optional[str] = None
 
 
 class TimelineEvent(BaseModel):
@@ -15,35 +15,28 @@ class TimelineEvent(BaseModel):
     chapter_id: Optional[str] = None
     title: str
     summary: str
-    order: int  # 在全局时间线中的顺序
+    order: int
 
 
 class ChapterSummary(BaseModel):
     chapter_id: str
     title: str
     summary: str
-    pov: Optional[str] = None  # 视角角色
+    pov: Optional[str] = None
 
 
 class StoryBible(BaseModel):
-    world_view: Optional[str] = None  # 世界观 / 规则
-    rules: Optional[str] = None  # 写作规则、魔法系统等
-    themes: List[str] = []  # 主题标签，如「成长」「复仇」
+    world_view: Optional[str] = None
+    rules: Optional[str] = None
+    themes: List[str] = Field(default_factory=list)
 
 
 class StoryMemory(BaseModel):
-    """
-    Story Memory：用于保持长篇小说的一致性。
-
-    - bible: 整体世界观与设定（Story Bible）
-    - characters: 人物卡
-    - timeline: 关键事件时间线
-    - chapter_summaries: 已完成章节的摘要
-    """
+    """Story Memory：用于保持长篇小说的一致性。"""
 
     story_id: str
-    bible: StoryBible = StoryBible()
-    characters: List[Character] = []
-    timeline: List[TimelineEvent] = []
-    chapter_summaries: List[ChapterSummary] = []
-
+    bible: StoryBible = Field(default_factory=StoryBible)
+    characters: List[Character] = Field(default_factory=list)
+    timeline: List[TimelineEvent] = Field(default_factory=list)
+    chapter_summaries: List[ChapterSummary] = Field(default_factory=list)
+    world_locked: bool = False

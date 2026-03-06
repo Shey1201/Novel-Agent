@@ -4,12 +4,12 @@ import { useState } from "react";
 
 export function OutlinePanel() {
   const [activeTab, setActiveTab] = useState<"constraints" | "lab">("constraints");
-  const [constraints, setConstraints] = useState([
+  const [constraints] = useState([
     "主角不能杀生",
     "每一章必须有一个反转",
     "文风偏向硬核奇幻"
   ]);
-  const [agents, setAgents] = useState([
+  const [agents] = useState([
     { name: "Writing Agent", personality: "沉稳、细腻" },
     { name: "Conflict Agent", personality: "激进、充满张力" },
     { name: "Editor Agent", personality: "严谨、优雅" },

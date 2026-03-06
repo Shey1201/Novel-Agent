@@ -1,7 +1,17 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-interface AgentConfig {
+export type WorkspaceModule = 'novels' | 'agent-management' | 'story-assets' | 'skills' | 'settings' | 'recycle-bin';
+export type SidebarView = 'chapter' | 'outline';
+export type AssetCategory = 'characters' | 'worldbuilding' | 'factions' | 'locations' | 'timeline';
+
+export interface TraceItem {
+  text: string;
+  source_agent: string;
+  revisions?: string[];
+}
+
+export interface AgentConfig {
   excitement_level: number;
   strictness: number;
   pacing: number;
@@ -11,20 +21,42 @@ interface AgentConfig {
   style: string;
 }
 
-interface Chapter {
+export interface Chapter {
   id: string;
   title: string;
   content: string;
-  trace_data: any[];
+  trace_data: TraceItem[];
 }
 
-interface Novel {
+export interface NovelAssetRefs {
+  characters: string[];
+  worldbuilding: string[];
+  factions: string[];
+  locations: string[];
+  timeline: string[];
+}
+
+export interface Novel {
   id: string;
   title: string;
   chapters: Chapter[];
+  assetRefs: NovelAssetRefs;
+  locked?: boolean;
+  categoryId?: string | null;
+  mountedSkills?: string[];
 }
 
-interface Agent {
+export interface NovelCategory {
+  id: string;
+  name: string;
+  color: string;
+}
+
+export interface DeletedNovel extends Novel {
+  deletedAt: number;
+}
+
+export interface Agent {
   id: string;
   name: string;
   role: string;
@@ -33,7 +65,27 @@ interface Agent {
   enabled: boolean;
 }
 
-interface Message {
+export interface StoryAssetItem {
+  id: string;
+  name: string;
+  novelId: string;
+}
+
+export interface StoryAssets {
+  characters: StoryAssetItem[];
+  worldbuilding: StoryAssetItem[];
+  factions: StoryAssetItem[];
+  locations: StoryAssetItem[];
+  timeline: StoryAssetItem[];
+}
+
+export interface WorldBible {
+  world_view?: string;
+  rules?: string;
+  themes: string[];
+}
+
+export interface Message {
   id: string;
   sender: string;
   role: 'user' | 'agent';
@@ -43,7 +95,11 @@ interface Message {
 }
 
 interface NovelState {
+  workspaceModule: WorkspaceModule;
+  currentSidebarView: SidebarView;
+  selectedAssetCategory: AssetCategory;
   novels: Novel[];
+  deletedNovels: DeletedNovel[];
   currentNovelId: string | null;
   currentChapterId: string | null;
   constraints: string[];
@@ -51,15 +107,29 @@ interface NovelState {
   messages: Message[];
   writingMode: 'manual' | 'ai-writer' | 'ai-assisted';
   agents: Agent[];
+  storyAssets: StoryAssets;
+  worldBible: WorldBible;
+  worldApproved: boolean;
+  categories: NovelCategory[];
+  selectedCategoryId: string | null;
 
-  // Actions
+  setWorkspaceModule: (m: WorkspaceModule) => void;
+  setCurrentSidebarView: (view: SidebarView) => void;
+  setSelectedAssetCategory: (c: AssetCategory) => void;
   addNovel: (novel: Novel) => void;
   updateNovel: (id: string, updates: Partial<Novel>) => void;
-  deleteNovel: (id: string) => void;
-  setCurrentNovelId: (id: string) => void;
+  deleteNovel: (id: string) => void; // This will now move to recycle bin
+  restoreNovel: (id: string) => void;
+  permanentlyDeleteNovel: (id: string) => void;
+  clearRecycleBin: () => void;
+  renameNovel: (id: string, newTitle: string) => void;
+  toggleLockNovel: (id: string) => void;
+  setCurrentNovelId: (id: string | null) => void;
   addChapter: (novelId: string, chapter: Chapter) => void;
-  setCurrentChapterId: (id: string) => void;
-  updateChapterContent: (novelId: string, chapterId: string, content: string, trace_data?: any[]) => void;
+  setCurrentChapterId: (id: string | null) => void;
+  updateChapterContent: (novelId: string, chapterId: string, content: string, trace_data?: TraceItem[]) => void;
+  updateChapterTitle: (novelId: string, chapterId: string, title: string) => void;
+  toggleAssetReference: (novelId: string, category: AssetCategory, assetId: string) => void;
   addConstraint: (constraint: string) => void;
   removeConstraint: (index: number) => void;
   updateAgentConfig: (config: Partial<AgentConfig>) => void;
@@ -67,21 +137,43 @@ interface NovelState {
   clearMessages: () => void;
   setWritingMode: (mode: 'manual' | 'ai-writer' | 'ai-assisted') => void;
   updateAgent: (id: string, updates: Partial<Agent>) => void;
+  setWorldBible: (worldBible: WorldBible) => void;
+  setWorldApproved: (approved: boolean) => void;
+  checkRecycleBin: () => void;
+  addCategory: (category: NovelCategory) => void;
+  updateCategory: (id: string, updates: Partial<NovelCategory>) => void;
+  deleteCategory: (id: string) => void;
+  setSelectedCategoryId: (id: string | null) => void;
+  setNovelCategory: (novelId: string, categoryId: string | null) => void;
 }
+
+const emptyRefs = (): NovelAssetRefs => ({
+  characters: [],
+  worldbuilding: [],
+  factions: [],
+  locations: [],
+  timeline: [],
+});
 
 export const useNovelStore = create<NovelState>()(
   persist(
     (set) => ({
+      workspaceModule: 'novels',
+      currentSidebarView: 'chapter',
+      selectedAssetCategory: 'characters',
       novels: [
         {
           id: 'novel-1',
-          title: '我的第一部小说',
+          title: 'Untitled Story',
           chapters: [
-            { id: 'chapter-1-1', title: '第一章：觉醒', content: '', trace_data: [] },
-            { id: 'chapter-1-2', title: '第二章：神秘学院', content: '', trace_data: [] },
+            { id: 'chapter-1-1', title: '章节 1', content: '', trace_data: [] },
+            { id: 'chapter-1-2', title: '章节 2', content: '', trace_data: [] },
           ],
+          assetRefs: emptyRefs(),
+          locked: false,
         },
       ],
+      deletedNovels: [],
       currentNovelId: 'novel-1',
       currentChapterId: 'chapter-1-1',
       constraints: ['禁止血腥', '禁止 OOC', '避免翻译腔'],
@@ -94,62 +186,131 @@ export const useNovelStore = create<NovelState>()(
         description_density: 5,
         style: '经典文学',
       },
-      messages: [
-        { id: 'm1', sender: '系统', role: 'agent', content: '欢迎来到 Agent Room。在这里，你可以发布指令与 Agent 团队讨论并创作小说。', timestamp: Date.now() }
-      ],
+      messages: [{ id: 'm1', sender: '系统', role: 'agent', content: '欢迎来到 Agent Room。', timestamp: 1 }],
       writingMode: 'manual',
+      worldBible: { themes: [] },
+      worldApproved: false,
+      categories: [
+        { id: 'cat-all', name: '全部', color: '#6366f1' },
+        { id: 'cat-technology', name: 'Technology', color: '#3b82f6' },
+        { id: 'cat-philosophy', name: 'Philosophy', color: '#8b5cf6' },
+        { id: 'cat-business', name: 'Business', color: '#10b981' },
+        { id: 'cat-biology', name: 'Biology', color: '#f59e0b' },
+        { id: 'cat-psychology', name: 'Psychology', color: '#ec4899' },
+        { id: 'cat-environment', name: 'Environment', color: '#14b8a6' },
+        { id: 'cat-linguistics', name: 'Linguistics', color: '#f97316' },
+        { id: 'cat-education', name: 'Education', color: '#06b6d4' },
+      ],
+      selectedCategoryId: 'cat-all',
+      storyAssets: {
+        characters: [{ id: 'char-linyuan', name: '林渊', novelId: 'novel-1' }],
+        worldbuilding: [{ id: 'world-gaowu', name: '高武世界', novelId: 'novel-1' }],
+        factions: [{ id: 'fac-zongmen', name: '青岚宗', novelId: 'novel-1' }],
+        locations: [{ id: 'loc-shuyuan', name: '藏书阁', novelId: 'novel-1' }],
+        timeline: [{ id: 'time-war', name: '百年前大战', novelId: 'novel-1' }],
+      },
       agents: [
-        { id: 'writer', name: 'Writer Agent', role: '负责写章节', prompt: '你是一个专业的小说作家...', temperature: 0.9, enabled: true },
-        { id: 'editor', name: 'Editor Agent', role: '负责修改结构和语言', prompt: '你是一个严厉的编辑...', temperature: 0.3, enabled: true },
-        { id: 'reader', name: 'Reader Agent', role: '从读者角度给出反馈', prompt: '你负责从读者角度给出反馈...', temperature: 0.7, enabled: true },
-        { id: 'conflict', name: 'Conflict Agent', role: '增加剧情冲突', prompt: '你负责增加剧情冲突...', temperature: 0.9, enabled: true },
-        { id: 'world', name: 'World Agent', role: '维护世界观一致性', prompt: '你负责维护世界观设定...', temperature: 0.5, enabled: true },
-        { id: 'outline', name: 'Outline Agent', role: '规划故事情节大纲', prompt: '你负责规划整体故事情节...', temperature: 0.6, enabled: true },
+        { id: 'controller', name: 'Controller', role: '流程总控', prompt: '...', temperature: 0.4, enabled: true },
+        { id: 'planner', name: 'Planner', role: '规划架构', prompt: '...', temperature: 0.7, enabled: true },
+        { id: 'writer', name: 'Writer', role: '章节写作', prompt: '...', temperature: 0.9, enabled: true },
+        { id: 'editor', name: 'Editor', role: '润色修订', prompt: '...', temperature: 0.4, enabled: true },
+        { id: 'conflict', name: 'Conflict', role: '冲突设计', prompt: '...', temperature: 0.8, enabled: true },
+        { id: 'reader', name: 'Reader', role: '读者评估', prompt: '...', temperature: 0.6, enabled: true },
       ],
 
+      setWorkspaceModule: (m) => set({ workspaceModule: m }),
+      setCurrentSidebarView: (view) => set({ currentSidebarView: view }),
+      setSelectedAssetCategory: (c) => set({ selectedAssetCategory: c }),
       addNovel: (novel) => set((state) => ({ novels: [...state.novels, novel] })),
-      updateNovel: (id, updates) => set((state) => ({
-        novels: state.novels.map((n) => (n.id === id ? { ...n, ...updates } : n)),
+      updateNovel: (id, updates) => set((state) => ({ novels: state.novels.map((n) => (n.id === id ? { ...n, ...updates } : n)) })),
+      deleteNovel: (id) => set((state) => {
+        const novelToDelete = state.novels.find(n => n.id === id);
+        if (!novelToDelete) return state;
+        return {
+          novels: state.novels.filter((n) => n.id !== id),
+          deletedNovels: [...state.deletedNovels, { ...novelToDelete, deletedAt: Date.now() }],
+          currentNovelId: state.currentNovelId === id ? null : state.currentNovelId
+        };
+      }),
+      restoreNovel: (id) => set((state) => {
+        const novelToRestore = state.deletedNovels.find(n => n.id === id);
+        if (!novelToRestore) return state;
+        const { deletedAt, ...novel } = novelToRestore;
+        return {
+          novels: [...state.novels, novel],
+          deletedNovels: state.deletedNovels.filter(n => n.id !== id)
+        };
+      }),
+      permanentlyDeleteNovel: (id) => set((state) => ({
+        deletedNovels: state.deletedNovels.filter(n => n.id !== id)
       })),
-      deleteNovel: (id) => set((state) => ({
-        novels: state.novels.filter((n) => n.id !== id),
-        currentNovelId: state.currentNovelId === id ? (state.novels.length > 1 ? state.novels.find(n => n.id !== id)?.id || null : null) : state.currentNovelId,
+      clearRecycleBin: () => set({ deletedNovels: [] }),
+      renameNovel: (id, newTitle) => set((state) => ({
+        novels: state.novels.map(n => n.id === id ? { ...n, title: newTitle } : n)
+      })),
+      toggleLockNovel: (id) => set((state) => ({
+        novels: state.novels.map(n => n.id === id ? { ...n, locked: !n.locked } : n)
       })),
       setCurrentNovelId: (id) => set({ currentNovelId: id, currentChapterId: null }),
-      addChapter: (novelId, chapter) => set((state) => ({
-        novels: state.novels.map((novel) =>
-          novel.id === novelId ? { ...novel, chapters: [...novel.chapters, chapter] } : novel
-        ),
-      })),
-      setCurrentChapterId: (id) => set({ currentChapterId: id }),
+      addChapter: (novelId, chapter) => set((state) => ({ novels: state.novels.map((novel) => (novel.id === novelId ? { ...novel, chapters: [...novel.chapters, chapter] } : novel)) })),
+      setCurrentChapterId: (id) => set({ currentChapterId: id, currentSidebarView: 'chapter' }),
       updateChapterContent: (novelId, chapterId, content, trace_data) => set((state) => ({
         novels: state.novels.map((novel) =>
           novel.id === novelId
-            ? {
-                ...novel,
-                chapters: novel.chapters.map((ch) =>
-                  ch.id === chapterId ? { ...ch, content, trace_data: trace_data || ch.trace_data } : ch
-                ),
-              }
+            ? { ...novel, chapters: novel.chapters.map((ch) => (ch.id === chapterId ? { ...ch, content, trace_data: trace_data || ch.trace_data } : ch)) }
             : novel
         ),
       })),
+      updateChapterTitle: (novelId, chapterId, title) => set((state) => ({
+        novels: state.novels.map((novel) => (novel.id === novelId ? { ...novel, chapters: novel.chapters.map((ch) => (ch.id === chapterId ? { ...ch, title } : ch)) } : novel)),
+      })),
+      toggleAssetReference: (novelId, category, assetId) => set((state) => ({
+        novels: state.novels.map((novel) => {
+          if (novel.id !== novelId) return novel;
+          const list = novel.assetRefs[category];
+          const next = list.includes(assetId) ? list.filter((id) => id !== assetId) : [...list, assetId];
+          return { ...novel, assetRefs: { ...novel.assetRefs, [category]: next } };
+        }),
+      })),
       addConstraint: (constraint) => set((state) => ({ constraints: [...state.constraints, constraint] })),
-      removeConstraint: (index) => set((state) => ({ 
-        constraints: state.constraints.filter((_, i) => i !== index) 
-      })),
-      updateAgentConfig: (config) => set((state) => ({ 
-        agentConfigs: { ...state.agentConfigs, ...config } 
-      })),
+      removeConstraint: (index) => set((state) => ({ constraints: state.constraints.filter((_, i) => i !== index) })),
+      updateAgentConfig: (config) => set((state) => ({ agentConfigs: { ...state.agentConfigs, ...config } })),
       addMessage: (message) => set((state) => ({ messages: [...state.messages, message] })),
       clearMessages: () => set({ messages: [] }),
       setWritingMode: (mode) => set({ writingMode: mode }),
-      updateAgent: (id, updates) => set((state) => ({
-        agents: state.agents.map((a) => (a.id === id ? { ...a, ...updates } : a)),
+      updateAgent: (id, updates) => set((state) => ({ agents: state.agents.map((a) => (a.id === id ? { ...a, ...updates } : a)) })),
+      setWorldBible: (worldBible) => set({ worldBible }),
+      setWorldApproved: (approved) => set({ worldApproved: approved }),
+      
+      // Auto-clear logic for recycle bin (> 30 days)
+      checkRecycleBin: () => set((state) => {
+        const now = Date.now();
+        const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+        const remaining = state.deletedNovels.filter(n => (now - n.deletedAt) < thirtyDays);
+        if (remaining.length === state.deletedNovels.length) return state;
+        return { deletedNovels: remaining };
+      }),
+
+      // Category management
+      addCategory: (category) => set((state) => ({ categories: [...state.categories, category] })),
+      updateCategory: (id, updates) => set((state) => ({
+        categories: state.categories.map((c) => (c.id === id ? { ...c, ...updates } : c))
+      })),
+      deleteCategory: (id) => set((state) => ({
+        categories: state.categories.filter((c) => c.id !== id),
+        novels: state.novels.map((n) => n.categoryId === id ? { ...n, categoryId: null } : n),
+        selectedCategoryId: state.selectedCategoryId === id ? 'cat-all' : state.selectedCategoryId
+      })),
+      setSelectedCategoryId: (id) => set({ selectedCategoryId: id }),
+      setNovelCategory: (novelId, categoryId) => set((state) => ({
+        novels: state.novels.map((n) => n.id === novelId ? { ...n, categoryId } : n)
       })),
     }),
-    {
-      name: 'novel-storage-v2', // 更改存储名称以强制重置
+    { 
+      name: 'novel-storage-v3',
+      onRehydrateStorage: () => (state) => {
+        state?.checkRecycleBin?.();
+      }
     }
   )
 );

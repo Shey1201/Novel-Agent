@@ -1,0 +1,746 @@
+openapi: 3.0.3
+info:
+  title: Novel Agent Studio API
+  description: |
+    多Agent协作小说创作平台API文档
+    
+    ## 功能特性
+    - 多Agent协作章节生成
+    - 世界观管理
+    - 草稿持久化
+    - Word导出
+    - Agent Room实时对话
+    
+    ## 版本历史
+    | 版本 | 日期 | 说明 |
+    |------|------|------|
+    | 1.0.0 | 2024-01-01 | 初始版本 |
+  version: 1.0.0
+  contact:
+    name: Novel Agent Studio Team
+
+servers:
+  - url: http://localhost:8000
+    description: 本地开发环境
+  - url: https://api.novel-agent.com
+    description: 生产环境
+
+tags:
+  - name: system
+    description: 系统接口
+  - name: generate
+    description: 章节生成
+  - name: novel
+    description: 小说管理
+  - name: world
+    description: 世界观管理
+  - name: agent-room
+    description: Agent Room对话
+  - name: skills
+    description: 技能管理
+
+paths:
+  # ========== 系统接口 ==========
+  /health:
+    get:
+      tags:
+        - system
+      summary: 健康检查
+      description: 检查服务是否正常运行
+      operationId: healthCheck
+      responses:
+        '200':
+          description: 服务正常
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  # ========== 章节生成接口 ==========
+  /generate_chapter:
+    post:
+      tags:
+        - generate
+      summary: 完整章节生成
+      description: |
+        执行完整的Agent工作流生成章节：
+        Planner -> Conflict -> Writing -> Editor -> Reader -> Summary
+      operationId: generateChapter
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateChapterRequest'
+      responses:
+        '200':
+          description: 生成成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateChapterResponse'
+        '422':
+          description: 请求参数错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+        '500':
+          description: 服务器内部错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/novel/generate:
+    post:
+      tags:
+        - generate
+      summary: 简版章节生成
+      description: 简化版生成接口，仅返回最终结果
+      operationId: generateSimple
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                text:
+                  type: string
+                  description: 章节大纲
+              required:
+                - text
+      responses:
+        '200':
+          description: 生成成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  input:
+                    type: string
+                  result:
+                    type: string
+
+  /api/novel/pipeline:
+    post:
+      tags:
+        - generate
+      summary: 三段式流水线
+      description: 执行Writing -> Editor -> Conflict三段流程
+      operationId: runPipeline
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                text:
+                  type: string
+              required:
+                - text
+      responses:
+        '200':
+          description: 执行成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  input:
+                    type: string
+                  draft_text:
+                    type: string
+                  edited_text:
+                    type: string
+                  conflict_suggestions:
+                    type: array
+                    items:
+                      type: string
+
+  # ========== 小说管理接口 ==========
+  /api/novel/draft:
+    post:
+      tags:
+        - novel
+      summary: 保存章节草稿
+      description: 保存章节内容到文件系统
+      operationId: saveDraft
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChapterDraft'
+      responses:
+        '200':
+          description: 保存成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChapterDraftResponse'
+
+    get:
+      tags:
+        - novel
+      summary: 读取章节草稿
+      description: 从文件系统读取章节内容
+      operationId: getDraft
+      parameters:
+        - name: novel_id
+          in: query
+          required: false
+          schema:
+            type: string
+            default: demo-novel
+        - name: chapter_id
+          in: query
+          required: false
+          schema:
+            type: string
+            default: demo-chapter
+      responses:
+        '200':
+          description: 读取成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChapterDraftResponse'
+        '404':
+          description: 草稿不存在
+
+  /api/novel/export/word:
+    get:
+      tags:
+        - novel
+      summary: 导出Word文档
+      description: 将章节内容导出为Word文档
+      operationId: exportWord
+      parameters:
+        - name: novel_id
+          in: query
+          required: false
+          schema:
+            type: string
+            default: demo-novel
+        - name: chapter_id
+          in: query
+          required: false
+          schema:
+            type: string
+            default: demo-chapter
+      responses:
+        '200':
+          description: 导出成功
+          content:
+            application/vnd.openxmlformats-officedocument.wordprocessingml.document:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: 章节不存在
+
+  # ========== 世界观接口 ==========
+  /api/world/debate:
+    post:
+      tags:
+        - world
+      summary: 世界观辩论
+      description: 执行世界观辩论流程，生成和完善世界观设定
+      operationId: debateWorld
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorldDebateRequest'
+      responses:
+        '200':
+          description: 辩论完成
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorldDebateResponse'
+
+  /api/world/approve:
+    post:
+      tags:
+        - world
+      summary: 确认世界观
+      description: 确认并锁定世界观设定
+      operationId: approveWorld
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApproveWorldRequest'
+      responses:
+        '200':
+          description: 确认成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  story_id:
+                    type: string
+                  world_locked:
+                    type: boolean
+
+  /api/world/{story_id}:
+    get:
+      tags:
+        - world
+      summary: 获取世界观
+      description: 获取指定故事的世界观设定
+      operationId: getWorld
+      parameters:
+        - name: story_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoryMemory'
+
+  # ========== Agent Room接口 ==========
+  /api/agent/chat:
+    post:
+      tags:
+        - agent-room
+      summary: Agent对话
+      description: |
+        与Agent进行命令式对话。支持的命令：
+        - `/start chapter N` - 开始第N章
+        - `/plan` - 生成写作计划
+        - `/write` - 生成内容
+        - `/continue` - 续写
+        - `/rewrite` - 重写
+        - `/review` - 审阅
+        - `/world` - 查看世界观
+      operationId: agentChat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentChatRequest'
+      responses:
+        '200':
+          description: 对话成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  response:
+                    type: string
+                  action:
+                    type: string
+                  data:
+                    type: object
+
+  # ========== 技能管理接口 ==========
+  /api/skills/categories:
+    get:
+      tags:
+        - skills
+      summary: 获取技能分类列表
+      operationId: getCategories
+      responses:
+        '200':
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SkillCategory'
+
+    post:
+      tags:
+        - skills
+      summary: 创建技能分类
+      operationId: createCategory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoryCreateRequest'
+      responses:
+        '200':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SkillCategory'
+
+  /api/skills:
+    get:
+      tags:
+        - skills
+      summary: 获取技能列表
+      operationId: getSkills
+      parameters:
+        - name: category_id
+          in: query
+          schema:
+            type: string
+        - name: agent_type
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Skill'
+
+components:
+  schemas:
+    # ========== 请求/响应模型 ==========
+    GenerateChapterRequest:
+      type: object
+      properties:
+        outline:
+          type: string
+          description: 章节大纲
+        story_id:
+          type: string
+          description: 故事ID
+          default: demo-story
+        agent_configs:
+          type: object
+          description: Agent配置参数
+        constraints:
+          type: array
+          items:
+            type: string
+          description: 写作约束
+        llm_config:
+          type: object
+          description: LLM配置
+      required:
+        - outline
+
+    GenerateChapterResponse:
+      type: object
+      properties:
+        input_text:
+          type: string
+        plan_text:
+          type: string
+        conflict_suggestions:
+          type: array
+          items:
+            type: string
+        draft_text:
+          type: string
+        edited_text:
+          type: string
+        reader_feedback:
+          type: array
+          items:
+            type: string
+        summary_text:
+          type: string
+        final_text:
+          type: string
+        agent_logs:
+          type: array
+          items:
+            type: object
+        trace_data:
+          type: array
+          items:
+            $ref: '#/components/schemas/TraceText'
+        story_id:
+          type: string
+
+    ChapterDraft:
+      type: object
+      properties:
+        novel_id:
+          type: string
+        chapter_id:
+          type: string
+        content:
+          type: string
+      required:
+        - novel_id
+        - chapter_id
+        - content
+
+    ChapterDraftResponse:
+      type: object
+      properties:
+        novel_id:
+          type: string
+        chapter_id:
+          type: string
+        content:
+          type: string
+        source:
+          type: string
+        trace_data:
+          type: array
+          items:
+            $ref: '#/components/schemas/TraceText'
+
+    TraceText:
+      type: object
+      properties:
+        text:
+          type: string
+        source_agent:
+          type: string
+        revisions:
+          type: array
+          items:
+            type: string
+
+    WorldDebateRequest:
+      type: object
+      properties:
+        prompt:
+          type: string
+          description: 世界观提示
+        story_id:
+          type: string
+          default: demo-story
+        max_rounds:
+          type: integer
+          default: 2
+
+    WorldDebateResponse:
+      type: object
+      properties:
+        rounds:
+          type: array
+          items:
+            type: object
+        final_worldview:
+          type: string
+        story_id:
+          type: string
+
+    ApproveWorldRequest:
+      type: object
+      properties:
+        story_id:
+          type: string
+        world_bible:
+          $ref: '#/components/schemas/StoryBible'
+
+    StoryBible:
+      type: object
+      properties:
+        world_view:
+          type: string
+        rules:
+          type: string
+        themes:
+          type: array
+          items:
+            type: string
+
+    StoryMemory:
+      type: object
+      properties:
+        story_id:
+          type: string
+        bible:
+          $ref: '#/components/schemas/StoryBible'
+        characters:
+          type: array
+          items:
+            $ref: '#/components/schemas/Character'
+        timeline:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimelineEvent'
+        chapter_summaries:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChapterSummary'
+        world_locked:
+          type: boolean
+
+    Character:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        description:
+          type: string
+
+    TimelineEvent:
+      type: object
+      properties:
+        id:
+          type: string
+        chapter_id:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+        order:
+          type: integer
+
+    ChapterSummary:
+      type: object
+      properties:
+        chapter_id:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+        pov:
+          type: string
+
+    AgentChatRequest:
+      type: object
+      properties:
+        message:
+          type: string
+        story_id:
+          type: string
+          default: demo-story
+
+    SkillCategory:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          enum: [system, writing, domain, auditing]
+        parent_id:
+          type: string
+        color:
+          type: string
+        icon:
+          type: string
+        is_system:
+          type: boolean
+        description:
+          type: string
+        default_agents:
+          type: array
+          items:
+            type: string
+        order:
+          type: integer
+
+    CategoryCreateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+        parent_id:
+          type: string
+        color:
+          type: string
+        is_system:
+          type: boolean
+        description:
+          type: string
+        default_agents:
+          type: array
+          items:
+            type: string
+        order:
+          type: integer
+
+    Skill:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        category_id:
+          type: string
+        constraints:
+          type: array
+          items:
+            $ref: '#/components/schemas/SkillConstraint'
+        target_agents:
+          type: array
+          items:
+            type: string
+        version:
+          type: string
+        is_active:
+          type: boolean
+        is_system:
+          type: boolean
+
+    SkillConstraint:
+      type: object
+      properties:
+        id:
+          type: string
+        content:
+          type: string
+        priority:
+          type: string
+          enum: [high, medium, low]
+        enabled:
+          type: boolean
+
+    # ========== 错误模型 ==========
+    ValidationError:
+      type: object
+      properties:
+        detail:
+          type: array
+          items:
+            type: object
+            properties:
+              loc:
+                type: array
+              msg:
+                type: string
+              type:
+                type: string
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        code:
+          type: integer
