@@ -84,7 +84,21 @@ describe('Novel Store 功能测试', () => {
   describe('章节管理', () => {
     test('应该能添加新章节', () => {
       const store = useNovelStore.getState();
-      const novelId = 'novel-1';
+      // 先添加一本小说
+      const novelId = 'test-novel-for-chapter';
+      store.addNovel({
+        id: novelId,
+        title: '测试小说',
+        chapters: [],
+        assetRefs: {
+          characters: [],
+          worldbuilding: [],
+          factions: [],
+          locations: [],
+          timeline: [],
+        },
+      });
+      
       const newChapter = {
         id: 'chapter-new',
         title: '新章节',
@@ -100,10 +114,29 @@ describe('Novel Store 功能测试', () => {
 
     test('应该能更新章节内容', () => {
       const store = useNovelStore.getState();
-      const novelId = 'novel-1';
-      const chapterId = 'chapter-1-1';
+      const novelId = 'test-novel-for-content';
+      const chapterId = 'chapter-1';
+      
+      // 先添加小说和章节
+      store.addNovel({
+        id: novelId,
+        title: '测试小说',
+        chapters: [{
+          id: chapterId,
+          title: '第一章',
+          content: '',
+          trace_data: [],
+        }],
+        assetRefs: {
+          characters: [],
+          worldbuilding: [],
+          factions: [],
+          locations: [],
+          timeline: [],
+        },
+      });
+      
       const newContent = '<p>新的章节内容</p>';
-
       store.updateChapterContent(novelId, chapterId, newContent);
       const novel = useNovelStore.getState().novels.find(n => n.id === novelId);
       const chapter = novel?.chapters.find(c => c.id === chapterId);
@@ -113,10 +146,29 @@ describe('Novel Store 功能测试', () => {
 
     test('应该能更新章节标题', () => {
       const store = useNovelStore.getState();
-      const novelId = 'novel-1';
-      const chapterId = 'chapter-1-1';
+      const novelId = 'test-novel-for-title';
+      const chapterId = 'chapter-1';
+      
+      // 先添加小说和章节
+      store.addNovel({
+        id: novelId,
+        title: '测试小说',
+        chapters: [{
+          id: chapterId,
+          title: '第一章',
+          content: '',
+          trace_data: [],
+        }],
+        assetRefs: {
+          characters: [],
+          worldbuilding: [],
+          factions: [],
+          locations: [],
+          timeline: [],
+        },
+      });
+      
       const newTitle = '新章节标题';
-
       store.updateChapterTitle(novelId, chapterId, newTitle);
       const novel = useNovelStore.getState().novels.find(n => n.id === novelId);
       const chapter = novel?.chapters.find(c => c.id === chapterId);
@@ -142,8 +194,22 @@ describe('Novel Store 功能测试', () => {
 
     test('应该能设置小说分类', () => {
       const store = useNovelStore.getState();
-      const novelId = 'novel-1';
+      const novelId = 'test-novel-for-category';
       const categoryId = 'cat-technology';
+      
+      // 先添加小说
+      store.addNovel({
+        id: novelId,
+        title: '测试小说',
+        chapters: [],
+        assetRefs: {
+          characters: [],
+          worldbuilding: [],
+          factions: [],
+          locations: [],
+          timeline: [],
+        },
+      });
 
       store.setNovelCategory(novelId, categoryId);
       const novel = useNovelStore.getState().novels.find(n => n.id === novelId);

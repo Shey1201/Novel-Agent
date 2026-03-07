@@ -93,7 +93,7 @@ npm run dev
 
 ```powershell
 # 在项目根目录运行
-.\start-services.ps1
+.\scripts\start-services.ps1
 ```
 
 ## 项目结构
@@ -136,6 +136,9 @@ Novel-Agent-Studio/
 │   ├── development/      # 开发文档
 │   ├── product/          # 产品文档
 │   └── standards/        # 规范文档
+├── scripts/              # 脚本工具
+│   ├── start-services.ps1 # 启动服务脚本
+│   └── test-api.ps1      # API测试脚本
 └── docker-compose.yml    # Docker编排配置
 ```
 

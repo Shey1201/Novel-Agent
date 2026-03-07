@@ -49,8 +49,10 @@ Novel-Agent-Studio/
 │   ├── product/                # 产品文档
 │   └── standards/              # 规范文档
 │
+├── scripts/                    # 脚本工具
+│   ├── start-services.ps1      # 启动脚本
+│   └── test-api.ps1            # API测试脚本
 ├── docker-compose.yml          # Docker编排
-├── start-services.ps1          # 启动脚本
 └── README.md                   # 项目说明
 ```
 
@@ -332,10 +334,11 @@ data/
 
 ### 项目配置
 
-| 文件 | 用途 |
+| 文件/目录 | 用途 |
 |------|------|
 | `docker-compose.yml` | Docker服务编排 |
-| `start-services.ps1` | PowerShell启动脚本 |
+| `scripts/start-services.ps1` | PowerShell启动脚本 |
+| `scripts/test-api.ps1` | API测试脚本 |
 | `.gitignore` | Git忽略规则 |
 
 ## 模块依赖关系
