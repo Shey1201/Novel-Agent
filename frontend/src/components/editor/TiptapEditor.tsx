@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from "react";
-import { useEditor, EditorContent } from "@tiptap/react";
-import { BubbleMenu } from "@tiptap/react/menus";
+import { useEditor, EditorContent, BubbleMenu } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Highlight from "@tiptap/extension-highlight";
 import BubbleMenuExtension from "@tiptap/extension-bubble-menu";
@@ -90,9 +89,7 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle>((_, ref) => {
     if (editor && currentChapter) {
       const currentContent = editor.getHTML();
       if (currentContent !== currentChapter.content) {
-        editor.commands.setContent(currentChapter.content || "<p>在这里开始你的小说创作...</p>", {
-          emitUpdate: false,
-        });
+        editor.commands.setContent(currentChapter.content || "<p>在这里开始你的小说创作...</p>", false);
       }
     }
   }, [currentChapterId, currentChapter, editor]);
@@ -112,7 +109,7 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle>((_, ref) => {
         const data = (await res.json()) as GenerateChapterResponse;
 
         if (data?.final_text) {
-          editor.commands.setContent(data.final_text, { emitUpdate: false });
+          editor.commands.setContent(data.final_text, false);
           if (currentNovelId && currentChapterId) {
             updateChapterContent(currentNovelId, currentChapterId, data.final_text, data.trace_data);
           }
