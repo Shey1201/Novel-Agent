@@ -122,108 +122,54 @@ export default function Library() {
     <div className="flex h-full">
       {/* 左侧分类栏 */}
       <div className="w-56 border-r border-zinc-200 bg-zinc-50/50 flex flex-col">
-        <div className="p-4 border-b border-zinc-200 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-zinc-700">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>
-            </svg>
-          </div>
-          {/* 新建分类按钮 */}
-          {isAddingCategory ? (
-            <div className="flex-1 ml-2 min-w-0">
-              <div className="flex items-center gap-1">
-                <input
-                  autoFocus
-                  value={newCategoryName}
-                  onChange={(e) => {
-                    setNewCategoryName(e.target.value);
-                    setCategoryError("");
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleAddCategory();
-                    if (e.key === 'Escape') cancelAddCategory();
-                  }}
-                  placeholder="新分类"
-                  className={`flex-1 min-w-0 text-xs px-2 py-1 border rounded outline-none focus:border-indigo-500 ${
-                    categoryError ? 'border-red-400 focus:border-red-500' : 'border-zinc-300'
-                  }`}
-                />
-                <button
-                  onClick={handleAddCategory}
-                  disabled={!newCategoryName.trim()}
-                  className="p-1 text-green-600 hover:bg-green-50 rounded disabled:text-zinc-300 disabled:hover:bg-transparent transition-colors shrink-0"
-                  title="保存"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M20 6 9 17l-5-5"/>
-                  </svg>
-                </button>
-                <button
-                  onClick={cancelAddCategory}
-                  className="p-1 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors shrink-0"
-                  title="取消"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
-                  </svg>
-                </button>
-              </div>
-              {categoryError && (
-                <div className="text-[10px] text-red-500 mt-1">{categoryError}</div>
-              )}
+        <div className="p-4 border-b border-zinc-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-semibold text-zinc-900">小说管理</h2>
+              <p className="text-xs text-zinc-500 mt-0.5">作品库管理中心</p>
             </div>
-          ) : (
             <button
               onClick={() => setIsAddingCategory(true)}
-              className="p-1.5 text-zinc-400 hover:text-indigo-600 hover:bg-zinc-200 rounded transition-colors"
-              title="新建分类"
+              className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+              title="新增分类"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M5 12h14"/><path d="M12 5v14"/>
-              </svg>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             </button>
-          )}
+          </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto py-2">
+        <div className="flex-1 overflow-y-auto p-3 space-y-1">
           {/* 全部分类 */}
           <button
             onClick={() => setSelectedCategoryId('cat-all')}
-            className={`w-full px-4 py-2.5 text-left text-sm flex items-center justify-between transition-colors ${
+            className={`w-full px-3 py-2 rounded-lg text-left flex items-center justify-between transition-colors ${
               selectedCategoryId === 'cat-all'
-                ? 'bg-white text-zinc-900 shadow-sm border-r-2 border-indigo-500'
-                : 'text-zinc-600 hover:bg-zinc-100'
+                ? 'bg-zinc-100 text-zinc-900'
+                : 'hover:bg-zinc-50 text-zinc-600'
             }`}
           >
-            <span className="font-medium">全部</span>
-            <span className="text-xs text-zinc-400 bg-zinc-100 px-2 py-0.5 rounded-full">
-              {getCategoryCount('cat-all')}
-            </span>
+            <span className="text-[13px]">全部</span>
+            <span className="text-[11px] text-zinc-400">{getCategoryCount('cat-all')}</span>
           </button>
 
           {/* 未分类 */}
           <button
             onClick={() => setSelectedCategoryId('cat-uncategorized')}
-            className={`w-full px-4 py-2.5 text-left text-sm flex items-center justify-between transition-colors ${
+            className={`w-full px-3 py-2 rounded-lg text-left flex items-center justify-between transition-colors ${
               selectedCategoryId === 'cat-uncategorized'
-                ? 'bg-white text-zinc-900 shadow-sm border-r-2 border-indigo-500'
-                : 'text-zinc-600 hover:bg-zinc-100'
+                ? 'bg-zinc-100 text-zinc-900'
+                : 'hover:bg-zinc-50 text-zinc-600'
             }`}
           >
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-zinc-300" />
-              <span className="font-medium">未分类</span>
-            </div>
-            <span className="text-xs text-zinc-400 bg-zinc-100 px-2 py-0.5 rounded-full">
-              {getCategoryCount('cat-uncategorized')}
-            </span>
+            <span className="text-[13px]">未分类</span>
+            <span className="text-[11px] text-zinc-400">{getCategoryCount('cat-uncategorized')}</span>
           </button>
 
           {/* 自定义分类 */}
           {categories.filter(c => c.id !== 'cat-all').map((category) => (
             <div key={category.id} className="group relative">
               {editingCategoryId === category.id ? (
-                <div className="px-4 py-2 flex items-center gap-2">
+                <div className="px-3 py-2 flex items-center gap-2">
                   <input
                     autoFocus
                     value={editCategoryName}
@@ -233,57 +179,41 @@ export default function Library() {
                       if (e.key === 'Escape') setEditingCategoryId(null);
                     }}
                     onBlur={() => handleUpdateCategory(category.id)}
-                    className="flex-1 text-sm px-2 py-1 border border-zinc-300 rounded outline-none focus:border-indigo-500"
+                    className="flex-1 text-[13px] px-2 py-1 border border-zinc-300 rounded outline-none focus:border-indigo-500"
                   />
                 </div>
               ) : (
                 <div
-                  onClick={() => setSelectedCategoryId(category.id)}
-                  className={`w-full px-4 py-2.5 text-left text-sm flex items-center justify-between transition-colors cursor-pointer ${
+                  className={`w-full px-3 py-2 rounded-lg text-left flex items-center justify-between transition-colors cursor-pointer ${
                     selectedCategoryId === category.id
-                      ? 'bg-white text-zinc-900 shadow-sm border-r-2 border-indigo-500'
-                      : 'text-zinc-600 hover:bg-zinc-100'
+                      ? 'bg-zinc-100 text-zinc-900'
+                      : 'hover:bg-zinc-50 text-zinc-600'
                   }`}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      setSelectedCategoryId(category.id);
-                    }
-                  }}
                 >
-                  <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setSelectedCategoryId(category.id)}
+                    className="flex items-center gap-2 flex-1 text-left"
+                  >
                     <span
                       className="w-2 h-2 rounded-full"
                       style={{ backgroundColor: category.color }}
                     />
-                    <span>{category.name}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-zinc-400 bg-zinc-100 px-2 py-0.5 rounded-full">
-                      {getCategoryCount(category.id)}
-                    </span>
-                    {/* 编辑/删除按钮 */}
-                    <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          startEditingCategory(category);
-                        }}
-                        className="p-1 text-zinc-400 hover:text-indigo-600"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteCategory(category.id);
-                        }}
-                        className="p-1 text-zinc-400 hover:text-red-600"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg>
-                      </button>
-                    </div>
+                    <span className="text-[13px]">{category.name}</span>
+                  </button>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[11px] text-zinc-400">{getCategoryCount(category.id)}</span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (confirm('确定要删除此分类吗？该分类下的小说将变为未分类。')) {
+                          deleteCategory(category.id);
+                        }
+                      }}
+                      className="p-1 text-zinc-300 hover:text-red-500 transition-colors"
+                      title="删除分类"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                    </button>
                   </div>
                 </div>
               )}
@@ -310,9 +240,8 @@ export default function Library() {
             </div>
             <button
               onClick={handleCreateNovel}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg transition-all flex items-center gap-2"
+              className="text-indigo-600 hover:text-indigo-700 text-sm font-medium transition-colors"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
               创建小说
             </button>
           </div>
@@ -479,6 +408,53 @@ export default function Library() {
           )}
         </div>
       </div>
+
+      {/* 创建分类弹窗 */}
+      {isAddingCategory && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm mx-4 p-6">
+            <h3 className="text-lg font-semibold text-zinc-900 mb-4">新建分类</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-zinc-700 mb-1">分类名称</label>
+                <input
+                  autoFocus
+                  type="text"
+                  value={newCategoryName}
+                  onChange={(e) => {
+                    setNewCategoryName(e.target.value);
+                    setCategoryError("");
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleAddCategory();
+                    if (e.key === 'Escape') cancelAddCategory();
+                  }}
+                  placeholder="输入分类名称"
+                  className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                />
+                {categoryError && (
+                  <p className="text-xs text-red-500 mt-1">{categoryError}</p>
+                )}
+              </div>
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={cancelAddCategory}
+                  className="px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleAddCategory}
+                  disabled={!newCategoryName.trim()}
+                  className="px-4 py-2 text-sm bg-indigo-600 hover:bg-indigo-700 disabled:bg-zinc-300 text-white rounded-lg transition-colors"
+                >
+                  创建
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

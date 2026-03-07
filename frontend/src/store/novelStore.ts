@@ -210,12 +210,15 @@ export const useNovelStore = create<NovelState>()(
         timeline: [{ id: 'time-war', name: '百年前大战', novelId: 'novel-1' }],
       },
       agents: [
-        { id: 'controller', name: 'Controller', role: '流程总控', prompt: '...', temperature: 0.4, enabled: true },
-        { id: 'planner', name: 'Planner', role: '规划架构', prompt: '...', temperature: 0.7, enabled: true },
-        { id: 'writer', name: 'Writer', role: '章节写作', prompt: '...', temperature: 0.9, enabled: true },
-        { id: 'editor', name: 'Editor', role: '润色修订', prompt: '...', temperature: 0.4, enabled: true },
-        { id: 'conflict', name: 'Conflict', role: '冲突设计', prompt: '...', temperature: 0.8, enabled: true },
-        { id: 'reader', name: 'Reader', role: '读者评估', prompt: '...', temperature: 0.6, enabled: true },
+        { id: 'facilitator', name: 'Facilitator', role: '调度协调', prompt: '负责Agent调度和讨论主持', temperature: 0.5, enabled: true, personality: 'structure' },
+        { id: 'planner', name: 'Planner', role: '规划架构', prompt: '负责章节规划和剧情架构', temperature: 0.7, enabled: true, personality: 'structure' },
+        { id: 'writer', name: 'Writer', role: '章节写作', prompt: '负责具体章节写作', temperature: 0.9, enabled: true, personality: 'literary' },
+        { id: 'editor', name: 'Editor', role: '润色修订', prompt: '负责文本润色和结构优化', temperature: 0.4, enabled: true, personality: 'logic' },
+        { id: 'conflict', name: 'Conflict', role: '冲突设计', prompt: '负责冲突设计和戏剧性增强', temperature: 0.8, enabled: true, personality: 'drama' },
+        { id: 'reader', name: 'Reader', role: '读者评估', prompt: '负责读者视角评估', temperature: 0.6, enabled: true, personality: 'reader' },
+        { id: 'consistency', name: 'Consistency', role: '一致性检查', prompt: '负责逻辑一致性检查', temperature: 0.3, enabled: true, personality: 'logic' },
+        { id: 'critic', name: 'Critic', role: '批判评估', prompt: '负责批判性评估和改进建议', temperature: 0.5, enabled: true, personality: 'logic' },
+        { id: 'summary', name: 'Summary', role: '摘要总结', prompt: '负责内容摘要和总结', temperature: 0.4, enabled: true, personality: 'structure' },
       ],
 
       setWorkspaceModule: (m) => set({ workspaceModule: m }),
@@ -307,7 +310,26 @@ export const useNovelStore = create<NovelState>()(
       })),
     }),
     { 
-      name: 'novel-storage-v3',
+      name: 'novel-storage-v4',
+      partialize: (state) => ({
+        // 排除 agents，使用最新的默认值
+        workspaceModule: state.workspaceModule,
+        currentSidebarView: state.currentSidebarView,
+        selectedAssetCategory: state.selectedAssetCategory,
+        novels: state.novels,
+        deletedNovels: state.deletedNovels,
+        currentNovelId: state.currentNovelId,
+        currentChapterId: state.currentChapterId,
+        constraints: state.constraints,
+        agentConfigs: state.agentConfigs,
+        messages: state.messages,
+        writingMode: state.writingMode,
+        worldBible: state.worldBible,
+        worldApproved: state.worldApproved,
+        categories: state.categories,
+        selectedCategoryId: state.selectedCategoryId,
+        storyAssets: state.storyAssets,
+      }),
       onRehydrateStorage: () => (state) => {
         state?.checkRecycleBin?.();
       }

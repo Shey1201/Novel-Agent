@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 export type SkillCategoryType = 'system' | 'writing' | 'domain' | 'auditing';
-export type AgentType = 'writer' | 'editor' | 'planner' | 'conflict' | 'reader' | 'summary';
+export type AgentType = 'writer' | 'editor' | 'planner' | 'conflict' | 'reader' | 'summary' | 'critic' | 'consistency';
 
 export interface SkillCategory {
   id: string;

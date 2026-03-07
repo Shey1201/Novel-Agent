@@ -40,9 +40,33 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle>((_, ref) => {
   };
 
   const editor = useEditor({
-    extensions: [StarterKit, Highlight.configure({ multicolor: true }), BubbleMenuExtension],
+    extensions: [
+      StarterKit.configure({
+        // 禁用默认的 Tab 行为，使用自定义处理
+        codeBlock: false,
+      }),
+      Highlight.configure({ multicolor: true }),
+      BubbleMenuExtension,
+    ],
     content: currentChapter?.content || "<p>在这里开始你的小说创作...</p>",
     immediatelyRender: false,
+    editorProps: {
+      handleKeyDown: (view, event) => {
+        // 处理 Tab 键 - 插入两个全角空格（模拟首行缩进）
+        if (event.key === 'Tab') {
+          event.preventDefault();
+          const { state } = view;
+          const { selection } = state;
+          const { $from } = selection;
+          
+          // 在当前位置插入两个全角空格
+          const tr = state.tr.insertText('　　', $from.pos);
+          view.dispatch(tr);
+          return true;
+        }
+        return false;
+      },
+    },
     onUpdate: ({ editor }) => {
       if (currentNovelId && currentChapterId) {
         updateChapterContent(currentNovelId, currentChapterId, editor.getHTML());
@@ -152,7 +176,7 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle>((_, ref) => {
           </BubbleMenu>
           <EditorContent
             editor={editor}
-            className="focus:outline-none min-h-[500px] py-4 prose prose-zinc max-w-none"
+            className="tiptap-editor focus:outline-none min-h-[500px] py-4 max-w-none"
           />
         </>
       )}

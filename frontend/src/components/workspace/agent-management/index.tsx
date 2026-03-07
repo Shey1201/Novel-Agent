@@ -62,23 +62,25 @@ const AgentConfigForm: React.FC<{ agent: Agent }> = ({ agent }) => {
 };
 
 const AgentManagement: React.FC = () => {
-  const { agents } = useNovelStore();
+  const { agents, currentNovelId } = useNovelStore();
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(agents[0]?.id || null);
   const selectedAgent = agents.find(a => a.id === selectedAgentId) || null;
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-zinc-900">Agent Management</h1>
-        <p className="text-sm text-zinc-500 mt-1">配置和管理您的 AI 创作团队中的每个角色。</p>
+    <div className="h-full flex flex-col">
+      <div className="p-4 border-b border-zinc-200">
+        <h1 className="text-xl font-bold text-zinc-900">Agent Management</h1>
+        <p className="text-sm text-zinc-500 mt-1">配置和管理您的 AI 创作团队</p>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="md:col-span-1 space-y-2">
+      
+      <div className="flex-1 overflow-hidden flex">
+        {/* 左侧 Agent 列表 */}
+        <div className="w-64 border-r border-zinc-200 overflow-y-auto p-3">
           {agents.map(agent => (
             <button
               key={agent.id}
               onClick={() => setSelectedAgentId(agent.id)}
-              className={`w-full text-left p-3 rounded-lg transition-colors ${
+              className={`w-full text-left p-3 rounded-lg transition-colors mb-2 ${
                 selectedAgentId === agent.id
                   ? 'bg-indigo-100 text-indigo-700'
                   : 'hover:bg-zinc-100'
@@ -88,12 +90,14 @@ const AgentManagement: React.FC = () => {
             </button>
           ))}
         </div>
-        <div className="md:col-span-3">
+        
+        {/* 右侧配置区域 */}
+        <div className="flex-1 overflow-y-auto p-6">
           {selectedAgent ? (
             <AgentConfigForm agent={selectedAgent} />
           ) : (
             <div className="flex items-center justify-center h-full text-zinc-400 text-sm">
-              Select an agent to configure.
+              选择一个 Agent 进行配置
             </div>
           )}
         </div>

@@ -1,11 +1,14 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import { MainSidebar } from "@/components/layout/MainSidebar";
 import { SecondarySidebar } from "@/components/layout/SecondarySidebar";
 import { AgentPanel } from "@/components/layout/AgentPanel";
 import { TopBar } from "@/components/layout/TopBar";
 import { TiptapEditor, type TiptapEditorHandle } from "@/components/editor/TiptapEditor";
+import { StreamingEditor } from "@/components/editor/StreamingEditor";
+import { AgentTimeline } from "@/components/visualization/AgentTimeline";
+import { DownloadDialog } from "@/components/editor/DownloadDialog";
 import { useNovelStore } from "@/store/novelStore";
 import AgentManagement from "@/components/workspace/agent-management";
 import StoryAssets from "@/components/workspace/story-assets";
@@ -17,6 +20,9 @@ import RecycleBin from "@/components/workspace/recycle-bin";
 export default function Home() {
   const editorRef = useRef<TiptapEditorHandle>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [showStreamingEditor, setShowStreamingEditor] = useState(false);
+  const [showAgentTimeline, setShowAgentTimeline] = useState(false);
+  const [showDownloadDialog, setShowDownloadDialog] = useState(false);
   const {
     workspaceModule,
     currentSidebarView,
@@ -65,14 +71,22 @@ export default function Home() {
   // 判断是否处于小说编辑模式
   const isNovelEditingMode = workspaceModule === 'novels' && currentNovelId;
 
+  // 监听打开下载对话框事件
+  useEffect(() => {
+    const handleOpenDownloadDialog = () => setShowDownloadDialog(true);
+    window.addEventListener('openDownloadDialog', handleOpenDownloadDialog);
+    return () => window.removeEventListener('openDownloadDialog', handleOpenDownloadDialog);
+  }, []);
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-zinc-50 font-sans text-zinc-900">
       <MainSidebar />
 
       <div className="flex flex-1 flex-col min-w-0 overflow-hidden">
-        <TopBar />
+        {/* 只在小说编辑模式显示顶栏 */}
+        {isNovelEditingMode && <TopBar />}
 
-        <div className="flex flex-1 min-h-0 overflow-hidden">
+        <div className={`flex flex-1 min-h-0 overflow-hidden ${!isNovelEditingMode ? 'pt-0' : ''}`}>
           {/* 只在小说编辑模式显示二级侧边栏 */}
           {isNovelEditingMode && <SecondarySidebar />}
 
@@ -81,12 +95,12 @@ export default function Home() {
               {workspaceModule === 'novels' && !currentNovelId && <Library />}
 
               {workspaceModule === 'novels' && currentNovelId && currentSidebarView === 'chapter' && (
-                <div className="w-full max-w-3xl mx-auto p-8 space-y-4">
+                <div className="w-full max-w-3xl mx-auto px-8 py-8 space-y-4">
                   <div className="flex items-center justify-between border-b border-zinc-200 pb-2">
                     <input
                       value={currentChapter?.title || ''}
                       onChange={(e) => currentNovel && currentChapter && updateChapterTitle(currentNovel.id, currentChapter.id, e.target.value)}
-                      className="flex-1 text-2xl font-bold outline-none bg-transparent"
+                      className="flex-1 text-2xl font-bold outline-none bg-transparent px-0"
                       placeholder="请输入章节标题..."
                     />
                     <div className="flex items-center gap-2">
@@ -104,7 +118,6 @@ export default function Home() {
                       </button>
                     </div>
                   </div>
-                  <div className="text-xs text-zinc-500">Outline：建议在右侧 Agent Room 使用 /outline 生成。</div>
                   <TiptapEditor ref={editorRef} />
                 </div>
               )}
@@ -150,10 +163,76 @@ export default function Home() {
             </div>
           </main>
 
-          {/* 只在小说编辑模式显示 Agent Panel */}
+          {/* 小说编辑模式下显示右侧聊天面板 */}
           {isNovelEditingMode && <AgentPanel />}
         </div>
       </div>
+
+      {/* AI 写作弹窗 */}
+      {showStreamingEditor && currentNovelId && currentChapterId && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-4xl h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-zinc-200">
+              <h3 className="font-bold text-lg">✍️ AI 流式写作</h3>
+              <button
+                onClick={() => setShowStreamingEditor(false)}
+                className="p-2 hover:bg-zinc-100 rounded-lg transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex-1 p-4 overflow-hidden">
+              <StreamingEditor
+                novelId={currentNovelId}
+                chapterId={currentChapterId}
+                planText={currentChapter?.content?.substring(0, 500) || "继续故事"}
+                onComplete={(text) => {
+                  console.log("Generated:", text);
+                }}
+                onSave={(text) => {
+                  if (currentNovel && currentChapter) {
+                    // 保存生成的内容
+                    console.log("Saving:", text);
+                  }
+                  setShowStreamingEditor(false);
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Agent 执行时间线弹窗 */}
+      {showAgentTimeline && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-2xl h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-zinc-200">
+              <h3 className="font-bold text-lg">⭐ Agent 执行过程</h3>
+              <button
+                onClick={() => setShowAgentTimeline(false)}
+                className="p-2 hover:bg-zinc-100 rounded-lg transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex-1 p-4 overflow-hidden">
+              <AgentTimeline
+                workflowId={`workflow-${currentNovelId}-${currentChapterId}`}
+                onComplete={() => console.log("Workflow complete")}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 下载对话框 - 渲染在最外层避免被遮挡 */}
+      {currentNovelId && (
+        <DownloadDialog
+          isOpen={showDownloadDialog}
+          onClose={() => setShowDownloadDialog(false)}
+          novelId={currentNovelId}
+        />
+      )}
     </div>
   );
 }

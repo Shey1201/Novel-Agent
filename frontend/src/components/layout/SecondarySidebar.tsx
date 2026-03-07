@@ -9,6 +9,7 @@ interface Volume {
   id: string;
   name: string;
   chapterIds: string[];
+  order: number;
 }
 
 interface Arc {
@@ -61,72 +62,36 @@ export const SecondarySidebar: React.FC = () => {
     fetchMountedAssets,
   } = useAssetStore();
 
-  const [expandStoryBible, setExpandStoryBible] = useState(false);
-  const [expandOutline, setExpandOutline] = useState(false);
-  const [expandChapters, setExpandChapters] = useState(true);
-  const [volumes, setVolumes] = useState<Volume[]>([
-    { id: "vol-1", name: "Volume 1", chapterIds: [] },
-  ]);
-  const [arcs] = useState<Arc[]>([
-    { id: "arc-1", name: "Arc 1" },
-    { id: "arc-2", name: "Arc 2" },
-  ]);
+  const [volumes, setVolumes] = useState<Volume[]>([]);
   const [editingVolumeId, setEditingVolumeId] = useState<string | null>(null);
   const [editVolumeName, setEditVolumeName] = useState("");
   const [isAddingVolume, setIsAddingVolume] = useState(false);
   const [newVolumeName, setNewVolumeName] = useState("");
-  const [selectedVolumeId, setSelectedVolumeId] = useState<string | null>("vol-1");
+  const [expandedVolumes, setExpandedVolumes] = useState<Set<string>>(new Set(['vol-default']));
   const [chapterMenuOpen, setChapterMenuOpen] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<SidebarTab>('structure');
-  const [showAssetModal, setShowAssetModal] = useState(false);
-  const [assetSearchQuery, setAssetSearchQuery] = useState('');
+  const [expandStoryBible, setExpandStoryBible] = useState(false);
+  const [expandOutline, setExpandOutline] = useState(false);
+  const [arcs, setArcs] = useState<Arc[]>([
+    { id: 'arc-1', name: '第一幕：开端' },
+    { id: 'arc-2', name: '第二幕：发展' },
+    { id: 'arc-3', name: '第三幕：高潮' },
+    { id: 'arc-4', name: '第四幕：结局' },
+  ]);
+
+
 
   const currentNovel = useMemo(() => novels.find((n) => n.id === currentNovelId), [novels, currentNovelId]);
 
+  // 初始化默认卷
   useEffect(() => {
-    fetchAllAssets();
-  }, [fetchAllAssets]);
-
-  useEffect(() => {
-    if (currentNovelId) {
-      fetchMountedAssets(currentNovelId);
+    if (volumes.length === 0 && currentNovel) {
+      setVolumes([
+        { id: "vol-default", name: "未分卷", chapterIds: currentNovel.chapters.map(ch => ch.id), order: 0 }
+      ]);
+      setExpandedVolumes(new Set(['vol-default']));
     }
-  }, [currentNovelId, fetchMountedAssets]);
-
-  const novelMountedAssets = useMemo(() => {
-    const assetIds = mountedAssets[currentNovelId || ''] || [];
-    return assets.filter(a => assetIds.includes(a.id));
-  }, [assets, mountedAssets, currentNovelId]);
-
-  const mountedAssetsByType = useMemo(() => {
-    const grouped: Record<AssetType, typeof novelMountedAssets> = {
-      characters: [],
-      worldbuilding: [],
-      factions: [],
-      locations: [],
-      timeline: [],
-    };
-    novelMountedAssets.forEach(asset => {
-      if (grouped[asset.type]) {
-        grouped[asset.type].push(asset);
-      }
-    });
-    return grouped;
-  }, [novelMountedAssets]);
-
-  const availableAssets = useMemo(() => {
-    const mountedIds = new Set(mountedAssets[currentNovelId || ''] || []);
-    return assets.filter(a => !mountedIds.has(a.id));
-  }, [assets, mountedAssets, currentNovelId]);
-
-  const filteredAvailableAssets = useMemo(() => {
-    if (!assetSearchQuery) return availableAssets;
-    const query = assetSearchQuery.toLowerCase();
-    return availableAssets.filter(a => 
-      a.name.toLowerCase().includes(query) ||
-      a.source_novel_name.toLowerCase().includes(query)
-    );
-  }, [availableAssets, assetSearchQuery]);
+  }, [currentNovel, volumes.length]);
 
   useEffect(() => {
     if (currentNovel?.chapters.length && !currentChapterId) {
@@ -138,10 +103,6 @@ export const SecondarySidebar: React.FC = () => {
   if (!currentNovelId) return null;
 
   const getChaptersByVolume = (volumeId: string) => {
-    if (volumeId === "vol-default") {
-      const allAssignedChapterIds = volumes.flatMap(v => v.chapterIds);
-      return currentNovel?.chapters.filter(ch => !allAssignedChapterIds.includes(ch.id)) || [];
-    }
     const volume = volumes.find(v => v.id === volumeId);
     if (!volume) return [];
     return currentNovel?.chapters.filter(ch => volume.chapterIds.includes(ch.id)) || [];
@@ -156,7 +117,19 @@ export const SecondarySidebar: React.FC = () => {
     return "vol-default";
   };
 
-  const addNewChapter = () => {
+  const toggleVolumeExpanded = (volumeId: string) => {
+    setExpandedVolumes(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(volumeId)) {
+        newSet.delete(volumeId);
+      } else {
+        newSet.add(volumeId);
+      }
+      return newSet;
+    });
+  };
+
+  const addNewChapter = (volumeId: string = "vol-default") => {
     if (!currentNovelId) return;
     const next = (currentNovel?.chapters.length || 0) + 1;
     const id = `chapter-${currentNovelId}-${next}`;
@@ -164,13 +137,15 @@ export const SecondarySidebar: React.FC = () => {
     setCurrentChapterId(id);
     setCurrentSidebarView("chapter");
     
-    if (selectedVolumeId && selectedVolumeId !== "vol-default") {
-      setVolumes(prev => prev.map(v => 
-        v.id === selectedVolumeId 
-          ? { ...v, chapterIds: [...v.chapterIds, id] }
-          : v
-      ));
-    }
+    // 将新章节添加到指定卷
+    setVolumes(prev => prev.map(v => 
+      v.id === volumeId 
+        ? { ...v, chapterIds: [...v.chapterIds, id] }
+        : v
+    ));
+    
+    // 展开该卷
+    setExpandedVolumes(prev => new Set([...prev, volumeId]));
   };
 
   const handleAddVolume = () => {
@@ -179,11 +154,13 @@ export const SecondarySidebar: React.FC = () => {
         id: `vol-${Date.now()}`,
         name: newVolumeName.trim(),
         chapterIds: [],
+        order: volumes.length,
       };
       setVolumes([...volumes, newVolume]);
       setNewVolumeName("");
       setIsAddingVolume(false);
-      setSelectedVolumeId(newVolume.id);
+      // 自动展开新卷
+      setExpandedVolumes(prev => new Set([...prev, newVolume.id]));
     }
   };
 
@@ -197,23 +174,39 @@ export const SecondarySidebar: React.FC = () => {
   };
 
   const handleDeleteVolume = (id: string) => {
-    if (confirm('确定要删除这个卷吗？该卷下的章节将变为未分卷状态。')) {
-      setVolumes(prev => prev.filter(v => v.id !== id));
-      if (selectedVolumeId === id) {
-        setSelectedVolumeId("vol-default");
+    if (id === 'vol-default') {
+      alert('不能删除"未分卷"');
+      return;
+    }
+    if (confirm('确定要删除这个卷吗？该卷下的章节将移动到"未分卷"。')) {
+      const volumeToDelete = volumes.find(v => v.id === id);
+      if (volumeToDelete) {
+        // 将章节移动到未分卷
+        setVolumes(prev => prev.map(v => {
+          if (v.id === 'vol-default') {
+            return { ...v, chapterIds: [...v.chapterIds, ...volumeToDelete.chapterIds] };
+          }
+          return v;
+        }).filter(v => v.id !== id));
       }
     }
   };
 
   const startEditingVolume = (volume: Volume) => {
+    if (volume.id === 'vol-default') {
+      alert('不能编辑"未分卷"名称');
+      return;
+    }
     setEditingVolumeId(volume.id);
     setEditVolumeName(volume.name);
   };
 
   const moveChapterToVolume = (chapterId: string, targetVolumeId: string) => {
     setVolumes(prev => prev.map(v => {
+      // 从所有卷中移除该章节
       const newChapterIds = v.chapterIds.filter(id => id !== chapterId);
-      if (v.id === targetVolumeId && targetVolumeId !== "vol-default") {
+      // 添加到目标卷
+      if (v.id === targetVolumeId) {
         return { ...v, chapterIds: [...newChapterIds, chapterId] };
       }
       return { ...v, chapterIds: newChapterIds };
@@ -221,16 +214,33 @@ export const SecondarySidebar: React.FC = () => {
     setChapterMenuOpen(null);
   };
 
-  const unassignedChapters = getChaptersByVolume("vol-default");
-  const hasUnassignedChapters = unassignedChapters.length > 0;
+  // 计算字数 - 从 HTML 中提取纯文本
+  const calculateWordCount = (content: string = ""): number => {
+    // 如果是 HTML，先提取纯文本
+    let text = content;
+    if (content.includes('<') && content.includes('>')) {
+      // 简单的 HTML 标签移除
+      text = content.replace(/<[^>]+>/g, '');
+      // 移除 HTML 实体
+      text = text.replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+    }
+    // 移除空白字符
+    text = text.replace(/\s+/g, '');
+    // 统计中文字符
+    const chineseChars = (text.match(/[\u4e00-\u9fa5]/g) || []).length;
+    // 统计英文单词（连续的英文字母）
+    const englishWords = (text.match(/[a-zA-Z]+/g) || []).length;
+    // 统计单个数字字符（不是数字组）
+    const numberChars = (text.match(/\d/g) || []).length;
+    // 统计其他字符（标点符号等）
+    const otherChars = text.length - chineseChars - englishWords - numberChars;
+    return chineseChars + englishWords + numberChars + otherChars;
+  };
 
   const renderChapterItem = (ch: { id: string; title: string; content?: string }) => {
     const isActive = currentChapterId === ch.id;
     const currentVolumeId = getChapterVolumeId(ch.id);
-    // 计算字数（中文字符 + 英文单词）
-    const wordCount = ch.content ? 
-      (ch.content.match(/[\u4e00-\u9fa5]/g) || []).length + 
-      (ch.content.match(/[a-zA-Z]+/g) || []).length : 0;
+    const wordCount = calculateWordCount(ch.content);
     
     return (
       <div key={ch.id} className="group/chapter relative">
@@ -239,25 +249,27 @@ export const SecondarySidebar: React.FC = () => {
             setCurrentChapterId(ch.id);
             setCurrentSidebarView("chapter");
           }}
-          className={`w-full text-left px-2.5 py-1.5 rounded-md text-[13px] flex items-center gap-2 ${
+          className={`w-full text-left px-2.5 py-1.5 rounded-md text-[13px] flex items-center gap-2 transition-colors ${
             isActive ? "bg-indigo-100 text-indigo-700" : "text-zinc-700 hover:bg-zinc-200"
           }`}
         >
           <span className="text-xs">📄</span>
           <span className="truncate flex-1">{ch.title}</span>
-          <span className="text-[10px] text-zinc-400 ml-1">{wordCount > 0 ? `${wordCount}字` : ''}</span>
+          <span className="text-[10px] text-zinc-400 ml-1 tabular-nums">{wordCount > 0 ? `${wordCount}字` : ''}</span>
         </button>
         
-        <div className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover/chapter:opacity-100">
+        {/* 移动按钮 */}
+        <div className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover/chapter:opacity-100 transition-opacity">
           <button
             onClick={(e) => {
               e.stopPropagation();
               setChapterMenuOpen(chapterMenuOpen === ch.id ? null : ch.id);
             }}
             className="p-1 text-zinc-400 hover:text-indigo-600 hover:bg-white/50 rounded"
+            title="移动到..."
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>
+              <path d="M4 12h16"/><path d="M13 5l7 7-7 7"/>
             </svg>
           </button>
           
@@ -267,7 +279,7 @@ export const SecondarySidebar: React.FC = () => {
                 className="fixed inset-0 z-40"
                 onClick={() => setChapterMenuOpen(null)}
               />
-              <div className="absolute right-0 top-full mt-1 w-36 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50">
+              <div className="absolute right-0 top-full mt-1 w-40 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50">
                 <div className="px-3 py-1.5 text-xs text-zinc-400 border-b border-zinc-100">
                   移动到
                 </div>
@@ -279,19 +291,10 @@ export const SecondarySidebar: React.FC = () => {
                       currentVolumeId === volume.id ? 'text-indigo-600 bg-indigo-50' : 'text-zinc-700'
                     }`}
                   >
-                    <span className="text-[10px]">📁</span>
+                    <span className="text-[10px]">{volume.id === 'vol-default' ? '📄' : '📁'}</span>
                     {volume.name}
                   </button>
                 ))}
-                <button
-                  onClick={() => moveChapterToVolume(ch.id, "vol-default")}
-                  className={`w-full px-3 py-2 text-left text-xs hover:bg-zinc-50 flex items-center gap-2 ${
-                    currentVolumeId === "vol-default" ? 'text-indigo-600 bg-indigo-50' : 'text-zinc-700'
-                  }`}
-                >
-                  <span className="text-[10px]">📄</span>
-                  未分卷
-                </button>
               </div>
             </>
           )}
@@ -339,13 +342,10 @@ export const SecondarySidebar: React.FC = () => {
       <div className="p-3 space-y-1 overflow-y-auto flex-1">
         {activeTab === 'skills' ? (
           <SkillMountPanel novelId={currentNovelId || ''} />
-        ) : activeTab === 'structure' ? (
+        ) : activeTab === 'bible' ? (
           <>
-            {/* Novel 根节点 */}
-            <div className="text-[13px] font-bold text-zinc-800 px-2 py-1.5">Novel</div>
-            
             {/* Story Bible */}
-            <div className="pl-2">
+            <div className="mb-2">
               <button
                 onClick={() => setExpandStoryBible(!expandStoryBible)}
                 className="w-full flex items-center gap-1 text-[13px] text-zinc-700 hover:bg-zinc-200 rounded-md px-2 py-1.5"
@@ -373,7 +373,7 @@ export const SecondarySidebar: React.FC = () => {
             </div>
 
             {/* Outline */}
-            <div className="pl-2">
+            <div className="mb-2">
               <button
                 onClick={() => setExpandOutline(!expandOutline)}
                 className="w-full flex items-center gap-1 text-[13px] text-zinc-700 hover:bg-zinc-200 rounded-md px-2 py-1.5"
@@ -395,108 +395,128 @@ export const SecondarySidebar: React.FC = () => {
                 </div>
               )}
             </div>
-
-            {/* Chapters */}
-            <div className="pl-2">
-              <div className="flex items-center justify-between pr-1">
-                <button
-                  onClick={() => setExpandChapters(!expandChapters)}
-                  className="flex-1 flex items-center gap-1 text-[13px] text-zinc-700 hover:bg-zinc-200 rounded-md px-2 py-1.5"
-                >
-                  <span className="text-xs">{expandChapters ? "⌄" : "›"}</span>
-                  <span>Chapters</span>
-                </button>
-                <button 
-                  onClick={addNewChapter} 
-                  className="w-6 h-6 flex items-center justify-center text-indigo-500 hover:bg-indigo-50 rounded transition-colors"
-                  title="添加章节"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-                </button>
+          </>
+        ) : (
+          <>
+            {/* Novel 根节点 - 加粗文字，不可展开 */}
+            <div>
+              <div className="flex items-center justify-between px-2 py-1.5">
+                <span className="text-[13px] font-bold text-zinc-800">Novel</span>
+                {/* Novel 右侧按钮组 - 下载和新建卷 */}
+                <div className="flex items-center gap-0.5">
+                  {/* 下载按钮 */}
+                  <button
+                    onClick={() => window.dispatchEvent(new CustomEvent('openDownloadDialog'))}
+                    className="p-1 text-zinc-400 hover:text-indigo-600 hover:bg-zinc-100 rounded transition-all"
+                    title="下载小说"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                      <polyline points="7 10 12 15 17 10"/>
+                      <line x1="12" x2="12" y1="15" y2="3"/>
+                    </svg>
+                  </button>
+                  {/* 新建卷按钮 */}
+                  <button
+                    onClick={() => setIsAddingVolume(true)}
+                    className="p-1 text-zinc-400 hover:text-indigo-600 hover:bg-zinc-100 rounded transition-all"
+                    title="新建卷"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M5 12h14"/><path d="M12 5v14"/>
+                    </svg>
+                  </button>
+                </div>
               </div>
+              <p className="px-2 text-[10px] text-zinc-400 mb-2">内容可通过右侧 Agent Room 生成</p>
 
-              {expandChapters && (
-                <div className="pl-4 space-y-2 mt-1">
-                  {/* 卷列表 */}
-                  {volumes.map((volume) => (
-                    <div key={volume.id} className="group/volume">
-                      {editingVolumeId === volume.id ? (
-                        <div className="px-2 py-1 flex items-center gap-1">
-                          <input
-                            autoFocus
-                            value={editVolumeName}
-                            onChange={(e) => setEditVolumeName(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') handleUpdateVolume(volume.id);
-                              if (e.key === 'Escape') setEditingVolumeId(null);
-                            }}
-                            onBlur={() => handleUpdateVolume(volume.id)}
-                            className="flex-1 text-[13px] px-2 py-1 border border-zinc-300 rounded outline-none focus:border-indigo-500"
-                          />
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-between px-2 py-1 group/volume-header">
+              <div className="space-y-1 mt-1">
+                {/* 卷列表 - 按顺序排列 */}
+                {[...volumes].sort((a, b) => a.order - b.order).map((volume) => (
+                  <div key={volume.id} className="group/volume">
+                    {editingVolumeId === volume.id ? (
+                      <div className="flex items-center gap-1 px-2 py-1.5">
+                        <input
+                          autoFocus
+                          value={editVolumeName}
+                          onChange={(e) => setEditVolumeName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleUpdateVolume(volume.id);
+                            if (e.key === 'Escape') setEditingVolumeId(null);
+                          }}
+                          onBlur={() => handleUpdateVolume(volume.id)}
+                          className="flex-1 text-[13px] px-2 py-1 border border-zinc-300 rounded outline-none focus:border-indigo-500"
+                        />
+                      </div>
+                    ) : (
+                      <div className="group/volume-header">
+                        {/* 卷标题行 */}
+                        <div className="flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-zinc-200 transition-colors">
                           <button
-                            onClick={() => setSelectedVolumeId(selectedVolumeId === volume.id ? null : volume.id)}
-                            className="flex items-center gap-1 text-[13px] text-zinc-500 hover:text-zinc-700"
+                            onClick={() => toggleVolumeExpanded(volume.id)}
+                            className="flex items-center gap-1 flex-1 text-left"
                           >
-                            <span className="text-xs">{selectedVolumeId === volume.id ? "⌄" : "›"}</span>
-                            <span>{volume.name}</span>
+                            <span className="text-xs transition-transform inline-flex items-center justify-center w-3 h-4">{expandedVolumes.has(volume.id) ? "⌄" : "›"}</span>
+                            <span className="text-[13px] text-zinc-700">{volume.name}</span>
+                            <span className="text-[10px] text-zinc-400 ml-1">({volume.chapterIds.length})</span>
                           </button>
-                          <div className="opacity-0 group-hover/volume:opacity-100 flex items-center gap-1">
+                          
+                          {/* 卷操作按钮 - 未分卷不显示编辑和删除 */}
+                          <div className={`flex items-center gap-0.5 transition-opacity ${volume.id === 'vol-default' ? '' : 'opacity-0 group-hover/volume:opacity-100'}`}>
+                            {/* 新建章节按钮 */}
                             <button
-                              onClick={() => startEditingVolume(volume)}
-                              className="p-1 text-zinc-400 hover:text-indigo-600"
-                              title="编辑"
+                              onClick={() => addNewChapter(volume.id)}
+                              className="p-1 text-zinc-400 hover:text-indigo-600 hover:bg-white/50 rounded"
+                              title="新建章节"
                             >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M5 12h14"/><path d="M12 5v14"/>
+                              </svg>
                             </button>
-                            <button
-                              onClick={() => handleDeleteVolume(volume.id)}
-                              className="p-1 text-zinc-400 hover:text-red-600"
-                              title="删除"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg>
-                            </button>
+                            {/* 编辑按钮 - 未分卷不显示 */}
+                            {volume.id !== 'vol-default' && (
+                              <button
+                                onClick={() => startEditingVolume(volume)}
+                                className="p-1 text-zinc-400 hover:text-indigo-600 hover:bg-white/50 rounded"
+                                title="编辑卷名"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                                </svg>
+                              </button>
+                            )}
+                            {/* 删除按钮 - 未分卷不显示 */}
+                            {volume.id !== 'vol-default' && (
+                              <button
+                                onClick={() => handleDeleteVolume(volume.id)}
+                                className="p-1 text-zinc-400 hover:text-red-600 hover:bg-white/50 rounded"
+                                title="删除卷"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                                </svg>
+                              </button>
+                            )}
                           </div>
                         </div>
-                      )}
-                      
-                      {selectedVolumeId === volume.id && (
-                        <div className="pl-3 space-y-0.5 mt-0.5">
-                          {getChaptersByVolume(volume.id).map((ch) => renderChapterItem(ch))}
-                          {getChaptersByVolume(volume.id).length === 0 && (
-                            <div className="text-[12px] text-zinc-400 px-2 py-1">暂无章节</div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                        
+                        {/* 章节列表 */}
+                        {expandedVolumes.has(volume.id) && (
+                          <div className="pl-4 space-y-0.5 mt-0.5">
+                            {getChaptersByVolume(volume.id).map((ch) => renderChapterItem(ch))}
+                            {getChaptersByVolume(volume.id).length === 0 && (
+                              <div className="text-[12px] text-zinc-400 px-2 py-1 italic">暂无章节</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
 
-                  {/* 未分卷章节 */}
-                  {(hasUnassignedChapters || volumes.length === 0) && (
-                    <div>
-                      <button
-                        onClick={() => setSelectedVolumeId(selectedVolumeId === "vol-default" ? null : "vol-default")}
-                        className="flex items-center gap-1 px-2 py-1 text-[13px] text-zinc-500 hover:text-zinc-700"
-                      >
-                        <span className="text-xs">{selectedVolumeId === "vol-default" ? "⌄" : "›"}</span>
-                        <span>未分卷</span>
-                      </button>
-                      {selectedVolumeId === "vol-default" && (
-                        <div className="pl-3 space-y-0.5 mt-0.5">
-                          {unassignedChapters.map((ch) => renderChapterItem(ch))}
-                          {unassignedChapters.length === 0 && (
-                            <div className="text-[12px] text-zinc-400 px-2 py-1">暂无未分卷章节</div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* 添加新卷 */}
+                  {/* 添加新卷输入框 */}
                   {isAddingVolume ? (
-                    <div className="px-2 py-1">
+                    <div className="px-2 py-1.5">
                       <div className="flex items-center gap-1">
                         <input
                           autoFocus
@@ -517,7 +537,9 @@ export const SecondarySidebar: React.FC = () => {
                           disabled={!newVolumeName.trim()}
                           className="p-1 text-green-600 hover:bg-green-50 rounded disabled:text-zinc-300"
                         >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M20 6 9 17l-5-5"/>
+                          </svg>
                         </button>
                         <button
                           onClick={() => {
@@ -526,178 +548,19 @@ export const SecondarySidebar: React.FC = () => {
                           }}
                           className="p-1 text-zinc-400 hover:text-red-500"
                         >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+                          </svg>
                         </button>
                       </div>
                     </div>
-                  ) : (
-                    <button
-                      onClick={() => setIsAddingVolume(true)}
-                      className="w-full px-2 py-1.5 text-left text-[13px] text-zinc-400 hover:text-indigo-600 hover:bg-zinc-100 rounded flex items-center gap-1 transition-colors"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-                      添加新卷
-                    </button>
-                  )}
+                  ) : null}
                 </div>
-              )}
-            </div>
-          </>
-        ) : (
-          <>
-            {/* Bible Tab 内容 */}
-            <div className="space-y-4">
-              {/* 已挂载的资产列表 */}
-              {(Object.keys(mountedAssetsByType) as AssetType[]).map((type) => {
-                const typeAssets = mountedAssetsByType[type];
-                if (typeAssets.length === 0) return null;
-                
-                return (
-                  <div key={type}>
-                    <div className="flex items-center gap-2 px-2 py-1.5 text-[13px] font-medium text-zinc-700">
-                      <span className="text-zinc-400">{typeIcons[type]}</span>
-                      <span>{typeLabels[type]}</span>
-                      <span className="text-xs text-zinc-400">({typeAssets.length})</span>
-                    </div>
-                    <div className="pl-6 space-y-0.5">
-                      {typeAssets.map((asset) => (
-                        <button
-                          key={asset.id}
-                          className="w-full text-left px-2 py-1.5 text-[13px] text-zinc-600 hover:bg-zinc-200 rounded-md flex items-center gap-2 group"
-                        >
-                          <span className="truncate flex-1">{asset.name}</span>
-                          {asset.is_starred && (
-                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" className="text-amber-400"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-
-              {novelMountedAssets.length === 0 && (
-                <div className="text-center py-8 text-zinc-400">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mx-auto mb-2"><path d="M12 2H2v10h10V2Z"/><path d="M12 12H2v10h10V12Z"/><path d="M22 2h-10v10h10V2Z"/><path d="M22 12h-10v10h10V12Z"/></svg>
-                  <p className="text-xs">暂无引用的设定</p>
-                </div>
-              )}
-
-              {/* 从全局库添加按钮 */}
-              <button
-                onClick={() => setShowAssetModal(true)}
-                className="w-full py-2.5 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg flex items-center justify-center gap-2 transition-colors"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M11 8v6"/><path d="M8 11h6"/></svg>
-                从全局库添加
-              </button>
             </div>
           </>
         )}
       </div>
 
-      {/* 全局库弹窗 */}
-      {showAssetModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div 
-            className="absolute inset-0 bg-black/30 backdrop-blur-sm"
-            onClick={() => setShowAssetModal(false)}
-          />
-          <div className="relative bg-white rounded-xl shadow-xl w-[480px] max-h-[600px] flex flex-col">
-            {/* 弹窗头部 */}
-            <div className="flex items-center justify-between p-4 border-b border-zinc-200">
-              <h3 className="font-semibold text-zinc-900">从全局库添加设定</h3>
-              <button
-                onClick={() => setShowAssetModal(false)}
-                className="p-1.5 text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 rounded-lg transition-colors"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-              </button>
-            </div>
-
-            {/* 搜索框 */}
-            <div className="p-4 border-b border-zinc-200">
-              <div className="relative">
-                <svg 
-                  xmlns="http://www.w3.org/2000/svg" 
-                  width="16" 
-                  height="16" 
-                  viewBox="0 0 24 24" 
-                  fill="none" 
-                  stroke="currentColor" 
-                  strokeWidth="2" 
-                  strokeLinecap="round" 
-                  strokeLinejoin="round"
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400"
-                >
-                  <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
-                </svg>
-                <input
-                  type="text"
-                  placeholder="搜索资产..."
-                  value={assetSearchQuery}
-                  onChange={(e) => setAssetSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                />
-              </div>
-            </div>
-
-            {/* 资产列表 */}
-            <div className="flex-1 overflow-y-auto p-4">
-              {filteredAvailableAssets.length > 0 ? (
-                <div className="space-y-2">
-                  {filteredAvailableAssets.map((asset) => (
-                    <div
-                      key={asset.id}
-                      className="flex items-center gap-3 p-3 border border-zinc-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50/30 transition-colors"
-                    >
-                      <div 
-                        className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
-                        style={{ backgroundColor: `${asset.color || '#6366f1'}15`, color: asset.color || '#6366f1' }}
-                      >
-                        {typeIcons[asset.type]}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium text-sm text-zinc-900 truncate">{asset.name}</div>
-                        <div className="text-xs text-zinc-500 truncate">{asset.source_novel_name}</div>
-                      </div>
-                      <button
-                        onClick={async () => {
-                          if (currentNovelId) {
-                            await useAssetStore.getState().mountAssetToNovel(asset.id, currentNovelId, 'linked');
-                            await fetchMountedAssets(currentNovelId);
-                          }
-                        }}
-                        className="px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors"
-                      >
-                        添加
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-8 text-zinc-400">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mx-auto mb-3"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
-                  <p className="text-sm">{assetSearchQuery ? '未找到匹配的资产' : '暂无可添加的资产'}</p>
-                </div>
-              )}
-            </div>
-
-            {/* 底部 */}
-            <div className="p-4 border-t border-zinc-200 flex justify-between items-center">
-              <span className="text-xs text-zinc-500">
-                {filteredAvailableAssets.length} 个可用资产
-              </span>
-              <button
-                onClick={() => setShowAssetModal(false)}
-                className="px-4 py-2 text-sm font-medium text-zinc-700 bg-zinc-100 hover:bg-zinc-200 rounded-lg transition-colors"
-              >
-                完成
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </aside>
   );
 };

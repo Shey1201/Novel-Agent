@@ -1,17 +1,18 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { useAssetStore, type AssetType, type GlobalAsset, type AgentType } from '@/store/assetStore';
+"use client";
+
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { useAssetStore, type AssetType, type GlobalAsset } from '@/store/assetStore';
 import { useNovelStore } from '@/store/novelStore';
 
-type ViewMode = 'by-novel' | 'by-type' | 'starred';
+type ViewMode = 'by-type' | 'starred' | 'uncategorized';
+type PanelMode = 'view' | 'edit';
 
-const agentTypeLabels: Record<AgentType, string> = {
-  writer: '写作Agent',
-  editor: '编辑Agent',
-  planner: '规划Agent',
-  conflict: '冲突Agent',
-  reader: '读者Agent',
-  summary: '总结Agent'
-};
+// 自定义分类类型
+interface CustomCategory {
+  id: string;
+  name: string;
+  color: string;
+}
 
 const typeLabels: Record<AssetType, string> = {
   characters: '角色',
@@ -39,10 +40,31 @@ const typeIcons: Record<AssetType, React.ReactNode> = {
   ),
 };
 
+const typeColors: Record<AssetType, string> = {
+  characters: '#8b5cf6',
+  worldbuilding: '#10b981',
+  factions: '#f59e0b',
+  locations: '#3b82f6',
+  timeline: '#ec4899',
+};
+
+// 从localStorage加载自定义分类
+const loadCustomCategories = (): CustomCategory[] => {
+  if (typeof window === 'undefined') return [];
+  const saved = localStorage.getItem('asset-custom-categories');
+  return saved ? JSON.parse(saved) : [];
+};
+
+// 保存自定义分类到localStorage
+const saveCustomCategories = (categories: CustomCategory[]) => {
+  localStorage.setItem('asset-custom-categories', JSON.stringify(categories));
+};
+
 // 获取按小说分组的资产
 const getAssetsByNovel = (assets: GlobalAsset[]) => {
   const grouped: Record<string, { id: string; name: string; assets: GlobalAsset[] }> = {};
   assets.forEach(asset => {
+    if (asset.source_novel_id === 'uncategorized') return;
     if (!grouped[asset.source_novel_id]) {
       grouped[asset.source_novel_id] = {
         id: asset.source_novel_id,
@@ -55,6 +77,11 @@ const getAssetsByNovel = (assets: GlobalAsset[]) => {
   return Object.values(grouped);
 };
 
+// 获取未分类资产
+const getUncategorizedAssets = (assets: GlobalAsset[]) => {
+  return assets.filter(a => a.source_novel_id === 'uncategorized');
+};
+
 const StoryAssets: React.FC = () => {
   const { novels, currentNovelId } = useNovelStore();
   const {
@@ -65,51 +92,278 @@ const StoryAssets: React.FC = () => {
     unmountAssetFromNovel,
     toggleStarAsset,
     isAssetMounted,
-    fetchSkillsByAsset,
-    createSkillFromAsset,
-    toggleSkillActive,
-    deleteSkill,
-    getSkillsByAssetId
+    setSelectedAsset: setStoreSelectedAsset,
+    updateAssetAPI,
+    deleteAssetAPI,
+    createAsset
   } = useAssetStore();
 
-  const [viewMode, setViewMode] = useState<ViewMode>('by-novel');
-  const [selectedNovelId, setSelectedNovelId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>('by-type');
+
   const [selectedType, setSelectedType] = useState<AssetType | null>(null);
   const [selectedAsset, setSelectedAsset] = useState<GlobalAsset | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [showSkillModal, setShowSkillModal] = useState(false);
-  const [skillName, setSkillName] = useState('');
-  const [skillDescription, setSkillDescription] = useState('');
-  const [selectedAgents, setSelectedAgents] = useState<AgentType[]>(['writer']);
+  
+  // 展开/收起状态
+  const [expandedSections, setExpandedSections] = useState({
+    byType: true,
+    customCategories: true,
+  });
+  
+  // 面板模式：view = 只读, edit = 编辑
+  const [panelMode, setPanelMode] = useState<PanelMode>('view');
+  
+  // 编辑状态
+  const [editName, setEditName] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [hasChanges, setHasChanges] = useState(false);
+  
+  // 创建资产弹窗
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createName, setCreateName] = useState('');
+  const [createDescription, setCreateDescription] = useState('');
+  const [createType, setCreateType] = useState<AssetType | string>('');
+  const [createCategoryId, setCreateCategoryId] = useState<string | null>(null);
+  const [typeDropdownOpen, setTypeDropdownOpen] = useState(false);
+  const [typeSearchQuery, setTypeSearchQuery] = useState('');
+  const typeDropdownRef = useRef<HTMLDivElement>(null);
+  
+  // 同步提示
+  const [syncNotice, setSyncNotice] = useState<string | null>(null);
+
+  // 移动资产弹窗
+  const [showMoveModal, setShowMoveModal] = useState(false);
+  const [targetNovelId, setTargetNovelId] = useState<string>('');
+
+  // 自定义分类
+  const [customCategories, setCustomCategories] = useState<CustomCategory[]>([]);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [newCategoryColor, setNewCategoryColor] = useState('#6366f1');
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
+
+  // 加载自定义分类
+  useEffect(() => {
+    setCustomCategories(loadCustomCategories());
+  }, []);
 
   // 初始加载
   useEffect(() => {
     fetchAllAssets();
   }, [fetchAllAssets]);
 
-  // 加载选中资产的技能
+  // 点击外部关闭类型下拉框
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (typeDropdownRef.current && !typeDropdownRef.current.contains(event.target as Node)) {
+        setTypeDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // 加载选中资产时重置状态
   useEffect(() => {
     if (selectedAsset) {
-      fetchSkillsByAsset(selectedAsset.id);
-      setSkillName(`${selectedAsset.name}约束`);
-      setSkillDescription(`基于${selectedAsset.name}设定的创作约束`);
+      setStoreSelectedAsset(selectedAsset.id);
+      setEditName(selectedAsset.name);
+      setEditDescription(selectedAsset.description || '');
+      setPanelMode('view');
+      setHasChanges(false);
+    } else {
+      setStoreSelectedAsset(null);
     }
-  }, [selectedAsset, fetchSkillsByAsset]);
+  }, [selectedAsset, setStoreSelectedAsset]);
+  
+  // 处理资产选择
+  const handleSelectAsset = (asset: GlobalAsset | null) => {
+    setSelectedAsset(asset);
+    setPanelMode('view');
+    setHasChanges(false);
+    setSyncNotice(null);
+  };
+  
+  // 进入编辑模式
+  const handleStartEdit = () => {
+    if (!selectedAsset) return;
+    setEditName(selectedAsset.name);
+    setEditDescription(selectedAsset.description || '');
+    setPanelMode('edit');
+    setHasChanges(false);
+  };
 
-  // 按小说分组的资产
-  const novelsWithAssets = useMemo(() => getAssetsByNovel(assets), [assets]);
+  // 取消编辑
+  const handleCancelEdit = () => {
+    if (!selectedAsset) return;
+    setEditName(selectedAsset.name);
+    setEditDescription(selectedAsset.description || '');
+    setPanelMode('view');
+    setHasChanges(false);
+  };
+  
+  // 保存编辑
+  const handleSaveEdit = async () => {
+    if (!selectedAsset) return;
+    
+    const updates: Partial<GlobalAsset> = {};
+    if (editName.trim() && editName !== selectedAsset.name) {
+      updates.name = editName.trim();
+    }
+    if (editDescription !== (selectedAsset.description || '')) {
+      updates.description = editDescription.trim();
+    }
+    
+    if (Object.keys(updates).length > 0) {
+      const updated = await updateAssetAPI(selectedAsset.id, updates);
+      if (updated) {
+        setSelectedAsset(updated);
+        setPanelMode('view');
+        setHasChanges(false);
+        // 显示同步提示
+        setSyncNotice('已同步至 Agent Room，Agent 将在下一轮讨论中自动对齐新设定');
+        setTimeout(() => setSyncNotice(null), 3000);
+      }
+    } else {
+      setPanelMode('view');
+      setHasChanges(false);
+    }
+  };
+  
+  // 删除资产（仅用户创建的可删除）
+  const handleDeleteAsset = async () => {
+    if (!selectedAsset) return;
+    
+    if (confirm(`确定要删除资产「${selectedAsset.name}」吗？此操作不可撤销。`)) {
+      const success = await deleteAssetAPI(selectedAsset.id);
+      if (success) {
+        setSelectedAsset(null);
+        setPanelMode('view');
+      }
+    }
+  };
+
+  // 开始移动资产
+  const handleStartMove = () => {
+    if (!selectedAsset) return;
+    setTargetNovelId(selectedAsset.source_novel_id === 'uncategorized' ? '' : selectedAsset.source_novel_id);
+    setShowMoveModal(true);
+  };
+
+  // 确认移动资产
+  const handleConfirmMove = async () => {
+    if (!selectedAsset || !targetNovelId) return;
+    
+    const targetNovel = novels.find(n => n.id === targetNovelId);
+    if (!targetNovel) return;
+
+    const updates: Partial<GlobalAsset> = {
+      source_novel_id: targetNovelId,
+      source_novel_name: targetNovel.title,
+    };
+    
+    const updated = await updateAssetAPI(selectedAsset.id, updates);
+    if (updated) {
+      setSelectedAsset(updated);
+      setShowMoveModal(false);
+      setSyncNotice(`已移动至「${targetNovel.title}」`);
+      setTimeout(() => setSyncNotice(null), 3000);
+    }
+  };
+  
+  // 开始创建资产（可指定默认类型和分类）
+  const handleStartCreate = (defaultType?: AssetType, defaultCategoryId?: string | null) => {
+    setCreateName('');
+    setCreateDescription('');
+    setCreateType(defaultType || '');
+    setCreateCategoryId(defaultCategoryId || null);
+    setShowCreateModal(true);
+  };
+  
+  // 保存创建（放置到未分类或指定分类）
+  const handleSaveCreate = async () => {
+    if (!createName.trim()) return;
+    
+    // 如果没有选择类型，默认为 characters
+    const finalType = createType || 'characters';
+    
+    const newAsset = await createAsset({
+      id: `asset_${Date.now()}`,
+      name: createName.trim(),
+      type: finalType as AssetType,
+      description: createDescription.trim(),
+      source_novel_id: 'uncategorized',
+      source_novel_name: '未分类',
+      color: typeColors[finalType as AssetType] || '#6366f1',
+      is_starred: false,
+      created_by: 'user',
+    });
+    
+    if (newAsset) {
+      setShowCreateModal(false);
+      setSelectedAsset(newAsset);
+      // 根据创建时的选择切换视图
+      if (createCategoryId) {
+        setSelectedCategoryId(createCategoryId);
+        setViewMode('by-type');
+      } else if (createType && Object.keys(typeLabels).includes(createType)) {
+        setSelectedType(createType as AssetType);
+        setViewMode('by-type');
+      } else {
+        setViewMode('uncategorized');
+      }
+      setCreateCategoryId(null);
+    }
+  };
+
+  // 创建自定义分类
+  const handleCreateCategory = () => {
+    if (!newCategoryName.trim()) return;
+    
+    // 随机颜色
+    const colors = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#ef4444', '#6b7280', '#14b8a6', '#f97316'];
+    const randomColor = colors[Math.floor(Math.random() * colors.length)];
+    
+    const newCategory: CustomCategory = {
+      id: `cat_${Date.now()}`,
+      name: newCategoryName.trim(),
+      color: randomColor,
+    };
+    
+    const updated = [...customCategories, newCategory];
+    setCustomCategories(updated);
+    saveCustomCategories(updated);
+    setNewCategoryName('');
+    setShowCategoryModal(false);
+  };
+
+  // 删除自定义分类
+  const handleDeleteCategory = (categoryId: string) => {
+    if (!confirm('确定要删除此分类吗？分类中的资产将被移至未分类。')) return;
+    
+    const updated = customCategories.filter(c => c.id !== categoryId);
+    setCustomCategories(updated);
+    saveCustomCategories(updated);
+    
+    if (selectedCategoryId === categoryId) {
+      setSelectedCategoryId(null);
+    }
+  };
+
+  // 未分类资产
+  const uncategorizedAssets = useMemo(() => getUncategorizedAssets(assets), [assets]);
 
   // 过滤资产
   const filteredAssets = useMemo(() => {
     let result = assets;
 
     // 根据视图模式过滤
-    if (viewMode === 'by-novel' && selectedNovelId) {
-      result = result.filter(a => a.source_novel_id === selectedNovelId);
-    } else if (viewMode === 'by-type' && selectedType) {
+    if (viewMode === 'by-type' && selectedType) {
       result = result.filter(a => a.type === selectedType);
     } else if (viewMode === 'starred') {
       result = result.filter(a => a.is_starred);
+    } else if (viewMode === 'uncategorized') {
+      result = result.filter(a => a.source_novel_id === 'uncategorized');
     }
 
     // 搜索过滤
@@ -123,7 +377,7 @@ const StoryAssets: React.FC = () => {
     }
 
     return result;
-  }, [assets, viewMode, selectedNovelId, selectedType, searchQuery]);
+  }, [assets, viewMode, selectedType, searchQuery]);
 
   // 处理挂载/卸载
   const handleToggleMount = async (assetId: string, novelId: string) => {
@@ -131,7 +385,7 @@ const StoryAssets: React.FC = () => {
     if (isMounted) {
       await unmountAssetFromNovel(assetId, novelId);
     } else {
-      await mountAssetToNovel(assetId, novelId, 'linked');
+      await mountAssetToNovel(assetId, novelId);
     }
   };
 
@@ -141,218 +395,263 @@ const StoryAssets: React.FC = () => {
     await toggleStarAsset(assetId);
   };
 
-  // 处理创建技能
-  const handleCreateSkill = async () => {
-    if (!selectedAsset || selectedAgents.length === 0) return;
-
-    await createSkillFromAsset(
-      selectedAsset.id,
-      skillName,
-      skillDescription,
-      selectedAgents,
-      currentNovelId || undefined
-    );
-
-    setShowSkillModal(false);
-  };
-
-  // 切换Agent选择
-  const toggleAgentSelection = (agent: AgentType) => {
-    setSelectedAgents(prev =>
-      prev.includes(agent)
-        ? prev.filter(a => a !== agent)
-        : [...prev, agent]
-    );
-  };
-
-  // 获取当前资产的技能
-  const assetSkills = selectedAsset ? getSkillsByAssetId(selectedAsset.id) : [];
-
-  if (isLoading) {
-    return (
-      <div className="h-full flex items-center justify-center">
-        <div className="text-zinc-400">加载中...</div>
-      </div>
-    );
-  }
+  // 检查是否有修改
+  useEffect(() => {
+    if (selectedAsset && panelMode === 'edit') {
+      const nameChanged = editName !== selectedAsset.name;
+      const descChanged = editDescription !== (selectedAsset.description || '');
+      setHasChanges(nameChanged || descChanged);
+    }
+  }, [editName, editDescription, selectedAsset, panelMode]);
 
   return (
-    <div className="h-full flex">
+    <div className="h-full flex bg-zinc-50">
       {/* 左侧：全局分类树 */}
-      <div className="w-64 bg-zinc-50 border-r border-zinc-200 flex flex-col">
-        <div className="p-4 border-b border-zinc-200">
-          <h2 className="text-sm font-semibold text-zinc-900">资产库</h2>
-          <p className="text-xs text-zinc-500 mt-1">全局资源管理中心</p>
+      <div className="w-64 bg-white border-r border-zinc-200 flex flex-col shadow-sm">
+        <div className="p-3 border-b border-zinc-100">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-semibold text-zinc-900">资产库</h2>
+              <p className="text-[11px] text-zinc-500 mt-0.5">全局资源管理中心</p>
+            </div>
+            <button
+              onClick={() => handleStartCreate()}
+              className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+              title="新增资产"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+          </div>
         </div>
         
-        <div className="flex-1 overflow-y-auto p-3 space-y-1">
-          {/* 按小说归类 */}
-          <div className="mb-4">
+        <div className="flex-1 overflow-y-auto py-2">
+          {/* 收藏 - 独立项，带填充图标，显示数量 */}
+          <div className="px-2 mb-1">
             <button
-              onClick={() => { setViewMode('by-novel'); setSelectedNovelId(null); }}
-              className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                viewMode === 'by-novel' && !selectedNovelId
-                  ? 'bg-indigo-100 text-indigo-700'
-                  : 'text-zinc-700 hover:bg-zinc-100'
+              onClick={() => { 
+                setViewMode('starred');
+                setSelectedType(null);
+                setSelectedCategoryId(null);
+              }}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-left transition-colors text-[13px] ${
+                viewMode === 'starred' 
+                  ? 'bg-zinc-100 text-zinc-900' 
+                  : 'hover:bg-zinc-50 text-zinc-600'
               }`}
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
-              按小说归类
-            </button>
-            {viewMode === 'by-novel' && (
-              <div className="ml-4 mt-1 space-y-1">
-                {novelsWithAssets.map(novel => (
-                  <button
-                    key={novel.id}
-                    onClick={() => setSelectedNovelId(novel.id)}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors ${
-                      selectedNovelId === novel.id
-                        ? 'bg-indigo-50 text-indigo-700'
-                        : 'text-zinc-600 hover:bg-zinc-100'
-                    }`}
-                  >
-                    <span className="truncate">{novel.name}</span>
-                    <span className="text-xs text-zinc-400">{novel.assets.length}</span>
-                  </button>
-                ))}
+              <div className="flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={viewMode === 'starred' ? 'text-amber-500' : 'text-zinc-400'}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                <span>收藏</span>
               </div>
-            )}
+              <span className="text-[11px] text-zinc-400">{assets.filter(a => a.is_starred).length}</span>
+            </button>
           </div>
 
-          {/* 按类型归类 */}
-          <div className="mb-4">
+          {/* 全部类型 - 直接显示，显示数量 */}
+          <div className="px-2 mb-1">
             <button
-              onClick={() => { setViewMode('by-type'); setSelectedType(null); }}
-              className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                viewMode === 'by-type' && !selectedType
-                  ? 'bg-indigo-100 text-indigo-700'
-                  : 'text-zinc-700 hover:bg-zinc-100'
+              onClick={() => { 
+                setViewMode('by-type'); 
+                setSelectedType(null);
+                setSelectedCategoryId(null);
+              }}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-left transition-colors text-[13px] font-medium ${
+                viewMode === 'by-type' && !selectedType && !selectedCategoryId
+                  ? 'bg-zinc-100 text-zinc-900' 
+                  : 'hover:bg-zinc-50 text-zinc-600'
               }`}
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7V4h3"/><path d="M4 17v3h3"/><path d="M20 7V4h-3"/><path d="M20 17v3h-3"/><circle cx="12" cy="12" r="3"/></svg>
-              按类型归类
+              <span>全部</span>
+              <span className="text-[11px] text-zinc-400">{assets.length}</span>
             </button>
-            {viewMode === 'by-type' && (
-              <div className="ml-4 mt-1 space-y-1">
-                {(Object.keys(typeLabels) as AssetType[]).map(type => (
+          </div>
+
+          {/* 未分类 - 带数量 */}
+          <div className="px-2 mb-1">
+            <button
+              onClick={() => {
+                setViewMode('uncategorized');
+                setSelectedType(null);
+                setSelectedCategoryId(null);
+              }}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-left transition-colors text-[13px] ${
+                viewMode === 'uncategorized'
+                  ? 'bg-zinc-100 text-zinc-900' 
+                  : 'hover:bg-zinc-50 text-zinc-600'
+              }`}
+            >
+              <span>未分类</span>
+              <span className="text-[11px] text-zinc-400">{uncategorizedAssets.length}</span>
+            </button>
+          </div>
+
+          {/* 按类型 - 一级平铺，带彩色圆点，显示数量 */}
+          <div className="px-2 mb-1">
+            <div className="space-y-0.5">
+              {(Object.keys(typeLabels) as AssetType[]).map(type => {
+                const count = assets.filter(a => a.type === type).length;
+                const isSelected = viewMode === 'by-type' && selectedType === type;
+                return (
                   <button
                     key={type}
-                    onClick={() => setSelectedType(type)}
-                    className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
-                      selectedType === type
-                        ? 'bg-indigo-50 text-indigo-700'
-                        : 'text-zinc-600 hover:bg-zinc-100'
+                    onClick={() => {
+                      setViewMode('by-type');
+                      setSelectedType(type);
+                      setSelectedCategoryId(null);
+                    }}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-left transition-colors text-[13px] ${
+                      isSelected
+                        ? 'bg-zinc-100 text-zinc-900' 
+                        : 'hover:bg-zinc-50 text-zinc-600'
                     }`}
                   >
-                    <span className="text-zinc-400">{typeIcons[type]}</span>
-                    <span>{typeLabels[type]}</span>
+                    <div className="flex items-center gap-2">
+                      <span 
+                        className="w-2 h-2 rounded-full" 
+                        style={{ backgroundColor: typeColors[type] }}
+                      />
+                      <span>{typeLabels[type]}</span>
+                    </div>
+                    <span className="text-[11px] text-zinc-400">{count}</span>
                   </button>
-                ))}
-              </div>
-            )}
+                );
+              })}
+            </div>
           </div>
 
-          {/* 收藏/常用 */}
-          <button
-            onClick={() => setViewMode('starred')}
-            className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-              viewMode === 'starred'
-                ? 'bg-indigo-100 text-indigo-700'
-                : 'text-zinc-700 hover:bg-zinc-100'
-            }`}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-            收藏/常用
-          </button>
+          {/* 自定义分类 - 一级平铺，带彩色圆点，显示数量 */}
+          <div className="px-2">
+            <div className="flex items-center justify-between px-3 py-2">
+              <span className="text-[11px] font-medium text-zinc-400 uppercase tracking-wider">自定义</span>
+              <button
+                onClick={() => setShowCategoryModal(true)}
+                className="p-1 text-zinc-400 hover:text-indigo-600 rounded transition-colors"
+                title="新建分类"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              </button>
+            </div>
+            
+            <div className="space-y-0.5">
+              {customCategories.map(category => {
+                const count = assets.filter(a => (a as GlobalAsset & { category_id?: string }).category_id === category.id).length;
+                const isSelected = selectedCategoryId === category.id;
+                return (
+                  <div
+                    key={category.id}
+                    className={`flex items-center justify-between px-3 py-2 rounded-lg transition-colors ${
+                      isSelected
+                        ? 'bg-zinc-100' 
+                        : 'hover:bg-zinc-50'
+                    }`}
+                  >
+                    <button
+                      onClick={() => setSelectedCategoryId(category.id)}
+                      className={`flex items-center gap-2 text-left flex-1 text-[13px] ${
+                        isSelected ? 'text-zinc-900' : 'text-zinc-600 hover:text-zinc-900'
+                      }`}
+                    >
+                      <span 
+                        className="w-2 h-2 rounded-full" 
+                        style={{ backgroundColor: category.color }}
+                      />
+                      <span>{category.name}</span>
+                    </button>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] text-zinc-400">{count}</span>
+                      <button
+                        onClick={() => handleDeleteCategory(category.id)}
+                        className="p-1 text-zinc-300 hover:text-red-500 transition-colors"
+                        title="删除分类"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+              {customCategories.length === 0 && (
+                <p className="text-[11px] text-zinc-400 px-3 py-2 italic">暂无自定义分类</p>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* 中间：资产预览网格 */}
-      <div className="flex-1 flex flex-col bg-zinc-50/50">
-        {/* 顶部搜索栏 */}
+      {/* 中间：资产列表 */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* 搜索栏 */}
         <div className="p-4 border-b border-zinc-200 bg-white">
-          <div className="relative max-w-xl">
-            <svg 
-              xmlns="http://www.w3.org/2000/svg" 
-              width="18" 
-              height="18" 
-              viewBox="0 0 24 24" 
-              fill="none" 
-              stroke="currentColor" 
-              strokeWidth="2" 
-              strokeLinecap="round" 
-              strokeLinejoin="round"
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400"
-            >
-              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
-            </svg>
+          <div className="relative">
             <input
               type="text"
-              placeholder="搜索资产（如：林渊、青云宗...）"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 text-sm border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+              placeholder="搜索资产..."
+              className="w-full pl-10 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
             />
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
           </div>
         </div>
 
-        {/* 资产网格 */}
-        <div className="flex-1 overflow-y-auto p-6">
-          {filteredAssets.length > 0 ? (
-            <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {/* 资产列表 */}
+        <div className="flex-1 overflow-y-auto p-4">
+          {isLoading ? (
+            <div className="flex items-center justify-center h-full text-zinc-400">
+              <div className="animate-spin mr-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+              </div>
+              加载中...
+            </div>
+          ) : filteredAssets.length > 0 ? (
+            <div className="grid grid-cols-3 gap-2">
               {filteredAssets.map(asset => (
                 <div
                   key={asset.id}
-                  onClick={() => setSelectedAsset(asset)}
-                  className={`group bg-white border rounded-xl p-4 cursor-pointer transition-all hover:shadow-md ${
+                  onClick={() => handleSelectAsset(asset)}
+                  className={`p-3 rounded-lg cursor-pointer transition-all relative group ${
                     selectedAsset?.id === asset.id
-                      ? 'border-indigo-500 ring-2 ring-indigo-500/20'
-                      : 'border-zinc-200 hover:border-zinc-300'
+                      ? 'bg-white shadow-sm ring-1 ring-indigo-500'
+                      : 'bg-white hover:shadow-sm border border-zinc-100'
                   }`}
                 >
-                  {/* 卡片头部 */}
-                  <div className="flex items-start justify-between mb-3">
+                  {/* 移动按钮 */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedAsset(asset);
+                      handleStartMove();
+                    }}
+                    className="absolute top-1.5 right-1.5 p-1 text-zinc-300 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-all"
+                    title="移动资产"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 9l7-7 7 7"/><path d="M12 16V2"/></svg>
+                  </button>
+                  
+                  {/* 图标和名称同行 */}
+                  <div className="flex items-center gap-2 mb-1.5">
                     <div 
-                      className="w-10 h-10 rounded-lg flex items-center justify-center"
+                      className="w-6 h-6 rounded flex items-center justify-center shrink-0"
                       style={{ backgroundColor: `${asset.color || '#6366f1'}15`, color: asset.color || '#6366f1' }}
                     >
-                      {typeIcons[asset.type]}
+                      <span className="scale-75">{typeIcons[asset.type]}</span>
                     </div>
-                    <div className="flex items-center gap-1">
-                      {/* 收藏按钮 */}
-                      <button
-                        onClick={(e) => handleToggleStar(e, asset.id)}
-                        className={`p-1.5 rounded-lg transition-colors ${
-                          asset.is_starred 
-                            ? 'text-amber-500 hover:bg-amber-50' 
-                            : 'text-zinc-300 hover:text-amber-500 hover:bg-zinc-100'
-                        }`}
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill={asset.is_starred ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-                      </button>
-                      {/* 引用计数 */}
-                      {asset.mount_count > 0 && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-amber-600 bg-amber-50 rounded-full">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 17h.01"/><path d="M12 2a8 8 0 0 0-8 8c0 3.866 2.582 6.473 6.667 9.623.68.565 1.333.877 1.333.877s.653-.312 1.333-.877C17.418 16.473 20 13.866 20 10a8 8 0 0 0-8-8Z"/></svg>
-                          {asset.mount_count}
-                        </span>
-                      )}
-                    </div>
+                    <h3 className="font-medium text-zinc-900 truncate text-[13px] flex-1 pr-5">{asset.name}</h3>
                   </div>
-
-                  {/* 资产名称 */}
-                  <h3 className="font-semibold text-zinc-900 mb-1">{asset.name}</h3>
                   
-                  {/* 描述 */}
-                  {asset.description && (
-                    <p className="text-xs text-zinc-500 mb-3 line-clamp-2">{asset.description}</p>
-                  )}
-
-                  {/* 所属作品 */}
-                  <div className="flex items-center gap-1.5 text-xs text-zinc-400">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                  {/* 元信息 */}
+                  <div className="flex items-center gap-1.5 text-[11px] text-zinc-400">
+                    <span>{typeLabels[asset.type]}</span>
+                    <span>·</span>
                     <span className="truncate">{asset.source_novel_name}</span>
+                    {asset.is_starred && (
+                      <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="#f59e0b" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="ml-auto"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                    )}
                   </div>
+                  
+                  {asset.description && (
+                    <p className="text-[11px] text-zinc-400 mt-1.5 line-clamp-1">{asset.description}</p>
+                  )}
                 </div>
               ))}
             </div>
@@ -366,202 +665,191 @@ const StoryAssets: React.FC = () => {
         </div>
       </div>
 
-      {/* 右侧：引用详情面板 */}
-      <div className="w-80 bg-white border-l border-zinc-200 flex flex-col">
+      {/* 右侧：资产详情面板 */}
+      <div className="w-80 bg-white border-l border-zinc-200 flex flex-col shadow-sm">
         {selectedAsset ? (
           <>
-            {/* 面板头部 */}
-            <div className="p-4 border-b border-zinc-200">
-              <div className="flex items-center gap-3 mb-3">
+            {/* A. 顶部：资产名片（Status） */}
+            <div className="p-5 border-b border-zinc-100">
+              {/* 同步提示 */}
+              {syncNotice && (
+                <div className="mb-3 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg">
+                  <p className="text-[11px] text-emerald-700 flex items-center gap-1.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    {syncNotice}
+                  </p>
+                </div>
+              )}
+              
+              <div className="flex items-start gap-3">
                 <div 
-                  className="w-12 h-12 rounded-xl flex items-center justify-center"
+                  className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
                   style={{ backgroundColor: `${selectedAsset.color || '#6366f1'}15`, color: selectedAsset.color || '#6366f1' }}
                 >
                   {typeIcons[selectedAsset.type]}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold text-zinc-900 truncate">{selectedAsset.name}</h3>
-                  <span className="text-xs text-zinc-500">{typeLabels[selectedAsset.type]}</span>
+                  {/* 名称 */}
+                  <div className="group relative">
+                    {panelMode === 'edit' ? (
+                      <input
+                        type="text"
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        autoFocus
+                        className="w-full px-2 py-1 text-base font-semibold text-zinc-900 border border-indigo-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    ) : (
+                      <h3 className="font-semibold text-zinc-900 truncate">{selectedAsset.name}</h3>
+                    )}
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-600">#{typeLabels[selectedAsset.type]}</span>
+                      {selectedAsset.created_by === 'agent' && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600">AI生成</span>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <button
-                  onClick={(e) => handleToggleStar(e, selectedAsset.id)}
-                  className={`p-2 rounded-lg transition-colors ${
-                    selectedAsset.is_starred 
-                      ? 'text-amber-500 hover:bg-amber-50' 
-                      : 'text-zinc-300 hover:text-amber-500 hover:bg-zinc-100'
-                  }`}
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill={selectedAsset.is_starred ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-                </button>
+                
+                {/* 编辑/保存按钮 */}
+                {panelMode === 'edit' ? (
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={handleSaveEdit}
+                      disabled={!hasChanges}
+                      className="p-2 rounded-lg transition-colors bg-emerald-100 text-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="保存"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    </button>
+                    <button
+                      onClick={handleCancelEdit}
+                      className="p-2 rounded-lg transition-colors hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600"
+                      title="取消"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={handleStartEdit}
+                    className="p-2 rounded-lg transition-colors hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600"
+                    title="编辑"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                  </button>
+                )}
               </div>
-              <p className="text-sm text-zinc-600">{selectedAsset.description}</p>
+              
+              {/* 描述 */}
+              <div className="mt-3 group">
+                {panelMode === 'edit' ? (
+                  <textarea
+                    value={editDescription}
+                    onChange={(e) => setEditDescription(e.target.value)}
+                    rows={3}
+                    className="w-full px-2 py-1.5 text-sm text-zinc-600 border border-indigo-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                    placeholder="添加描述..."
+                  />
+                ) : (
+                  <p className="text-sm text-zinc-600 leading-relaxed">
+                    {selectedAsset.description || (
+                      <span className="text-zinc-400 italic">暂无描述</span>
+                    )}
+                  </p>
+                )}
+              </div>
             </div>
 
-            {/* 引用管理 */}
-            <div className="flex-1 overflow-y-auto p-4">
-              <div className="mb-4">
-                <h4 className="text-sm font-medium text-zinc-900 mb-3">挂载到作品</h4>
-                <p className="text-xs text-zinc-500 mb-3">选择要引用此资产的小说</p>
-                
-                <div className="space-y-2">
+            {/* B. 中部：挂载与版本（查看模式下也可调整） */}
+            <div className="flex-1 overflow-y-auto p-5">
+              {/* 挂载到作品 */}
+              <div className="mb-6">
+                <div className="flex items-center gap-2 mb-3">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-indigo-500"><path d="M12 2v20"/><path d="M2 12h20"/><path d="m4.93 4.93 14.14 14.14"/><path d="m19.07 4.93-14.14 14.14"/></svg>
+                  <h4 className="text-sm font-medium text-zinc-900">挂载到作品</h4>
+                </div>
+                <div className="space-y-1.5">
                   {novels.map(novel => {
                     const isMounted = isAssetMounted(selectedAsset.id, novel.id);
                     return (
                       <label
                         key={novel.id}
-                        className="flex items-center gap-3 p-3 border border-zinc-200 rounded-lg cursor-pointer hover:bg-zinc-50 transition-colors"
+                        className="flex items-center gap-2 p-2 rounded-lg hover:bg-zinc-50 cursor-pointer transition-colors"
                       >
+                        <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
+                          isMounted ? 'bg-indigo-600 border-indigo-600' : 'border-zinc-300'
+                        }`}>
+                          {isMounted && (
+                            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                          )}
+                        </div>
                         <input
                           type="checkbox"
                           checked={isMounted}
                           onChange={() => handleToggleMount(selectedAsset.id, novel.id)}
-                          className="w-4 h-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
+                          className="sr-only"
                         />
-                        <div className="flex-1">
-                          <div className="text-sm font-medium text-zinc-900">{novel.title}</div>
-                          <div className="text-xs text-zinc-500">
-                            {isMounted ? '已挂载' : '未挂载'}
-                          </div>
-                        </div>
+                        <span className="text-sm text-zinc-700">{novel.title}</span>
                       </label>
                     );
                   })}
                 </div>
               </div>
-
+              
               {/* 版本控制 */}
-              {selectedAsset.version_count > 0 && (
-                <div className="pt-4 border-t border-zinc-200">
-                  <h4 className="text-sm font-medium text-zinc-900 mb-3">版本控制</h4>
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-3 p-3 bg-indigo-50 border border-indigo-200 rounded-lg cursor-pointer">
-                      <input type="radio" name="link-mode" defaultChecked className="w-4 h-4 text-indigo-600" />
-                      <div>
-                        <div className="text-sm font-medium text-zinc-900">链接引用</div>
-                        <div className="text-xs text-zinc-500">随原著更新</div>
-                      </div>
-                    </label>
-                    <label className="flex items-center gap-3 p-3 border border-zinc-200 rounded-lg cursor-pointer hover:bg-zinc-50">
-                      <input type="radio" name="link-mode" className="w-4 h-4 text-indigo-600" />
-                      <div>
-                        <div className="text-sm font-medium text-zinc-900">断开链接</div>
-                        <div className="text-xs text-zinc-500">克隆到当前作品，独立演化</div>
-                      </div>
-                    </label>
-                  </div>
+              <div className="mb-6">
+                <div className="flex items-center gap-2 mb-3">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-indigo-500"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  <h4 className="text-sm font-medium text-zinc-900">版本控制</h4>
                 </div>
-              )}
-
-              {/* Agent技能联动 */}
-              <div className="pt-4 border-t border-zinc-200">
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-sm font-medium text-zinc-900">Agent约束</h4>
-                  <button
-                    onClick={() => setShowSkillModal(true)}
-                    className="text-xs px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex items-center gap-1"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-                    设为Agent约束
-                  </button>
-                </div>
-
-                {assetSkills.length > 0 ? (
-                  <div className="space-y-2">
-                    {assetSkills.map(skill => (
-                      <div
-                        key={skill.id}
-                        className={`p-3 border rounded-lg transition-colors ${
-                          skill.is_active
-                            ? 'border-indigo-200 bg-indigo-50'
-                            : 'border-zinc-200 bg-zinc-50 opacity-60'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-sm font-medium text-zinc-900">{skill.name}</span>
-                          <div className="flex items-center gap-1">
-                            <button
-                              onClick={() => toggleSkillActive(skill.id)}
-                              className={`p-1 rounded transition-colors ${
-                                skill.is_active
-                                  ? 'text-indigo-600 hover:bg-indigo-100'
-                                  : 'text-zinc-400 hover:bg-zinc-200'
-                              }`}
-                              title={skill.is_active ? '禁用' : '启用'}
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                {skill.is_active ? (
-                                  <><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></>
-                                ) : (
-                                  <><path d="M12 2v4M12 18v4"/></>
-                                )}
-                              </svg>
-                            </button>
-                            <button
-                              onClick={() => deleteSkill(skill.id)}
-                              className="p-1 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
-                              title="删除"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                            </button>
-                          </div>
-                        </div>
-                        <p className="text-xs text-zinc-500 mb-2">{skill.description}</p>
-                        <div className="flex flex-wrap gap-1">
-                          {skill.target_agents.map(agent => (
-                            <span
-                              key={agent}
-                              className="text-xs px-2 py-0.5 bg-white border border-zinc-200 rounded text-zinc-600"
-                            >
-                              {agentTypeLabels[agent]}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-4 text-zinc-400 text-sm">
-                    <p>暂无Agent约束</p>
-                    <p className="text-xs mt-1">点击上方按钮创建</p>
-                  </div>
-                )}
-              </div>
-
-              {/* 统计信息 */}
-              <div className="pt-4 border-t border-zinc-200 mt-4">
-                <h4 className="text-sm font-medium text-zinc-900 mb-3">统计信息</h4>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-zinc-500">创建时间</span>
-                    <span className="text-zinc-900">{new Date(selectedAsset.created_at).toLocaleDateString('zh-CN')}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-zinc-500">最后修改</span>
-                    <span className="text-zinc-900">{new Date(selectedAsset.updated_at).toLocaleDateString('zh-CN')}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-zinc-500">引用次数</span>
-                    <span className="text-zinc-900">{selectedAsset.mount_count || 0} 次</span>
-                  </div>
-                  {selectedAsset.version_count > 0 && (
-                    <div className="flex justify-between">
-                      <span className="text-zinc-500">版本数量</span>
-                      <span className="text-zinc-900">{selectedAsset.version_count} 个</span>
+                <div className="space-y-2">
+                  {/* 链接引用选项 */}
+                  <label className="flex items-start gap-3 p-3 bg-indigo-50 border border-indigo-200 rounded-lg cursor-pointer">
+                    <input
+                      type="radio"
+                      name="version-control"
+                      value="linked"
+                      checked={true}
+                      readOnly
+                      className="mt-0.5 w-4 h-4 text-indigo-600 border-zinc-300 focus:ring-indigo-500"
+                    />
+                    <div>
+                      <p className="text-sm font-medium text-zinc-900">链接引用</p>
+                      <p className="text-xs text-zinc-500 mt-0.5">随原著更新</p>
                     </div>
-                  )}
+                  </label>
+                  
+                  {/* 断开链接选项 */}
+                  <label className="flex items-start gap-3 p-3 bg-zinc-50 border border-zinc-200 rounded-lg cursor-pointer hover:bg-zinc-100 transition-colors">
+                    <input
+                      type="radio"
+                      name="version-control"
+                      value="cloned"
+                      className="mt-0.5 w-4 h-4 text-indigo-600 border-zinc-300 focus:ring-indigo-500"
+                    />
+                    <div>
+                      <p className="text-sm font-medium text-zinc-900">断开链接</p>
+                      <p className="text-xs text-zinc-500 mt-0.5">克隆到当前作品，独立演化</p>
+                    </div>
+                  </label>
                 </div>
               </div>
+
             </div>
 
-            {/* 底部操作 */}
-            <div className="p-4 border-t border-zinc-200 space-y-2">
-              <button className="w-full py-2.5 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors">
-                编辑资产
-              </button>
-              <button className="w-full py-2.5 text-sm font-medium text-zinc-700 bg-zinc-100 hover:bg-zinc-200 rounded-lg transition-colors">
-                设为 Agent 约束
-              </button>
-            </div>
+            {/* C. 底部：操作按钮 */}
+            {selectedAsset.created_by === 'user' && (
+              <div className="p-5 border-t border-zinc-100">
+                <button
+                  onClick={handleDeleteAsset}
+                  className="w-full py-2 text-sm text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors flex items-center justify-center gap-2"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                  删除资产
+                </button>
+              </div>
+            )}
           </>
         ) : (
           <div className="flex flex-col items-center justify-center h-full text-zinc-400 p-6 text-center">
@@ -572,110 +860,274 @@ const StoryAssets: React.FC = () => {
         )}
       </div>
 
-      {/* 创建技能弹窗 */}
-      {showSkillModal && selectedAsset && (
+      {/* 创建资产弹窗 */}
+      {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div
             className="absolute inset-0 bg-black/30 backdrop-blur-sm"
-            onClick={() => setShowSkillModal(false)}
+            onClick={() => setShowCreateModal(false)}
           />
           <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 overflow-hidden">
-            {/* 弹窗头部 */}
             <div className="px-6 py-4 border-b border-zinc-200">
-              <h3 className="text-lg font-semibold text-zinc-900">设为Agent约束</h3>
-              <p className="text-sm text-zinc-500 mt-1">
-                将「{selectedAsset.name}」转化为Agent创作约束
-              </p>
+              <h3 className="text-lg font-semibold text-zinc-900">新增资产</h3>
+              <p className="text-sm text-zinc-500 mt-1">创建新的灵感设定（将放入未分类）</p>
             </div>
 
-            {/* 弹窗内容 */}
             <div className="p-6 space-y-4">
-              {/* 技能名称 */}
               <div>
                 <label className="block text-sm font-medium text-zinc-700 mb-1">
-                  约束名称
+                  资产名称 <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
-                  value={skillName}
-                  onChange={(e) => setSkillName(e.target.value)}
+                  value={createName}
+                  onChange={(e) => setCreateName(e.target.value)}
                   className="w-full px-3 py-2 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-sm"
-                  placeholder="输入约束名称"
+                  placeholder="输入资产名称"
                 />
               </div>
 
-              {/* 技能描述 */}
+              <div ref={typeDropdownRef}>
+                <label className="block text-sm font-medium text-zinc-700 mb-1">
+                  资产类型
+                </label>
+                <div className="relative">
+                  <button
+                    onClick={() => setTypeDropdownOpen(!typeDropdownOpen)}
+                    className="w-full px-3 py-2 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-sm bg-white flex items-center justify-between"
+                  >
+                    <span className={createType ? 'text-zinc-900' : 'text-zinc-400'}>
+                      {createType 
+                        ? (typeLabels[createType as AssetType] || customCategories.find(c => c.id === createType)?.name || '请选择资产类型')
+                        : '请选择资产类型'
+                      }
+                    </span>
+                    <span className="text-zinc-400 text-xs">可选</span>
+                  </button>
+                  
+                  {typeDropdownOpen && (
+                    <div className="absolute z-50 w-full mt-1 bg-white border border-zinc-200 rounded-lg shadow-lg max-h-60 overflow-hidden">
+                      <div className="p-2 border-b border-zinc-100">
+                        <input
+                          type="text"
+                          value={typeSearchQuery}
+                          onChange={(e) => setTypeSearchQuery(e.target.value)}
+                          placeholder="搜索类型..."
+                          className="w-full px-2 py-1.5 text-sm border border-zinc-200 rounded focus:outline-none focus:border-indigo-500"
+                          autoFocus
+                        />
+                      </div>
+                      <div className="overflow-y-auto max-h-48">
+                        <button
+                          onClick={() => {
+                            setCreateType('');
+                            setTypeDropdownOpen(false);
+                            setTypeSearchQuery('');
+                          }}
+                          className={`w-full px-3 py-2 text-left text-sm hover:bg-zinc-50 ${!createType ? 'bg-indigo-50 text-indigo-700' : 'text-zinc-600'}`}
+                        >
+                          请选择资产类型
+                        </button>
+                        
+                        <div className="px-3 py-1 text-xs text-zinc-400 bg-zinc-50">固定类型</div>
+                        {(Object.keys(typeLabels) as AssetType[])
+                          .filter(type => typeLabels[type].toLowerCase().includes(typeSearchQuery.toLowerCase()))
+                          .map(type => (
+                            <button
+                              key={type}
+                              onClick={() => {
+                                setCreateType(type);
+                                setTypeDropdownOpen(false);
+                                setTypeSearchQuery('');
+                              }}
+                              className={`w-full px-3 py-2 text-left text-sm hover:bg-zinc-50 flex items-center gap-2 ${
+                                createType === type ? 'bg-indigo-50 text-indigo-700' : 'text-zinc-700'
+                              }`}
+                            >
+                              <span 
+                                className="w-2 h-2 rounded-full" 
+                                style={{ backgroundColor: typeColors[type] }}
+                              />
+                              {typeLabels[type]}
+                            </button>
+                          ))}
+                        
+                        {customCategories.length > 0 && (
+                          <>
+                            <div className="px-3 py-1 text-xs text-zinc-400 bg-zinc-50">自定义分类</div>
+                            {customCategories
+                              .filter(cat => cat.name.toLowerCase().includes(typeSearchQuery.toLowerCase()))
+                              .map(category => (
+                                <button
+                                  key={category.id}
+                                  onClick={() => {
+                                    setCreateType(category.id);
+                                    setTypeDropdownOpen(false);
+                                    setTypeSearchQuery('');
+                                  }}
+                                  className={`w-full px-3 py-2 text-left text-sm hover:bg-zinc-50 flex items-center gap-2 ${
+                                    createType === category.id ? 'bg-indigo-50 text-indigo-700' : 'text-zinc-700'
+                                  }`}
+                                >
+                                  <span 
+                                    className="w-2 h-2 rounded-full" 
+                                    style={{ backgroundColor: category.color }}
+                                  />
+                                  {category.name}
+                                </button>
+                              ))}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-zinc-700 mb-1">
-                  约束描述
+                  资产描述
                 </label>
                 <textarea
-                  value={skillDescription}
-                  onChange={(e) => setSkillDescription(e.target.value)}
-                  rows={3}
+                  value={createDescription}
+                  onChange={(e) => setCreateDescription(e.target.value)}
+                  rows={4}
                   className="w-full px-3 py-2 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-sm resize-none"
-                  placeholder="描述此约束的作用"
+                  placeholder="描述资产的详细信息..."
                 />
-              </div>
-
-              {/* 目标Agent */}
-              <div>
-                <label className="block text-sm font-medium text-zinc-700 mb-2">
-                  应用到Agent
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  {(Object.keys(agentTypeLabels) as AgentType[]).map(agent => (
-                    <label
-                      key={agent}
-                      className={`flex items-center gap-2 p-3 border rounded-lg cursor-pointer transition-colors ${
-                        selectedAgents.includes(agent)
-                          ? 'border-indigo-500 bg-indigo-50'
-                          : 'border-zinc-200 hover:border-zinc-300'
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedAgents.includes(agent)}
-                        onChange={() => toggleAgentSelection(agent)}
-                        className="w-4 h-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
-                      />
-                      <span className="text-sm text-zinc-700">{agentTypeLabels[agent]}</span>
-                    </label>
-                  ))}
-                </div>
-                {selectedAgents.length === 0 && (
-                  <p className="text-xs text-amber-600 mt-2">请至少选择一个Agent</p>
-                )}
-              </div>
-
-              {/* 预览 */}
-              <div className="bg-zinc-50 rounded-lg p-3">
-                <p className="text-xs text-zinc-500 mb-1">约束预览</p>
-                <p className="text-sm text-zinc-700">
-                  {selectedAsset.type === 'characters' && '角色设定约束：'}
-                  {selectedAsset.type === 'worldbuilding' && '世界观约束：'}
-                  {selectedAsset.type === 'factions' && '势力设定约束：'}
-                  {selectedAsset.type === 'locations' && '地点设定约束：'}
-                  {selectedAsset.type === 'timeline' && '时间线约束：'}
-                  {selectedAsset.name}
-                </p>
               </div>
             </div>
 
-            {/* 弹窗底部 */}
             <div className="px-6 py-4 border-t border-zinc-200 flex justify-end gap-3">
               <button
-                onClick={() => setShowSkillModal(false)}
+                onClick={() => setShowCreateModal(false)}
                 className="px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900 transition-colors"
               >
                 取消
               </button>
               <button
-                onClick={handleCreateSkill}
-                disabled={!skillName.trim() || selectedAgents.length === 0}
+                onClick={handleSaveCreate}
+                disabled={!createName.trim()}
                 className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                创建约束
+                创建资产
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 移动资产弹窗 */}
+      {showMoveModal && selectedAsset && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/30 backdrop-blur-sm"
+            onClick={() => setShowMoveModal(false)}
+          />
+          <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-sm mx-4 overflow-hidden">
+            <div className="px-6 py-4 border-b border-zinc-200">
+              <h3 className="text-lg font-semibold text-zinc-900">移动资产</h3>
+              <p className="text-sm text-zinc-500 mt-1">将「{selectedAsset.name}」移动到指定分类</p>
+            </div>
+
+            <div className="p-6">
+              <label className="block text-sm font-medium text-zinc-700 mb-2">目标分类</label>
+              <div className="space-y-1 max-h-60 overflow-y-auto">
+                <button
+                  onClick={() => setTargetNovelId('uncategorized')}
+                  className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors ${
+                    targetNovelId === 'uncategorized'
+                      ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                      : 'hover:bg-zinc-50 text-zinc-700'
+                  }`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-400"><path d="M3 7v14a2 2 0 0 0 2 2h14"/><path d="M3 7V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2"/><path d="M3 7h18"/></svg>
+                  <span className="text-sm">未分类</span>
+                </button>
+                {novels.map(novel => (
+                  <button
+                    key={novel.id}
+                    onClick={() => setTargetNovelId(novel.id)}
+                    className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors ${
+                      targetNovelId === novel.id
+                        ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                        : 'hover:bg-zinc-50 text-zinc-700'
+                    }`}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-400"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                    <span className="text-sm">{novel.title}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-zinc-200 flex justify-end gap-3">
+              <button
+                onClick={() => setShowMoveModal(false)}
+                className="px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900 transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleConfirmMove}
+                disabled={!targetNovelId || targetNovelId === selectedAsset.source_novel_id}
+                className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                确认移动
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 创建分类弹窗 */}
+      {showCategoryModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/30 backdrop-blur-sm"
+            onClick={() => setShowCategoryModal(false)}
+          />
+          <div className="relative bg-white rounded-xl shadow-xl w-full max-w-sm mx-4 overflow-hidden">
+            <div className="px-5 py-3 border-b border-zinc-200">
+              <h3 className="text-base font-semibold text-zinc-900">新建分类</h3>
+            </div>
+
+            <div className="p-5">
+              <input
+                type="text"
+                value={newCategoryName}
+                onChange={(e) => setNewCategoryName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && newCategoryName.trim()) {
+                    handleCreateCategory();
+                  }
+                  if (e.key === 'Escape') {
+                    setShowCategoryModal(false);
+                    setNewCategoryName('');
+                  }
+                }}
+                autoFocus
+                className="w-full px-3 py-2 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-sm"
+                placeholder="输入分类名称"
+              />
+            </div>
+
+            <div className="px-5 py-3 border-t border-zinc-200 flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setShowCategoryModal(false);
+                  setNewCategoryName('');
+                }}
+                className="px-3 py-1.5 text-sm text-zinc-600 hover:text-zinc-900 transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleCreateCategory}
+                disabled={!newCategoryName.trim()}
+                className="px-3 py-1.5 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                创建
               </button>
             </div>
           </div>

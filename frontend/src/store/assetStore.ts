@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 export type AssetType = 'characters' | 'worldbuilding' | 'factions' | 'locations' | 'timeline';
 
-export type AgentType = 'writer' | 'editor' | 'planner' | 'conflict' | 'reader' | 'summary';
+export type AgentType = 'writer' | 'editor' | 'planner' | 'conflict' | 'reader' | 'summary' | 'critic' | 'consistency';
 
 export interface AssetVersion {
   id: string;
@@ -27,6 +27,7 @@ export interface GlobalAsset {
   version_count: number;
   versions?: AssetVersion[];
   active_version_id?: string | null;
+  created_by: 'user' | 'agent';
 }
 
 export interface MountInfo {
@@ -76,6 +77,8 @@ interface AssetState {
   fetchAssetsByNovel: (novelId: string) => Promise<void>;
   fetchMountedAssets: (novelId: string) => Promise<void>;
   createAsset: (asset: Omit<GlobalAsset, 'mount_count' | 'created_at' | 'updated_at' | 'version_count'>) => Promise<GlobalAsset | null>;
+  updateAssetAPI: (assetId: string, updates: Partial<GlobalAsset>) => Promise<GlobalAsset | null>;
+  deleteAssetAPI: (assetId: string) => Promise<boolean>;
   mountAssetToNovel: (assetId: string, novelId: string, referenceType?: 'linked' | 'cloned', versionId?: string) => Promise<boolean>;
   unmountAssetFromNovel: (assetId: string, novelId: string) => Promise<boolean>;
   toggleStarAsset: (assetId: string) => Promise<boolean>;
@@ -217,6 +220,45 @@ export const useAssetStore = create<AssetState>((set, get) => ({
     } catch (err) {
       set({ error: err instanceof Error ? err.message : 'Unknown error', isLoading: false });
       return null;
+    }
+  },
+
+  updateAssetAPI: async (assetId, updates) => {
+    set({ isLoading: true, error: null });
+    try {
+      const response = await fetch(`${API_BASE}/api/assets/${assetId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+      if (!response.ok) throw new Error('Failed to update asset');
+      const data = await response.json();
+      set((state) => ({
+        assets: state.assets.map(a => a.id === assetId ? { ...a, ...data } : a),
+        isLoading: false
+      }));
+      return data;
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : 'Unknown error', isLoading: false });
+      return null;
+    }
+  },
+
+  deleteAssetAPI: async (assetId) => {
+    set({ isLoading: true, error: null });
+    try {
+      const response = await fetch(`${API_BASE}/api/assets/${assetId}`, {
+        method: 'DELETE'
+      });
+      if (!response.ok) throw new Error('Failed to delete asset');
+      set((state) => ({
+        assets: state.assets.filter(a => a.id !== assetId),
+        isLoading: false
+      }));
+      return true;
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : 'Unknown error', isLoading: false });
+      return false;
     }
   },
 

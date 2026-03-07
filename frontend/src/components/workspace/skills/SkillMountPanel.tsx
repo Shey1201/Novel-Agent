@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useSkillStore, type Skill, type SkillCategory } from '@/store/skillStore';
 import { useNovelStore } from '@/store/novelStore';
 
@@ -89,7 +90,8 @@ export const SkillMountPanel: React.FC<SkillMountPanelProps> = ({ novelId }) => 
     return skills.filter((s) => s.category_id === categoryId && s.is_active);
   };
 
-  const getCategoryById = (categoryId: string) => {
+  const getCategoryById = (categoryId: string | null) => {
+    if (!categoryId) return undefined;
     return categories.find((c) => c.id === categoryId);
   };
 
@@ -208,6 +210,23 @@ export const SkillMountPanel: React.FC<SkillMountPanelProps> = ({ novelId }) => 
     (s) => s.is_system && s.is_active
   );
 
+  // 获取已挂载的用户技能（非系统技能）
+  const mountedUserSkills = skills.filter(
+    (s) => !s.is_system && s.is_active && mountedSkillIds.includes(s.id)
+  );
+
+  // 按分类分组已挂载的技能
+  const mountedSkillsByCategory = mountedUserSkills.reduce((acc, skill) => {
+    const category = getCategoryById(skill.category_id);
+    if (category) {
+      if (!acc[category.id]) {
+        acc[category.id] = { category, skills: [] };
+      }
+      acc[category.id].skills.push(skill);
+    }
+    return acc;
+  }, {} as Record<string, { category: SkillCategory; skills: Skill[] }>);
+
   return (
     <div className="h-full flex flex-col">
       {/* 头部 */}
@@ -270,66 +289,62 @@ export const SkillMountPanel: React.FC<SkillMountPanelProps> = ({ novelId }) => 
         </div>
       )}
 
-      {/* 用户技能列表 */}
+      {/* 用户技能列表 - 只显示已挂载的技能 */}
       <div className="flex-1 overflow-y-auto p-3">
-        {/* 创作文风 */}
-        {userCategories.filter((c) => c.type === 'writing').length > 0 && (
-          <div className="mb-4">
-            <div className="flex items-center gap-2 mb-2">
-              <span
-                className="w-2 h-2 rounded-full"
-                style={{ backgroundColor: categoryTypeColors.writing }}
-              />
-              <span className="text-[11px] font-medium text-zinc-500 uppercase">
-                创作文风
-              </span>
+        {Object.values(mountedSkillsByCategory).length > 0 ? (
+          Object.values(mountedSkillsByCategory).map(({ category, skills }) => (
+            <div key={category.id} className="mb-4">
+              <div className="flex items-center gap-2 mb-2">
+                <span
+                  className="w-2 h-2 rounded-full"
+                  style={{ backgroundColor: category.color }}
+                />
+                <span className="text-[11px] font-medium text-zinc-500 uppercase">
+                  {categoryTypeLabels[category.type]}
+                </span>
+                <span className="text-[10px] text-zinc-400">· {category.name}</span>
+              </div>
+              <div className="space-y-1">
+                {skills.map((skill) => (
+                  <div
+                    key={skill.id}
+                    onClick={() => toggleSkillMount(skill.id)}
+                    className="flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors bg-indigo-50 border border-indigo-200 hover:bg-indigo-100"
+                  >
+                    <div className="w-4 h-4 rounded border flex items-center justify-center bg-indigo-600 border-indigo-600">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="white"
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[12px] truncate text-indigo-700 font-medium">
+                        {skill.name}
+                      </p>
+                      {skill.description && (
+                        <p className="text-[10px] text-zinc-500 truncate">
+                          {skill.description}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-            {userCategories
-              .filter((c) => c.type === 'writing')
-              .map(renderCategoryWithSkills)}
-          </div>
-        )}
-
-        {/* 领域知识 */}
-        {userCategories.filter((c) => c.type === 'domain').length > 0 && (
-          <div className="mb-4">
-            <div className="flex items-center gap-2 mb-2">
-              <span
-                className="w-2 h-2 rounded-full"
-                style={{ backgroundColor: categoryTypeColors.domain }}
-              />
-              <span className="text-[11px] font-medium text-zinc-500 uppercase">
-                领域知识
-              </span>
-            </div>
-            {userCategories
-              .filter((c) => c.type === 'domain')
-              .map(renderCategoryWithSkills)}
-          </div>
-        )}
-
-        {/* 质量审计 */}
-        {userCategories.filter((c) => c.type === 'auditing').length > 0 && (
-          <div className="mb-4">
-            <div className="flex items-center gap-2 mb-2">
-              <span
-                className="w-2 h-2 rounded-full"
-                style={{ backgroundColor: categoryTypeColors.auditing }}
-              />
-              <span className="text-[11px] font-medium text-zinc-500 uppercase">
-                质量审计
-              </span>
-            </div>
-            {userCategories
-              .filter((c) => c.type === 'auditing')
-              .map(renderCategoryWithSkills)}
-          </div>
-        )}
-
-        {userCategories.length === 0 && (
+          ))
+        ) : (
           <div className="text-center py-8 text-zinc-400">
-            <p className="text-[12px]">暂无可用技能</p>
-            <p className="text-[10px] mt-1">前往技能库创建</p>
+            <p className="text-[12px]">暂无挂载的技能</p>
+            <p className="text-[10px] mt-1">点击下方按钮添加</p>
           </div>
         )}
       </div>
@@ -359,11 +374,12 @@ export const SkillMountPanel: React.FC<SkillMountPanelProps> = ({ novelId }) => 
       </div>
 
       {/* 全局库弹窗 */}
-      {showGlobalLibrary && (
+      {showGlobalLibrary && typeof document !== 'undefined' && createPortal(
         <GlobalSkillLibraryModal
           novelId={novelId}
           onClose={() => setShowGlobalLibrary(false)}
-        />
+        />,
+        document.body
       )}
     </div>
   );
@@ -390,6 +406,7 @@ const GlobalSkillLibraryModal: React.FC<{
 
   const filteredSkills = skills.filter((skill) => {
     if (!skill.is_active) return false;
+    if (skill.is_system) return false; // 排除系统固定技能
     if (selectedCategory && skill.category_id !== selectedCategory) return false;
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
@@ -413,7 +430,7 @@ const GlobalSkillLibraryModal: React.FC<{
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center" style={{ zIndex: 9999 }}>
       <div className="bg-white rounded-xl w-[600px] max-h-[80vh] flex flex-col">
         {/* 头部 */}
         <div className="p-4 border-b border-zinc-200 flex items-center justify-between">

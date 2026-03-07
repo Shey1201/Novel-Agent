@@ -24,3 +24,49 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Tiptap 编辑器样式 - 类似 Word */
+.tiptap-editor .ProseMirror {
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  background: transparent !important;
+  /* 确保光标可见 */
+  caret-color: #171717 !important;
+}
+
+.tiptap-editor .ProseMirror:focus {
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* 移除编辑器的默认边框和背景 */
+.tiptap-editor {
+  border: none !important;
+  background: transparent !important;
+}
+
+/* 段落样式 - 默认不缩进 */
+.tiptap-editor .ProseMirror p {
+  margin: 0 0 0.5em 0;
+  line-height: 1.6;
+  font-size: 16px;
+  text-indent: 0;
+}
+
+/* 空段落提示 */
+.tiptap-editor .ProseMirror p.is-editor-empty:first-child::before {
+  color: #adb5bd;
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  text-indent: 0;
+}
+
+/* Tab 键支持 - 使用 margin 模拟缩进 */
+.tiptap-editor .ProseMirror p[style*="margin-left"] {
+  text-indent: 0;
+}

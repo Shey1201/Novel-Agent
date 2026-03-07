@@ -1,9 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import novel_routes, generate_chapter, world_routes, agent_routes, asset_routes, skills
+from app.api import novel_routes, generate_chapter, world_routes, agent_routes, asset_routes, skills, system_settings_api
+from app.api import writers_room_api, stream_api, collaboration_api, cache_api, analysis_api, analytics_api, advanced_features_api, agent_room_api, download_api
 
-app = FastAPI(title="Multi-Agent Novel Backend")
+app = FastAPI(title="Novel Agent Studio v3")
 
 # 允许本地 Next.js 前端访问
 app.add_middleware(
@@ -22,10 +23,19 @@ async def health_check():
 
 app.include_router(novel_routes.router)
 app.include_router(generate_chapter.router)
-
-
 app.include_router(world_routes.router)
-
 app.include_router(agent_routes.router)
 app.include_router(asset_routes.router)
 app.include_router(skills.router)
+app.include_router(system_settings_api.router)
+
+# v3 新功能
+app.include_router(writers_room_api.router)
+app.include_router(stream_api.router)
+app.include_router(collaboration_api.router)
+app.include_router(cache_api.router)
+app.include_router(analysis_api.router)
+app.include_router(analytics_api.router)
+app.include_router(advanced_features_api.router)
+app.include_router(agent_room_api.router)
+app.include_router(download_api.router)
