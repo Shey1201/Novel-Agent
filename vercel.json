@@ -12,6 +12,6 @@
       "dest": "frontend/$1"
     }
   ],
-  "installCommand": "cd frontend && npm install --legacy-peer-deps",
+  "installCommand": "cd frontend && rm -f package-lock.json && npm install --force",
   "buildCommand": "cd frontend && npm run build"
 }
