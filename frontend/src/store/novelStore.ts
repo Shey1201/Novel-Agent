@@ -63,6 +63,7 @@ export interface Agent {
   prompt: string;
   temperature: number;
   enabled: boolean;
+  personality: string;
 }
 
 export interface StoryAssetItem {
@@ -310,9 +311,9 @@ export const useNovelStore = create<NovelState>()(
       })),
     }),
     { 
-      name: 'novel-storage-v4',
+      name: 'novel-storage-v5',
       partialize: (state) => ({
-        // 排除 agents，使用最新的默认值
+        // 持久化所有用户数据
         workspaceModule: state.workspaceModule,
         currentSidebarView: state.currentSidebarView,
         selectedAssetCategory: state.selectedAssetCategory,
@@ -329,9 +330,32 @@ export const useNovelStore = create<NovelState>()(
         categories: state.categories,
         selectedCategoryId: state.selectedCategoryId,
         storyAssets: state.storyAssets,
+        agents: state.agents,
       }),
       onRehydrateStorage: () => (state) => {
-        state?.checkRecycleBin?.();
+        if (!state) return;
+        
+        // 数据迁移：确保 agents 有 personality 字段
+        if (state.agents && state.agents.length > 0) {
+          const defaultPersonalities: Record<string, string> = {
+            'facilitator': 'structure',
+            'planner': 'structure',
+            'writer': 'literary',
+            'editor': 'logic',
+            'conflict': 'drama',
+            'reader': 'reader',
+            'consistency': 'logic',
+            'critic': 'logic',
+            'summary': 'structure',
+          };
+          
+          state.agents = state.agents.map(agent => ({
+            ...agent,
+            personality: agent.personality || defaultPersonalities[agent.id] || 'logic',
+          }));
+        }
+        
+        state.checkRecycleBin?.();
       }
     }
   )

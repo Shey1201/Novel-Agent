@@ -4,9 +4,6 @@ import { useNovelStore, type Agent } from '@/store/novelStore';
 const AgentConfigForm: React.FC<{ agent: Agent }> = ({ agent }) => {
   const { updateAgent } = useNovelStore();
 
-  // A simple mock for personality, as it's not in the store yet
-  const [personality, setPersonality] = useState('Strategic / Analytical / Long-term thinker');
-
   return (
     <div className="bg-white border border-zinc-200 rounded-2xl shadow-sm">
       <div className="p-4 border-b border-zinc-100">
@@ -33,8 +30,8 @@ const AgentConfigForm: React.FC<{ agent: Agent }> = ({ agent }) => {
         <div>
           <label className="block text-xs font-medium text-zinc-600 mb-1">Personality</label>
           <input
-            value={personality}
-            onChange={(e) => setPersonality(e.target.value)}
+            value={agent.personality}
+            onChange={(e) => updateAgent(agent.id, { personality: e.target.value })}
             className="w-full p-2 text-xs border border-zinc-200 rounded-lg bg-zinc-50/50"
           />
         </div>
