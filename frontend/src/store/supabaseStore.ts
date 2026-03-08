@@ -371,12 +371,12 @@ export const useSupabaseStore = create<NovelState>()(
         const novel = get().novels.find((n) => n.id === id);
         if (!novel) return;
         
-        const newLockState = !novel.isLocked;
+        const newLockState = !novel.locked;
         
         // 更新本地状态
         set((state) => ({
           novels: state.novels.map((n) =>
-            n.id === id ? { ...n, isLocked: newLockState } : n
+            n.id === id ? { ...n, locked: newLockState } : n
           ),
         }));
         
@@ -384,7 +384,7 @@ export const useSupabaseStore = create<NovelState>()(
         try {
           const { error } = await supabase
             .from('novels')
-            .update({ is_locked: newLockState, updated_at: new Date().toISOString() })
+            .update({ locked: newLockState, updated_at: new Date().toISOString() })
             .eq('id', id);
           
           if (error) {
