@@ -47,7 +47,7 @@ class Chapter:
     novel_id: str
     title: str
     content: str = ""
-    order: int = 0
+    order_index: int = 0
     status: str = "draft"  # draft, writing, review, completed
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
@@ -187,7 +187,7 @@ class NovelMemory:
             return []
         
         try:
-            response = self.supabase.table("chapters").select("*").eq("novel_id", novel_id).order("order").execute()
+            response = self.supabase.table("chapters").select("*").eq("novel_id", novel_id).order("order_index").execute()
             if response.data:
                 return [Chapter(**chapter) for chapter in response.data]
         except Exception as e:
@@ -207,7 +207,7 @@ class NovelMemory:
             print(f"NovelMemory: Error fetching chapter: {e}")
         return None
     
-    def create_chapter(self, novel_id: str, title: str, content: str = "", order: int = 0, status: str = "draft") -> Optional[Chapter]:
+    def create_chapter(self, novel_id: str, title: str, content: str = "", order_index: int = 0, status: str = "draft") -> Optional[Chapter]:
         """创建新章节"""
         if not self.supabase:
             return None
@@ -221,7 +221,7 @@ class NovelMemory:
                 "novel_id": novel_id,
                 "title": title,
                 "content": content,
-                "order": order,
+                "order_index": order_index,
                 "status": status,
                 "created_at": now,
                 "updated_at": now,

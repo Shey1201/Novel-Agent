@@ -26,6 +26,8 @@ class SkillCategory(BaseModel):
     description: Optional[str] = None
     default_agents: List[str] = Field(default_factory=list)
     order: int = 0
+    created_at: Optional[str] = Field(default_factory=lambda: datetime.now().isoformat())
+    updated_at: Optional[str] = Field(default_factory=lambda: datetime.now().isoformat())
 
 
 class Skill(BaseModel):

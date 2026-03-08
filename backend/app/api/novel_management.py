@@ -29,14 +29,14 @@ class NovelUpdateRequest(BaseModel):
 class ChapterCreateRequest(BaseModel):
     title: str
     content: str = ""
-    order: int = 0
+    order_index: int = 0
     status: str = "draft"
 
 
 class ChapterUpdateRequest(BaseModel):
     title: Optional[str] = None
     content: Optional[str] = None
-    order: Optional[int] = None
+    order_index: Optional[int] = None
     status: Optional[str] = None
 
 
@@ -54,7 +54,7 @@ class ChapterResponse(BaseModel):
     novel_id: str
     title: str
     content: str
-    order: int
+    order_index: int
     status: str
     created_at: str
     updated_at: str
@@ -114,7 +114,7 @@ async def get_novels_with_chapters():
                     novel_id=c.novel_id,
                     title=c.title,
                     content=c.content,
-                    order=c.order,
+                    order_index=c.order_index,
                     status=c.status,
                     created_at=c.created_at,
                     updated_at=c.updated_at
@@ -215,7 +215,7 @@ async def get_chapters(novel_id: str):
             novel_id=c.novel_id,
             title=c.title,
             content=c.content,
-            order=c.order,
+            order_index=c.order_index,
             status=c.status,
             created_at=c.created_at,
             updated_at=c.updated_at
@@ -232,7 +232,7 @@ async def create_chapter(novel_id: str, request: ChapterCreateRequest):
             novel_id=novel_id,
             title=request.title,
             content=request.content,
-            order=request.order,
+            order_index=request.order_index,
             status=request.status
         )
         return ChapterResponse(
@@ -240,7 +240,7 @@ async def create_chapter(novel_id: str, request: ChapterCreateRequest):
             novel_id=chapter.novel_id,
             title=chapter.title,
             content=chapter.content,
-            order=chapter.order,
+            order_index=chapter.order_index,
             status=chapter.status,
             created_at=chapter.created_at,
             updated_at=chapter.updated_at
@@ -260,7 +260,7 @@ async def get_chapter(novel_id: str, chapter_id: str):
         novel_id=chapter.novel_id,
         title=chapter.title,
         content=chapter.content,
-        order=chapter.order,
+        order_index=chapter.order_index,
         status=chapter.status,
         created_at=chapter.created_at,
         updated_at=chapter.updated_at
@@ -280,8 +280,8 @@ async def update_chapter(novel_id: str, chapter_id: str, request: ChapterUpdateR
             updates["title"] = request.title
         if request.content is not None:
             updates["content"] = request.content
-        if request.order is not None:
-            updates["order"] = request.order
+        if request.order_index is not None:
+            updates["order_index"] = request.order_index
         if request.status is not None:
             updates["status"] = request.status
         
@@ -291,7 +291,7 @@ async def update_chapter(novel_id: str, chapter_id: str, request: ChapterUpdateR
             novel_id=chapter.novel_id,
             title=chapter.title,
             content=chapter.content,
-            order=chapter.order,
+            order_index=chapter.order_index,
             status=chapter.status,
             created_at=chapter.created_at,
             updated_at=chapter.updated_at
