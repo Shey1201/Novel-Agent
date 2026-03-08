@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { useNovelStore, type Agent } from '@/store/novelStore';
+import { useSupabaseStore, type Agent } from '@/store/supabaseStore';
 
 const AgentConfigForm: React.FC<{ agent: Agent }> = ({ agent }) => {
-  const { updateAgent } = useNovelStore();
+  const { updateAgent } = useSupabaseStore();
 
   return (
     <div className="bg-white border border-zinc-200 rounded-2xl shadow-sm">
@@ -59,7 +59,7 @@ const AgentConfigForm: React.FC<{ agent: Agent }> = ({ agent }) => {
 };
 
 const AgentManagement: React.FC = () => {
-  const { agents, currentNovelId } = useNovelStore();
+  const { agents, currentNovelId } = useSupabaseStore();
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(agents[0]?.id || null);
   const selectedAgent = agents.find(a => a.id === selectedAgentId) || null;
 
