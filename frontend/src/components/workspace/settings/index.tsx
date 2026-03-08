@@ -396,47 +396,32 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
               }
             >
               <div className="space-y-4">
-                {/* OpenAI */}
+                {/* CHAT_MODEL */}
                 <div className="space-y-2">
-                  <label className="block text-xs font-medium text-zinc-700">OpenAI</label>
+                  <label className="block text-xs font-medium text-zinc-700">CHAT_MODEL</label>
                   <input
                     type="text"
-                    placeholder="API URL (e.g., https://api.openai.com/v1)"
-                    className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                  />
-                  <input
-                    type="password"
-                    placeholder="API Key (sk-...)"
+                    placeholder="e.g., gpt-4o-mini, qwen-max, deepseek-chat"
                     className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                   />
                 </div>
                 
-                {/* Claude */}
+                {/* API_KEY */}
                 <div className="space-y-2">
-                  <label className="block text-xs font-medium text-zinc-700">Claude (Anthropic)</label>
-                  <input
-                    type="text"
-                    placeholder="API URL (e.g., https://api.anthropic.com/v1)"
-                    className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                  />
+                  <label className="block text-xs font-medium text-zinc-700">API_KEY</label>
                   <input
                     type="password"
-                    placeholder="API Key"
+                    placeholder="Your API Key"
                     className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                   />
                 </div>
                 
-                {/* DeepSeek */}
+                {/* BASE_URL */}
                 <div className="space-y-2">
-                  <label className="block text-xs font-medium text-zinc-700">DeepSeek</label>
+                  <label className="block text-xs font-medium text-zinc-700">BASE_URL</label>
                   <input
                     type="text"
-                    placeholder="API URL (e.g., https://api.deepseek.com/v1)"
-                    className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                  />
-                  <input
-                    type="password"
-                    placeholder="API Key"
+                    placeholder="e.g., https://api.openai.com/v1, https://dashscope.aliyuncs.com/compatible-mode/v1"
                     className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                   />
                 </div>
