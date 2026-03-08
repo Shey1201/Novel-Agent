@@ -34,6 +34,7 @@ class Novel:
     title: str
     locked: bool = False
     category_id: Optional[str] = None
+    user_id: Optional[str] = None
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
@@ -133,6 +134,7 @@ class NovelMemory:
                 "title": title,
                 "locked": locked,
                 "category_id": category_id,
+                "user_id": None,  # 匿名用户
                 "created_at": now,
                 "updated_at": now,
             }
