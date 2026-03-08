@@ -332,11 +332,9 @@ export const useNovelStore = create<NovelState>()(
         storyAssets: state.storyAssets,
         agents: state.agents,
       }),
-      onRehydrateStorage: () => (state) => {
-        if (!state) return;
-        
+      onRehydrateStorage: (state) => {
         // 数据迁移：确保 agents 有 personality 字段
-        if (state.agents && state.agents.length > 0) {
+        if (state && state.agents && state.agents.length > 0) {
           const defaultPersonalities: Record<string, string> = {
             'facilitator': 'structure',
             'planner': 'structure',
@@ -355,8 +353,9 @@ export const useNovelStore = create<NovelState>()(
           }));
         }
         
-        state.checkRecycleBin?.();
-      }
+        state?.checkRecycleBin?.();
+      },
+      skipHydration: false,
     }
   )
 );
