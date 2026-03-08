@@ -312,6 +312,34 @@ export const useNovelStore = create<NovelState>()(
     }),
     { 
       name: 'novel-storage-v4',
+      storage: {
+        getItem: (name) => {
+          if (typeof window === 'undefined') return null;
+          try {
+            const str = localStorage.getItem(name);
+            return str ? JSON.parse(str) : null;
+          } catch (e) {
+            console.error('Error reading from localStorage:', e);
+            return null;
+          }
+        },
+        setItem: (name, value) => {
+          if (typeof window === 'undefined') return;
+          try {
+            localStorage.setItem(name, JSON.stringify(value));
+          } catch (e) {
+            console.error('Error writing to localStorage:', e);
+          }
+        },
+        removeItem: (name) => {
+          if (typeof window === 'undefined') return;
+          try {
+            localStorage.removeItem(name);
+          } catch (e) {
+            console.error('Error removing from localStorage:', e);
+          }
+        },
+      },
       partialize: (state) => ({
         // 持久化所有用户数据
         workspaceModule: state.workspaceModule,
@@ -355,7 +383,7 @@ export const useNovelStore = create<NovelState>()(
         
         state?.checkRecycleBin?.();
       },
-      skipHydration: false,
+      skipHydration: true,
     }
   )
 );
