@@ -149,9 +149,27 @@ const AgentConfigForm: React.FC<{
 };
 
 const AgentManagement: React.FC = () => {
-  const { agents, updateAgent } = useSupabaseStore();
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(agents[0]?.id || null);
+  const { agents, updateAgent, loadFromSupabase } = useSupabaseStore();
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  
+  // 组件挂载时加载数据
+  useEffect(() => {
+    const loadData = async () => {
+      setIsLoading(true);
+      await loadFromSupabase();
+      setIsLoading(false);
+    };
+    loadData();
+  }, [loadFromSupabase]);
+  
+  // 当agents数据加载完成后，设置默认选中的agent
+  useEffect(() => {
+    if (agents.length > 0 && !selectedAgentId) {
+      setSelectedAgentId(agents[0].id);
+    }
+  }, [agents, selectedAgentId]);
   
   const selectedAgent = agents.find(a => a.id === selectedAgentId) || null;
 
