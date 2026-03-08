@@ -9,6 +9,7 @@ import type {
   Novel,
   DeletedNovel,
   Chapter,
+  Volume,
   Agent,
   NovelCategory,
   WorldBible,
@@ -19,11 +20,16 @@ import type {
 } from './novelStore';
 
 // API 基础URL
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 // 匿名用户ID，用于没有登录系统的情况
 // 使用随机生成的UUID，避免与真实用户ID冲突
 const ANONYMOUS_USER_ID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+
+// 防止重复创建默认 agents 的标志
+let isCreatingDefaultAgents = false;
+// 防止重复加载数据的标志
+let isLoadingData = false;
 
 // 重新导出类型
 export type {
@@ -32,6 +38,7 @@ export type {
   AssetCategory,
   Novel,
   Chapter,
+  Volume,
   Agent,
   NovelCategory,
   WorldBible,
@@ -96,6 +103,12 @@ interface NovelState {
   deleteChapter: (novelId: string, chapterId: string) => void;
   updateChapterContent: (novelId: string, chapterId: string, content: string, trace_data?: TraceItem[]) => void;
 
+  // 分卷方法
+  addVolume: (novelId: string, volume: Volume) => Promise<Volume | null>;
+  updateVolume: (novelId: string, volumeId: string, updates: Partial<Volume>) => Promise<Volume | null>;
+  deleteVolume: (novelId: string, volumeId: string) => Promise<boolean>;
+  fetchVolumes: (novelId: string) => Promise<Volume[]>;
+
   // 约束方法
   addConstraint: (constraint: string) => void;
   removeConstraint: (index: number) => void;
@@ -132,6 +145,7 @@ interface NovelState {
   // 数据同步
   syncWithSupabase: () => Promise<void>;
   loadFromSupabase: () => Promise<void>;
+  loadAgents: () => Promise<void>;
 }
 
 const emptyRefs = () => ({
@@ -540,7 +554,6 @@ export const useSupabaseStore = create<NovelState>()(
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               content,
-              trace_data: trace_data || [],
             }),
           });
           
@@ -552,6 +565,115 @@ export const useSupabaseStore = create<NovelState>()(
           }
         } catch (err) {
           console.error('Error updating chapter content:', err);
+        }
+      },
+
+      // 分卷方法
+      addVolume: async (novelId, volume) => {
+        try {
+          const response = await fetch(`${API_BASE}/api/novels/${novelId}/volumes`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              id: volume.id,
+              name: volume.name,
+              order: volume.order,
+            }),
+          });
+          
+          if (!response.ok) {
+            const error = await response.json();
+            console.error('Failed to create volume via API:', error);
+            return null;
+          }
+          
+          const data = await response.json();
+          console.log('Volume created via API:', data.id);
+          return {
+            id: data.id,
+            novelId: data.novel_id,
+            name: data.name,
+            order: data.order,
+            createdAt: data.created_at,
+            updatedAt: data.updated_at,
+          };
+        } catch (err) {
+          console.error('Error creating volume:', err);
+          return null;
+        }
+      },
+      
+      updateVolume: async (novelId, volumeId, updates) => {
+        try {
+          const response = await fetch(`${API_BASE}/api/novels/${novelId}/volumes/${volumeId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updates),
+          });
+          
+          if (!response.ok) {
+            const error = await response.json();
+            console.error('Failed to update volume via API:', error);
+            return null;
+          }
+          
+          const data = await response.json();
+          console.log('Volume updated via API:', volumeId);
+          return {
+            id: data.id,
+            novelId: data.novel_id,
+            name: data.name,
+            order: data.order,
+            createdAt: data.created_at,
+            updatedAt: data.updated_at,
+          };
+        } catch (err) {
+          console.error('Error updating volume:', err);
+          return null;
+        }
+      },
+      
+      deleteVolume: async (novelId, volumeId) => {
+        try {
+          const response = await fetch(`${API_BASE}/api/novels/${novelId}/volumes/${volumeId}`, {
+            method: 'DELETE',
+          });
+          
+          if (!response.ok) {
+            const error = await response.json();
+            console.error('Failed to delete volume via API:', error);
+            return false;
+          }
+          
+          console.log('Volume deleted via API:', volumeId);
+          return true;
+        } catch (err) {
+          console.error('Error deleting volume:', err);
+          return false;
+        }
+      },
+      
+      fetchVolumes: async (novelId) => {
+        try {
+          const response = await fetch(`${API_BASE}/api/novels/${novelId}/volumes`);
+          
+          if (!response.ok) {
+            const error = await response.json();
+            console.error('Failed to fetch volumes via API:', error);
+            return [];
+          }
+          
+          const data = await response.json();
+          console.log(`Fetched ${data.length} volumes via API`);
+          return data.map((v: any) => ({
+            id: v.id,
+            novelId: novelId,
+            name: v.name,
+            order: v.order,
+          }));
+        } catch (err) {
+          console.error('Error fetching volumes:', err);
+          return [];
         }
       },
 
@@ -721,22 +843,59 @@ export const useSupabaseStore = create<NovelState>()(
       addCategory: async (category) => {
         // 通过后端API创建分类
         try {
-          const response = await fetch(`${API_BASE}/api/categories`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              name: category.name,
-              color: category.color,
-            }),
-          });
+          console.log('[addCategory] Sending request to API:', `${API_BASE}/api/categories`);
+          console.log('[addCategory] Request body:', { name: category.name, color: category.color });
+          
+          let response;
+          try {
+            response = await fetch(`${API_BASE}/api/categories`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                name: category.name,
+                color: category.color,
+              }),
+            });
+          } catch (networkError) {
+            console.error('[addCategory] Network error:', networkError);
+            throw new Error(`Network error: ${networkError}`);
+          }
+          
+          console.log('[addCategory] Response status:', response.status);
           
           if (!response.ok) {
-            const error = await response.json();
-            console.error('Failed to create category via API:', error);
+            let errorText = '';
+            try {
+              errorText = await response.text();
+            } catch (e) {
+              errorText = 'Could not read response body';
+            }
+            console.error('[addCategory] Failed to create category via API:', {
+              status: response.status,
+              statusText: response.statusText,
+              body: errorText,
+            });
             return;
           }
           
-          const data = await response.json();
+          // 解析响应数据
+          let data;
+          try {
+            data = await response.json();
+          } catch (parseError) {
+            console.error('[addCategory] Failed to parse response:', parseError);
+            // 即使解析失败，也刷新分类列表
+            console.log('[addCategory] Refreshing categories list...');
+            const refreshResponse = await fetch(`${API_BASE}/api/categories`);
+            if (refreshResponse.ok) {
+              const categories = await refreshResponse.json();
+              set({ categories });
+              console.log('[addCategory] Categories refreshed:', categories.length);
+            }
+            return;
+          }
+          
+          console.log('[addCategory] Category created successfully:', data);
           
           // 使用数据库返回的ID更新本地状态
           const categoryWithDbId = {
@@ -746,9 +905,8 @@ export const useSupabaseStore = create<NovelState>()(
           set((state) => ({
             categories: [...state.categories, categoryWithDbId],
           }));
-          console.log('Category created via API:', data.id);
         } catch (err) {
-          console.error('Error creating category:', err);
+          console.error('[addCategory] Error creating category:', err);
         }
       },
       updateCategory: async (id, updates) => {
@@ -890,6 +1048,15 @@ export const useSupabaseStore = create<NovelState>()(
         console.log('Syncing with Supabase...');
       },
       loadFromSupabase: async () => {
+        // 防止重复加载
+        if (isLoadingData) {
+          console.log('Data loading already in progress, skipping...');
+          return;
+        }
+        
+        isLoadingData = true;
+        console.log('[loadFromSupabase] Starting data load...');
+        
         try {
           set({ isLoading: true });
 
@@ -957,23 +1124,34 @@ export const useSupabaseStore = create<NovelState>()(
 
           // 加载分类 - 使用后端API
           try {
+            console.log('[loadFromSupabase] Fetching categories...');
             const categoryResponse = await fetch(`${API_BASE}/api/categories`);
+            console.log('[loadFromSupabase] Categories response status:', categoryResponse.status);
             if (categoryResponse.ok) {
               const categoriesData = await categoryResponse.json();
-              if (categoriesData && categoriesData.length > 0) {
-                const loadedCategories = categoriesData.map((cat: any) => ({
-                  id: cat.id,
-                  name: cat.name,
-                  color: cat.color,
-                }));
-                set({ categories: loadedCategories });
-                console.log(`Loaded ${categoriesData.length} categories from API`);
-              }
+              console.log('[loadFromSupabase] Categories data:', categoriesData);
+              // 始终重置分类列表，只保留默认分类
+              const loadedCategories = categoriesData && categoriesData.length > 0
+                ? categoriesData.map((cat: any) => ({
+                    id: cat.id,
+                    name: cat.name,
+                    color: cat.color,
+                  }))
+                : [];
+              set((state) => ({
+                categories: [
+                  { id: 'cat-all', name: '全部', color: '#6366f1' },
+                  { id: 'cat-uncategorized', name: '未分类', color: '#9ca3af' },
+                  ...loadedCategories
+                ]
+              }));
+              console.log(`[loadFromSupabase] Loaded ${loadedCategories.length} categories from API`);
             } else {
-              console.error('Failed to load categories from API:', await categoryResponse.text());
+              const errorText = await categoryResponse.text();
+              console.error('[loadFromSupabase] Failed to load categories from API:', errorText);
             }
           } catch (categoryError) {
-            console.error('Error loading categories from API:', categoryError);
+            console.error('[loadFromSupabase] Error loading categories from API:', categoryError);
           }
 
           // 加载 Agent 配置 - 使用后端API
@@ -983,19 +1161,28 @@ export const useSupabaseStore = create<NovelState>()(
               const agentConfigs = await agentResponse.json();
               if (agentConfigs && agentConfigs.length > 0) {
                 // 将数据库配置转换为本地 agents 格式
-                const loadedAgents = agentConfigs.map((config: any) => ({
-                  id: config.agent_id,
-                  name: config.name,
-                  role: config.role,
-                  personality: config.personality,
-                  temperature: config.temperature,
-                  prompt: config.prompt,
-                  enabled: config.enabled,
-                }));
+                // 使用 Map 去重，以 agent_id 为 key
+                const agentsMap = new Map();
+                agentConfigs.forEach((config: any) => {
+                  if (!agentsMap.has(config.agent_id)) {
+                    agentsMap.set(config.agent_id, {
+                      id: config.agent_id,
+                      name: config.name,
+                      role: config.role,
+                      personality: config.personality,
+                      temperature: config.temperature,
+                      prompt: config.prompt,
+                      enabled: config.enabled,
+                    });
+                  }
+                });
+                const loadedAgents = Array.from(agentsMap.values());
                 set({ agents: loadedAgents });
-                console.log(`Loaded ${agentConfigs.length} agent configs from API`);
-              } else {
+                console.log(`Loaded ${loadedAgents.length} unique agent configs from API (original: ${agentConfigs.length})`);
+              } else if (!isCreatingDefaultAgents) {
                 // 数据库中没有配置，使用默认配置创建
+                // 使用标志防止重复创建
+                isCreatingDefaultAgents = true;
                 console.log('No agent configs in database, creating default agents...');
                 const defaultAgentsList = [
                   { id: 'facilitator', name: 'Facilitator', role: '调度协调', prompt: '负责Agent调度和讨论主持', temperature: 0.5, enabled: true, personality: 'structure' },
@@ -1008,7 +1195,7 @@ export const useSupabaseStore = create<NovelState>()(
                   { id: 'critic', name: 'Critic', role: '批判评估', prompt: '负责批判性评估和改进建议', temperature: 0.5, enabled: true, personality: 'logic' },
                   { id: 'summary', name: 'Summary', role: '摘要总结', prompt: '负责内容摘要和总结', temperature: 0.4, enabled: true, personality: 'structure' },
                 ];
-                
+
                 // 同步默认配置到数据库
                 for (const agent of defaultAgentsList) {
                   try {
@@ -1028,10 +1215,13 @@ export const useSupabaseStore = create<NovelState>()(
                     console.error(`Failed to sync agent ${agent.id}:`, err);
                   }
                 }
-                
+
                 // 设置本地状态
                 set({ agents: defaultAgentsList });
                 console.log('Default agents created and synced to database');
+                isCreatingDefaultAgents = false;
+              } else {
+                console.log('Default agents creation already in progress, skipping...');
               }
             } else {
               console.error('Failed to load agent configs from API:', await agentResponse.text());
@@ -1043,6 +1233,44 @@ export const useSupabaseStore = create<NovelState>()(
           console.log('Data loaded successfully');
         } catch (err) {
           console.error('Error loading data:', err);
+        } finally {
+          set({ isLoading: false });
+          isLoadingData = false;
+        }
+      },
+
+      // 单独加载 Agents（用于按需加载）
+      loadAgents: async () => {
+        try {
+          set({ isLoading: true });
+          
+          // 加载 Agent 配置 - 使用后端API
+          const agentResponse = await fetch(`${API_BASE}/api/agents/configs`);
+          if (agentResponse.ok) {
+            const agentConfigs = await agentResponse.json();
+            if (agentConfigs && agentConfigs.length > 0) {
+              // 使用 Map 去重，以 agent_id 为 key
+              const agentsMap = new Map();
+              agentConfigs.forEach((config: any) => {
+                if (!agentsMap.has(config.agent_id)) {
+                  agentsMap.set(config.agent_id, {
+                    id: config.agent_id,
+                    name: config.name,
+                    role: config.role,
+                    personality: config.personality,
+                    temperature: config.temperature,
+                    prompt: config.prompt,
+                    enabled: config.enabled,
+                  });
+                }
+              });
+              const loadedAgents = Array.from(agentsMap.values());
+              set({ agents: loadedAgents });
+              console.log(`Loaded ${loadedAgents.length} unique agent configs from API`);
+            }
+          }
+        } catch (err) {
+          console.error('Error loading agents:', err);
         } finally {
           set({ isLoading: false });
         }

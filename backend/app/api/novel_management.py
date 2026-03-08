@@ -122,6 +122,8 @@ async def get_novels_with_chapters():
                     content=c.content,
                     order_index=c.order_index,
                     status=c.status,
+                    volume_name=c.volume_name,
+                    volume_order=c.volume_order,
                     created_at=c.created_at,
                     updated_at=c.updated_at
                 )
@@ -296,6 +298,10 @@ async def update_chapter(novel_id: str, chapter_id: str, request: ChapterUpdateR
             updates["order_index"] = request.order_index
         if request.status is not None:
             updates["status"] = request.status
+        if request.volume_name is not None:
+            updates["volume_name"] = request.volume_name
+        if request.volume_order is not None:
+            updates["volume_order"] = request.volume_order
         
         chapter = novel_memory.update_chapter(chapter_id, **updates)
         return ChapterResponse(
@@ -305,6 +311,8 @@ async def update_chapter(novel_id: str, chapter_id: str, request: ChapterUpdateR
             content=chapter.content,
             order_index=chapter.order_index,
             status=chapter.status,
+            volume_name=chapter.volume_name,
+            volume_order=chapter.volume_order,
             created_at=chapter.created_at,
             updated_at=chapter.updated_at
         )
@@ -327,3 +335,96 @@ async def delete_chapter(novel_id: str, chapter_id: str):
         return {"message": "Chapter deleted successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete chapter: {str(e)}")
+
+
+# ========== 卷 API ==========
+
+class VolumeCreateRequest(BaseModel):
+    id: str
+    name: str
+    order: int
+
+
+class VolumeUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    order: Optional[int] = None
+
+
+class VolumeResponse(BaseModel):
+    id: str
+    novel_id: str
+    name: str
+    order: int
+    created_at: str
+    updated_at: str
+
+
+@router.get("/{novel_id}/volumes", response_model=List[dict])
+async def get_volumes(novel_id: str):
+    """获取小说的所有卷"""
+    volumes = novel_memory.get_volumes_by_novel(novel_id)
+    return volumes
+
+
+@router.post("/{novel_id}/volumes", response_model=VolumeResponse)
+async def create_volume(novel_id: str, request: VolumeCreateRequest):
+    """创建新卷"""
+    try:
+        volume = novel_memory.create_volume(
+            novel_id=novel_id,
+            volume_id=request.id,
+            volume_name=request.name,
+            volume_order=request.order
+        )
+        if not volume:
+            raise HTTPException(status_code=500, detail="Failed to create volume")
+        
+        return VolumeResponse(
+            id=volume.id,
+            novel_id=volume.novel_id,
+            name=volume.name,
+            order=volume.order,
+            created_at=volume.created_at,
+            updated_at=volume.updated_at
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create volume: {str(e)}")
+
+
+@router.put("/{novel_id}/volumes/{volume_id}", response_model=VolumeResponse)
+async def update_volume(novel_id: str, volume_id: str, request: VolumeUpdateRequest):
+    """更新卷信息"""
+    try:
+        updates = {}
+        if request.name is not None:
+            updates["name"] = request.name
+        if request.order is not None:
+            updates["order"] = request.order
+        
+        volume = novel_memory.update_volume(volume_id, **updates)
+        if not volume:
+            raise HTTPException(status_code=404, detail="Volume not found")
+        
+        return VolumeResponse(
+            id=volume.id,
+            novel_id=volume.novel_id,
+            name=volume.name,
+            order=volume.order,
+            created_at=volume.created_at,
+            updated_at=volume.updated_at
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update volume: {str(e)}")
+
+
+@router.delete("/{novel_id}/volumes/{volume_id}")
+async def delete_volume(novel_id: str, volume_id: str):
+    """删除卷（从数据库中删除，章节会移动到未分卷）"""
+    try:
+        success = novel_memory.delete_volume_from_db(volume_id)
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to delete volume")
+        
+        return {"message": "Volume deleted successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete volume: {str(e)}")

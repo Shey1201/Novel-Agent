@@ -12,6 +12,15 @@ export interface AssetVersion {
   data: Record<string, any>;
 }
 
+export interface AssetCategory {
+  id: string;
+  name: string;
+  color: string;
+  order: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface GlobalAsset {
   id: string;
   name: string;
@@ -22,6 +31,7 @@ export interface GlobalAsset {
   color?: string;
   is_starred: boolean;
   mount_count: number;
+  category_id?: string | null;
   created_at: string;
   updated_at: string;
   version_count: number;
@@ -64,6 +74,9 @@ interface AssetState {
   agentSkills: AgentSkill[];
   assetSkills: Record<string, string[]>; // assetId -> skillIds
 
+  // 资产分类数据
+  assetCategories: AssetCategory[];
+
   // Actions
   setAssets: (assets: GlobalAsset[]) => void;
   setSelectedAsset: (assetId: string | null) => void;
@@ -90,6 +103,14 @@ interface AssetState {
   toggleSkillActive: (skillId: string) => Promise<boolean>;
   deleteSkill: (skillId: string) => Promise<boolean>;
 
+  // Asset Category Actions
+  fetchAssetCategories: () => Promise<void>;
+  createAssetCategory: (name: string, color?: string, order?: number) => Promise<AssetCategory | null>;
+  updateAssetCategory: (categoryId: string, updates: Partial<AssetCategory>) => Promise<AssetCategory | null>;
+  deleteAssetCategory: (categoryId: string) => Promise<boolean>;
+  setAssetCategory: (assetId: string, categoryId: string | null) => Promise<boolean>;
+  getAssetsByCategory: (categoryId: string) => GlobalAsset[];
+
   // Getters
   getAssetById: (assetId: string) => GlobalAsset | undefined;
   getAssetsByType: (type: AssetType) => GlobalAsset[];
@@ -98,7 +119,7 @@ interface AssetState {
   getSkillsByAssetId: (assetId: string) => AgentSkill[];
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export const useAssetStore = create<AssetState>((set, get) => ({
   assets: [],
@@ -109,6 +130,7 @@ export const useAssetStore = create<AssetState>((set, get) => ({
   mountInfos: {},
   agentSkills: [],
   assetSkills: {},
+  assetCategories: [],
 
   setAssets: (assets) => set({ assets }),
   
@@ -476,5 +498,102 @@ export const useAssetStore = create<AssetState>((set, get) => ({
 
   getSkillsByAssetId: (assetId) => {
     return get().agentSkills.filter(s => s.asset_id === assetId);
+  },
+
+  // ==================== Asset Category Actions ====================
+
+  fetchAssetCategories: async () => {
+    set({ isLoading: true, error: null });
+    try {
+      const response = await fetch(`${API_BASE}/api/assets/categories/all`);
+      if (!response.ok) throw new Error('Failed to fetch asset categories');
+      const data = await response.json();
+      set({ assetCategories: data, isLoading: false });
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : 'Unknown error', isLoading: false });
+    }
+  },
+
+  createAssetCategory: async (name, color = '#6366f1', order = 0) => {
+    set({ isLoading: true, error: null });
+    try {
+      const response = await fetch(`${API_BASE}/api/assets/categories/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, color, order })
+      });
+      if (!response.ok) throw new Error('Failed to create asset category');
+      const data = await response.json();
+      set((state) => ({
+        assetCategories: [...state.assetCategories, data],
+        isLoading: false
+      }));
+      return data;
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : 'Unknown error', isLoading: false });
+      return null;
+    }
+  },
+
+  updateAssetCategory: async (categoryId, updates) => {
+    set({ isLoading: true, error: null });
+    try {
+      const response = await fetch(`${API_BASE}/api/assets/categories/${categoryId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+      if (!response.ok) throw new Error('Failed to update asset category');
+      const data = await response.json();
+      set((state) => ({
+        assetCategories: state.assetCategories.map(c => 
+          c.id === categoryId ? { ...c, ...data } : c
+        ),
+        isLoading: false
+      }));
+      return data;
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : 'Unknown error', isLoading: false });
+      return null;
+    }
+  },
+
+  deleteAssetCategory: async (categoryId) => {
+    set({ isLoading: true, error: null });
+    try {
+      const response = await fetch(`${API_BASE}/api/assets/categories/${categoryId}`, {
+        method: 'DELETE'
+      });
+      if (!response.ok) throw new Error('Failed to delete asset category');
+      set((state) => ({
+        assetCategories: state.assetCategories.filter(c => c.id !== categoryId),
+        isLoading: false
+      }));
+      return true;
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : 'Unknown error', isLoading: false });
+      return false;
+    }
+  },
+
+  setAssetCategory: async (assetId, categoryId) => {
+    try {
+      const response = await fetch(`${API_BASE}/api/assets/${assetId}/set-category`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ category_id: categoryId })
+      });
+      if (!response.ok) return false;
+      
+      // 更新本地状态
+      get().updateAsset(assetId, { category_id: categoryId });
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
+  getAssetsByCategory: (categoryId) => {
+    return get().assets.filter(a => a.category_id === categoryId);
   }
 }));

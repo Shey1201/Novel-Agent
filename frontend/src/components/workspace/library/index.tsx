@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useSupabaseStore, type Novel, type NovelCategory } from "@/store/supabaseStore";
 
 export default function Library() {
@@ -18,13 +18,9 @@ export default function Library() {
     updateCategory,
     deleteCategory,
     setNovelCategory,
-    loadFromSupabase,
   } = useSupabaseStore();
 
-  // 组件挂载时加载数据
-  useEffect(() => {
-    loadFromSupabase();
-  }, [loadFromSupabase]);
+  // 数据由全局初始化加载，不需要在这里重复加载
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
@@ -174,8 +170,8 @@ export default function Library() {
             <span className="text-[11px] text-zinc-400">{getCategoryCount('cat-uncategorized')}</span>
           </button>
 
-          {/* 自定义分类 */}
-          {categories.filter(c => c.id !== 'cat-all').map((category) => (
+          {/* 自定义分类 - 过滤掉系统默认分类 */}
+          {categories.filter(c => c.id !== 'cat-all' && c.id !== 'cat-uncategorized').map((category) => (
             <div key={category.id} className="group relative">
               {editingCategoryId === category.id ? (
                 <div className="px-3 py-2 flex items-center gap-2">

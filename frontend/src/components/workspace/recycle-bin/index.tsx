@@ -1,15 +1,12 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React from "react";
 import { useSupabaseStore } from "@/store/supabaseStore";
 
 export default function RecycleBin() {
-  const { deletedNovels, restoreNovel, permanentlyDeleteNovel, clearRecycleBin, loadFromSupabase } = useSupabaseStore();
+  const { deletedNovels, restoreNovel, permanentlyDeleteNovel, clearRecycleBin } = useSupabaseStore();
 
-  // 组件挂载时加载数据
-  useEffect(() => {
-    loadFromSupabase();
-  }, [loadFromSupabase]);
+  // 数据由全局初始化加载，不需要在这里重复加载
 
   const getDaysRemaining = (deletedAt: number) => {
     const now = Date.now();

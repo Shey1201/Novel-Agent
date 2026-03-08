@@ -37,6 +37,9 @@ class Novel:
     user_id: Optional[str] = None
     mounted_skills: Optional[list] = None
     deleted_at: Optional[str] = None
+    outline: str = ""  # 小说大纲
+    word_count: int = 0  # 字数统计
+    status: str = "draft"  # 状态：draft, writing, completed
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
@@ -51,6 +54,18 @@ class Chapter:
     status: str = "draft"  # draft, writing, review, completed
     volume_name: str = "未分卷"  # 卷名称
     volume_order: int = 0  # 卷顺序
+    word_count: int = 0  # 章节字数
+    summary: str = ""  # 章节摘要
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
+
+
+@dataclass
+class Volume:
+    id: str
+    novel_id: str
+    name: str = "未命名卷"
+    order: int = 0
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
@@ -90,6 +105,10 @@ class NovelMemory:
                 print(f"[NovelMemory] Error connecting to Supabase: {e}")
         else:
             print("[NovelMemory] Warning - Supabase credentials not found, novel management will not work")
+    
+    def _ensure_connected(self):
+        """确保 Supabase 已连接"""
+        return self.supabase is not None
     
     # ========== 小说操作 ==========
     
@@ -285,7 +304,7 @@ class NovelMemory:
     # ========== 卷操作 ==========
 
     def get_volumes_by_novel(self, novel_id: str) -> List[Dict[str, Any]]:
-        """获取小说的所有卷（从章节中聚合）"""
+        """获取小说的所有卷（包括空卷）"""
         print(f"[NovelMemory] get_volumes_by_novel called for novel: {novel_id}")
         
         if not self._ensure_connected():
@@ -293,33 +312,51 @@ class NovelMemory:
             return []
 
         try:
-            # 从章节中聚合卷信息
-            response = self.supabase.table("chapters") \
-                .select("volume_name, volume_order") \
+            # 1. 从 volumes 表中获取所有卷（包括空卷）
+            volumes_response = self.supabase.table("volumes") \
+                .select("*") \
                 .eq("novel_id", novel_id) \
-                .order("volume_order") \
+                .order("order") \
                 .execute()
             
-            if not response.data:
-                # 如果没有章节，返回默认卷
-                return [{"name": "未分卷", "order": 0, "chapter_count": 0}]
-            
-            # 聚合卷信息
             volumes_map = {}
-            for chapter in response.data:
-                vol_name = chapter.get("volume_name", "未分卷") or "未分卷"
-                vol_order = chapter.get("volume_order", 0) or 0
-                key = f"{vol_order}:{vol_name}"
-                
-                if key not in volumes_map:
-                    volumes_map[key] = {
-                        "name": vol_name,
-                        "order": vol_order,
+            if volumes_response.data:
+                for vol in volumes_response.data:
+                    vol_id = vol.get("id", f"vol-{vol.get('order', 0)}-{vol.get('name', '未命名')}")
+                    volumes_map[vol_id] = {
+                        "id": vol_id,
+                        "name": vol.get("name", "未命名卷"),
+                        "order": vol.get("order", 0),
                         "chapter_count": 0
                     }
-                volumes_map[key]["chapter_count"] += 1
             
-            # 转换为列表并排序
+            # 2. 从章节中统计每个卷的章节数量
+            chapters_response = self.supabase.table("chapters") \
+                .select("volume_name, volume_order") \
+                .eq("novel_id", novel_id) \
+                .execute()
+            
+            if chapters_response.data:
+                for chapter in chapters_response.data:
+                    vol_name = chapter.get("volume_name", "未分卷") or "未分卷"
+                    vol_order = chapter.get("volume_order", 0) or 0
+                    vol_id = f"vol-{vol_order}-{vol_name}"
+                    
+                    # 如果卷不存在于 volumes 表中，添加它
+                    if vol_id not in volumes_map:
+                        volumes_map[vol_id] = {
+                            "id": vol_id,
+                            "name": vol_name,
+                            "order": vol_order,
+                            "chapter_count": 0
+                        }
+                    volumes_map[vol_id]["chapter_count"] += 1
+            
+            # 3. 如果没有卷，返回默认卷
+            if not volumes_map:
+                return [{"id": "vol-default", "name": "未分卷", "order": 0, "chapter_count": 0}]
+            
+            # 4. 转换为列表并排序
             volumes = list(volumes_map.values())
             volumes.sort(key=lambda x: x["order"])
             
@@ -329,13 +366,73 @@ class NovelMemory:
             print(f"[NovelMemory] Error fetching volumes: {e}")
             import traceback
             traceback.print_exc()
-        return [{"name": "未分卷", "order": 0, "chapter_count": 0}]
+        return [{"id": "vol-default", "name": "未分卷", "order": 0, "chapter_count": 0}]
 
-    def create_volume(self, novel_id: str, volume_name: str, volume_order: int) -> bool:
-        """创建卷（实际上卷是通过章节隐式创建的）"""
-        # 卷不需要单独创建，当章节指定卷名时就自动创建了
-        print(f"[NovelMemory] Volume will be created implicitly when chapters are added: {volume_name}")
-        return True
+    def create_volume(self, novel_id: str, volume_id: str, volume_name: str, volume_order: int) -> Optional[Volume]:
+        """创建新卷（保存到 volumes 表）"""
+        print(f"[NovelMemory] Creating volume '{volume_name}' (order: {volume_order}) for novel: {novel_id}")
+        
+        if not self._ensure_connected():
+            print("[NovelMemory] Error: Supabase not connected")
+            return None
+
+        try:
+            now = datetime.now().isoformat()
+            data = {
+                "id": volume_id,
+                "novel_id": novel_id,
+                "name": volume_name,
+                "order": volume_order,
+                "created_at": now,
+                "updated_at": now,
+            }
+            
+            response = self.supabase.table("volumes").insert(data).execute()
+            if response.data:
+                print(f"[NovelMemory] Volume created: {volume_id}")
+                return Volume(**response.data[0])
+        except Exception as e:
+            print(f"[NovelMemory] Error creating volume: {e}")
+            import traceback
+            traceback.print_exc()
+        return None
+    
+    def update_volume(self, volume_id: str, **updates) -> Optional[Volume]:
+        """更新卷信息"""
+        print(f"[NovelMemory] Updating volume: {volume_id}")
+        
+        if not self._ensure_connected():
+            return None
+
+        try:
+            updates["updated_at"] = datetime.now().isoformat()
+            
+            response = self.supabase.table("volumes").update(updates).eq("id", volume_id).execute()
+            if response.data:
+                print(f"[NovelMemory] Volume updated: {volume_id}")
+                return Volume(**response.data[0])
+        except Exception as e:
+            print(f"[NovelMemory] Error updating volume: {e}")
+            import traceback
+            traceback.print_exc()
+        return None
+    
+    def delete_volume_from_db(self, volume_id: str) -> bool:
+        """从数据库删除卷"""
+        print(f"[NovelMemory] Deleting volume from DB: {volume_id}")
+        
+        if not self._ensure_connected():
+            return False
+
+        try:
+            response = self.supabase.table("volumes").delete().eq("id", volume_id).execute()
+            print(f"[NovelMemory] Volume deleted: {volume_id}")
+            return True
+        except Exception as e:
+            print(f"[NovelMemory] Error deleting volume: {e}")
+            import traceback
+            traceback.print_exc()
+        return False
 
     def update_volume_name(self, novel_id: str, old_name: str, new_name: str) -> bool:
         """更新卷名称（更新所有属于该卷的章节）"""

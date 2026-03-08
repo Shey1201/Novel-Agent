@@ -41,8 +41,10 @@ class CategoryResponse(BaseModel):
 @router.get("", response_model=List[CategoryResponse])
 async def get_categories():
     """获取所有分类"""
+    print("[API] GET /api/categories called")
     try:
         categories = supabase_memory.get_all_categories()
+        print(f"[API] Returning {len(categories)} categories")
         return [
             CategoryResponse(
                 id=cat.id,
@@ -55,6 +57,7 @@ async def get_categories():
             for cat in categories
         ]
     except Exception as e:
+        print(f"[API] ERROR getting categories: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get categories: {str(e)}")
 
 

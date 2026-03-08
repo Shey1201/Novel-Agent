@@ -68,7 +68,7 @@ class AssetResponse(BaseModel):
 @router.get("/all", response_model=List[AssetResponse])
 async def get_all_assets():
     """获取所有全局资产"""
-    assets = asset_manager.get_all_assets()
+    assets = asset_manager.get_global_assets()
     return [
         AssetResponse(
             id=a.id,
@@ -470,3 +470,113 @@ async def remove_skill_from_novel(skill_id: str, novel_id: str):
     if not success:
         raise HTTPException(status_code=400, detail="Failed to remove skill from novel")
     return {"message": "Skill removed from novel successfully"}
+
+
+# ==================== 资产分类管理 ====================
+
+class CreateCategoryRequest(BaseModel):
+    name: str
+    color: str = "#6366f1"
+    order: int = 0
+
+
+class CategoryResponse(BaseModel):
+    id: str
+    name: str
+    color: str
+    order: int
+    created_at: str
+    updated_at: str
+
+
+@router.get("/categories/all", response_model=List[CategoryResponse])
+async def get_asset_categories():
+    """获取所有资产分类"""
+    categories = asset_manager.get_asset_categories()
+    return [
+        CategoryResponse(
+            id=c["id"],
+            name=c["name"],
+            color=c["color"],
+            order=c.get("order", 0),
+            created_at=c["created_at"],
+            updated_at=c["updated_at"]
+        ) for c in categories
+    ]
+
+
+@router.post("/categories/create", response_model=CategoryResponse)
+async def create_asset_category(request: CreateCategoryRequest):
+    """创建资产分类"""
+    category = asset_manager.create_asset_category(
+        name=request.name,
+        color=request.color,
+        order=request.order
+    )
+    if not category:
+        raise HTTPException(status_code=500, detail="Failed to create category")
+    return CategoryResponse(
+        id=category["id"],
+        name=category["name"],
+        color=category["color"],
+        order=category.get("order", 0),
+        created_at=category["created_at"],
+        updated_at=category["updated_at"]
+    )
+
+
+@router.put("/categories/{category_id}", response_model=CategoryResponse)
+async def update_asset_category(category_id: str, request: CreateCategoryRequest):
+    """更新资产分类"""
+    updates = request.model_dump()
+    category = asset_manager.update_asset_category(category_id, updates)
+    if not category:
+        raise HTTPException(status_code=404, detail="Category not found")
+    return CategoryResponse(
+        id=category["id"],
+        name=category["name"],
+        color=category["color"],
+        order=category.get("order", 0),
+        created_at=category["created_at"],
+        updated_at=category["updated_at"]
+    )
+
+
+@router.delete("/categories/{category_id}")
+async def delete_asset_category(category_id: str):
+    """删除资产分类"""
+    success = asset_manager.delete_asset_category(category_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Category not found")
+    return {"message": "Category deleted successfully"}
+
+
+@router.post("/{asset_id}/set-category")
+async def set_asset_category(asset_id: str, category_id: Optional[str] = None):
+    """设置资产分类"""
+    success = asset_manager.set_asset_category(asset_id, category_id)
+    if not success:
+        raise HTTPException(status_code=400, detail="Failed to set asset category")
+    return {"message": "Asset category updated"}
+
+
+@router.get("/by-category/{category_id}", response_model=List[AssetResponse])
+async def get_assets_by_category(category_id: str):
+    """获取指定分类下的所有资产"""
+    assets = asset_manager.get_assets_by_category(category_id)
+    return [
+        AssetResponse(
+            id=a.id,
+            name=a.name,
+            type=a.type,
+            description=a.description,
+            source_novel_id=a.source_novel_id,
+            source_novel_name=a.source_novel_name,
+            color=a.color,
+            is_starred=a.is_starred,
+            mount_count=asset_manager.get_asset_mount_count(a.id),
+            created_at=a.created_at,
+            updated_at=a.updated_at,
+            version_count=len(a.versions)
+        ) for a in assets
+    ]

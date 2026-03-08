@@ -54,6 +54,10 @@ export const SecondarySidebar: React.FC = () => {
     setCurrentSidebarView,
     addChapter,
     updateChapter,
+    deleteChapter,
+    addVolume,
+    deleteVolume,
+    fetchVolumes,
   } = useSupabaseStore();
 
   const {
@@ -69,6 +73,8 @@ export const SecondarySidebar: React.FC = () => {
   const [newVolumeName, setNewVolumeName] = useState("");
   const [expandedVolumes, setExpandedVolumes] = useState<Set<string>>(new Set(['vol-default']));
   const [chapterMenuOpen, setChapterMenuOpen] = useState<string | null>(null);
+  // 存储用户创建的"空卷"（还没有章节的卷）
+  const [emptyVolumes, setEmptyVolumes] = useState<Volume[]>([]);
   const [activeTab, setActiveTab] = useState<SidebarTab>('structure');
   const [expandStoryBible, setExpandStoryBible] = useState(false);
   const [expandOutline, setExpandOutline] = useState(false);
@@ -108,12 +114,17 @@ export const SecondarySidebar: React.FC = () => {
     
     // 如果没有章节，返回默认卷
     if (volumeMap.size === 0) {
-      return [{ id: "vol-default", name: "未分卷", chapterIds: [], order: 0 }];
+      volumeMap.set('vol-default', { id: "vol-default", name: "未分卷", chapterIds: [], order: 0 });
     }
     
-    // 按order排序
-    return Array.from(volumeMap.values()).sort((a, b) => a.order - b.order);
-  }, [currentNovel?.chapters]);
+    // 合并空卷（排除已经在 volumeMap 中的）
+    const existingVolIds = new Set(volumeMap.keys());
+    const uniqueEmptyVolumes = emptyVolumes.filter(ev => !existingVolIds.has(ev.id));
+    
+    // 合并并排序
+    const allVolumes = [...Array.from(volumeMap.values()), ...uniqueEmptyVolumes];
+    return allVolumes.sort((a, b) => a.order - b.order);
+  }, [currentNovel?.chapters, emptyVolumes]);
 
   // 初始化展开状态
   useEffect(() => {
@@ -121,6 +132,24 @@ export const SecondarySidebar: React.FC = () => {
       setExpandedVolumes(new Set(volumes.map(v => v.id)));
     }
   }, [volumes]);
+
+  // 加载分卷数据
+  useEffect(() => {
+    if (currentNovelId) {
+      fetchVolumes(currentNovelId).then(volumesFromApi => {
+        // 将 API 返回的分卷转换为本地 Volume 格式
+        const formattedVolumes = (volumesFromApi as any[])
+          .filter((v: any) => v.chapter_count === 0) // 只保留空卷
+          .map((v: any) => ({
+            id: v.id,
+            name: v.name,
+            chapterIds: [] as string[],
+            order: v.order,
+          }));
+        setEmptyVolumes(formattedVolumes);
+      });
+    }
+  }, [currentNovelId, fetchVolumes]);
 
   useEffect(() => {
     if (currentNovel?.chapters.length && !currentChapterId) {
@@ -184,12 +213,40 @@ export const SecondarySidebar: React.FC = () => {
     setExpandedVolumes(prev => new Set([...prev, volumeId]));
   };
 
-  const handleAddVolume = () => {
-    if (newVolumeName.trim()) {
-      // 卷是通过章节隐式创建的，这里只是清空输入
+  const handleAddVolume = async () => {
+    if (newVolumeName.trim() && currentNovelId) {
+      // 获取当前最大卷序
+      const maxOrder = volumes.length > 0 
+        ? Math.max(...volumes.map(v => v.order))
+        : 0;
+      const newOrder = maxOrder + 1;
+      const newVolumeId = `vol-${newOrder}-${newVolumeName.trim()}`;
+      
+      // 调用 API 保存分卷到数据库
+      const savedVolume = await addVolume(currentNovelId, {
+        id: newVolumeId,
+        novelId: currentNovelId,
+        name: newVolumeName.trim(),
+        order: newOrder,
+      });
+      
+      if (savedVolume) {
+        // 创建一个空卷（不创建章节）
+        const newVolume: Volume = {
+          id: newVolumeId,
+          name: newVolumeName.trim(),
+          chapterIds: [],
+          order: newOrder,
+        };
+        
+        setEmptyVolumes(prev => [...prev, newVolume]);
+        
+        // 展开新卷
+        setExpandedVolumes(prev => new Set([...prev, newVolumeId]));
+      }
+      
       setNewVolumeName("");
       setIsAddingVolume(false);
-      // 注意：新卷会在添加第一个章节时自动创建
     }
   };
 
@@ -214,7 +271,21 @@ export const SecondarySidebar: React.FC = () => {
       alert('不能删除"未分卷"');
       return;
     }
+    
     if (!currentNovelId) return;
+    
+    // 检查是否是空卷
+    const emptyVolume = emptyVolumes.find(v => v.id === id);
+    if (emptyVolume) {
+      // 空卷从数据库和本地状态中删除
+      if (confirm('确定要删除这个空卷吗？')) {
+        const success = await deleteVolume(currentNovelId, id);
+        if (success) {
+          setEmptyVolumes(prev => prev.filter(v => v.id !== id));
+        }
+      }
+      return;
+    }
     
     if (confirm('确定要删除这个卷吗？该卷下的章节将移动到"未分卷"。')) {
       const volumeToDelete = volumes.find(v => v.id === id);
@@ -226,6 +297,8 @@ export const SecondarySidebar: React.FC = () => {
             volumeOrder: 0 
           });
         }
+        // 从数据库删除该卷
+        await deleteVolume(currentNovelId, id);
       }
     }
   };
@@ -251,6 +324,25 @@ export const SecondarySidebar: React.FC = () => {
       volumeOrder: targetVolume.order 
     });
     setChapterMenuOpen(null);
+  };
+
+  const handleDeleteChapter = async (chapterId: string) => {
+    if (!currentNovelId) return;
+    
+    if (confirm('确定要删除这个章节吗？此操作不可恢复。')) {
+      await deleteChapter(currentNovelId, chapterId);
+      
+      // 如果删除的是当前选中的章节，切换到其他章节
+      if (currentChapterId === chapterId) {
+        const remainingChapters = currentNovel?.chapters.filter(ch => ch.id !== chapterId) || [];
+        if (remainingChapters.length > 0) {
+          setCurrentChapterId(remainingChapters[0].id);
+        } else {
+          setCurrentChapterId(null);
+          setCurrentSidebarView("outline");
+        }
+      }
+    }
   };
 
   // 计算字数 - 从 HTML 中提取纯文本
@@ -280,6 +372,7 @@ export const SecondarySidebar: React.FC = () => {
     const isActive = currentChapterId === ch.id;
     const currentVolumeId = getChapterVolumeId(ch.id);
     const wordCount = calculateWordCount(ch.content);
+    const isMenuOpen = chapterMenuOpen === ch.id;
     
     return (
       <div key={ch.id} className="group/chapter relative">
@@ -297,12 +390,13 @@ export const SecondarySidebar: React.FC = () => {
           <span className="text-[10px] text-zinc-400 ml-1 tabular-nums">{wordCount > 0 ? `${wordCount}字` : ''}</span>
         </button>
         
-        {/* 移动按钮 */}
-        <div className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover/chapter:opacity-100 transition-opacity">
+        {/* 章节操作按钮 */}
+        <div className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover/chapter:opacity-100 transition-opacity flex items-center gap-0.5">
+          {/* 移动按钮 */}
           <button
             onClick={(e) => {
               e.stopPropagation();
-              setChapterMenuOpen(chapterMenuOpen === ch.id ? null : ch.id);
+              setChapterMenuOpen(isMenuOpen ? null : ch.id);
             }}
             className="p-1 text-zinc-400 hover:text-indigo-600 hover:bg-white/50 rounded"
             title="移动到..."
@@ -312,32 +406,53 @@ export const SecondarySidebar: React.FC = () => {
             </svg>
           </button>
           
-          {chapterMenuOpen === ch.id && (
-            <>
-              <div
-                className="fixed inset-0 z-40"
-                onClick={() => setChapterMenuOpen(null)}
-              />
-              <div className="absolute right-0 top-full mt-1 w-40 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50">
-                <div className="px-3 py-1.5 text-xs text-zinc-400 border-b border-zinc-100">
-                  移动到
-                </div>
-                {volumes.map((volume) => (
-                  <button
-                    key={volume.id}
-                    onClick={() => moveChapterToVolume(ch.id, volume.id)}
-                    className={`w-full px-3 py-2 text-left text-xs hover:bg-zinc-50 flex items-center gap-2 ${
-                      currentVolumeId === volume.id ? 'text-indigo-600 bg-indigo-50' : 'text-zinc-700'
-                    }`}
-                  >
-                    <span className="text-[10px]">{volume.id === 'vol-default' ? '📄' : '📁'}</span>
-                    {volume.name}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
+          {/* 删除按钮 */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDeleteChapter(ch.id);
+            }}
+            className="p-1 text-zinc-400 hover:text-red-600 hover:bg-white/50 rounded"
+            title="删除章节"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+            </svg>
+          </button>
         </div>
+        
+        {/* 移动弹窗 - 移到 group/chapter 外部，使用 Portal 方式 */}
+        {isMenuOpen && (
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              onClick={() => setChapterMenuOpen(null)}
+            />
+            <div 
+              className="absolute right-0 top-full mt-1 w-40 bg-white rounded-lg shadow-lg border border-zinc-200 py-1 z-50"
+              style={{ marginTop: '4px' }}
+            >
+              <div className="px-3 py-1.5 text-xs text-zinc-400 border-b border-zinc-100">
+                移动到
+              </div>
+              {volumes.map((volume) => (
+                <button
+                  key={volume.id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    moveChapterToVolume(ch.id, volume.id);
+                  }}
+                  className={`w-full px-3 py-2 text-left text-xs hover:bg-zinc-50 flex items-center gap-2 ${
+                    currentVolumeId === volume.id ? 'text-indigo-600 bg-indigo-50' : 'text-zinc-700'
+                  }`}
+                >
+                  <span className="text-[10px]">{volume.id === 'vol-default' ? '📄' : '📁'}</span>
+                  {volume.name}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
       </div>
     );
   };
@@ -500,9 +615,9 @@ export const SecondarySidebar: React.FC = () => {
                             <span className="text-[10px] text-zinc-400 ml-1">({volume.chapterIds.length})</span>
                           </button>
                           
-                          {/* 卷操作按钮 - 未分卷不显示编辑和删除 */}
-                          <div className={`flex items-center gap-0.5 transition-opacity ${volume.id === 'vol-default' ? '' : 'opacity-0 group-hover/volume:opacity-100'}`}>
-                            {/* 新建章节按钮 */}
+                          {/* 卷操作按钮 */}
+                          <div className="flex items-center gap-0.5 opacity-0 group-hover/volume:opacity-100 transition-opacity">
+                            {/* 新建章节按钮 - 所有卷都显示 */}
                             <button
                               onClick={() => addNewChapter(volume.id)}
                               className="p-1 text-zinc-400 hover:text-indigo-600 hover:bg-white/50 rounded"
@@ -512,29 +627,28 @@ export const SecondarySidebar: React.FC = () => {
                                 <path d="M5 12h14"/><path d="M12 5v14"/>
                               </svg>
                             </button>
-                            {/* 编辑按钮 - 未分卷不显示 */}
+                            {/* 编辑和删除按钮 - 未分卷不显示 */}
                             {volume.id !== 'vol-default' && (
-                              <button
-                                onClick={() => startEditingVolume(volume)}
-                                className="p-1 text-zinc-400 hover:text-indigo-600 hover:bg-white/50 rounded"
-                                title="编辑卷名"
-                              >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                  <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
-                                </svg>
-                              </button>
-                            )}
-                            {/* 删除按钮 - 未分卷不显示 */}
-                            {volume.id !== 'vol-default' && (
-                              <button
-                                onClick={() => handleDeleteVolume(volume.id)}
-                                className="p-1 text-zinc-400 hover:text-red-600 hover:bg-white/50 rounded"
-                                title="删除卷"
-                              >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                  <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
-                                </svg>
-                              </button>
+                              <>
+                                <button
+                                  onClick={() => startEditingVolume(volume)}
+                                  className="p-1 text-zinc-400 hover:text-indigo-600 hover:bg-white/50 rounded"
+                                  title="编辑卷名"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
+                                  </svg>
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteVolume(volume.id)}
+                                  className="p-1 text-zinc-400 hover:text-red-600 hover:bg-white/50 rounded"
+                                  title="删除卷"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                                  </svg>
+                                </button>
+                              </>
                             )}
                           </div>
                         </div>
@@ -553,53 +667,52 @@ export const SecondarySidebar: React.FC = () => {
                   </div>
                 ))}
 
-                  {/* 添加新卷输入框 */}
-                  {isAddingVolume ? (
-                    <div className="px-2 py-1.5">
-                      <div className="flex items-center gap-1">
-                        <input
-                          autoFocus
-                          value={newVolumeName}
-                          onChange={(e) => setNewVolumeName(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleAddVolume();
-                            if (e.key === 'Escape') {
-                              setIsAddingVolume(false);
-                              setNewVolumeName("");
-                            }
-                          }}
-                          placeholder="卷名称"
-                          className="flex-1 text-[13px] px-2 py-1 border border-zinc-300 rounded outline-none focus:border-indigo-500"
-                        />
-                        <button
-                          onClick={handleAddVolume}
-                          disabled={!newVolumeName.trim()}
-                          className="p-1 text-green-600 hover:bg-green-50 rounded disabled:text-zinc-300"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M20 6 9 17l-5-5"/>
-                          </svg>
-                        </button>
-                        <button
-                          onClick={() => {
+                {/* 添加新卷输入框 */}
+                {isAddingVolume ? (
+                  <div className="px-2 py-1.5">
+                    <div className="flex items-center gap-1">
+                      <input
+                        autoFocus
+                        value={newVolumeName}
+                        onChange={(e) => setNewVolumeName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleAddVolume();
+                          if (e.key === 'Escape') {
                             setIsAddingVolume(false);
                             setNewVolumeName("");
-                          }}
-                          className="p-1 text-zinc-400 hover:text-red-500"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
-                          </svg>
-                        </button>
-                      </div>
+                          }
+                        }}
+                        placeholder="卷名称"
+                        className="flex-1 text-[13px] px-2 py-1 border border-zinc-300 rounded outline-none focus:border-indigo-500"
+                      />
+                      <button
+                        onClick={handleAddVolume}
+                        disabled={!newVolumeName.trim()}
+                        className="p-1 text-green-600 hover:bg-green-50 rounded disabled:text-zinc-300"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M20 6 9 17l-5-5"/>
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setIsAddingVolume(false);
+                          setNewVolumeName("");
+                        }}
+                        className="p-1 text-zinc-400 hover:text-red-500"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+                        </svg>
+                      </button>
                     </div>
-                  ) : null}
-                </div>
+                  </div>
+                ) : null}
+              </div>
             </div>
           </>
         )}
       </div>
-
     </aside>
   );
 };

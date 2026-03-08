@@ -156,7 +156,7 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle>((_, ref) => {
 
       const outline = editor.getText();
       try {
-        const res = await fetch("http://127.0.0.1:8000/generate_chapter", {
+        const res = await fetch("http://localhost:8000/generate_chapter", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ outline, agent_configs: agentConfigs, constraints }),

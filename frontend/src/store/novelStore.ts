@@ -30,6 +30,15 @@ export interface Chapter {
   volumeOrder?: number; // 卷顺序
 }
 
+export interface Volume {
+  id: string;
+  novelId: string;
+  name: string;
+  order: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface NovelAssetRefs {
   characters: string[];
   worldbuilding: string[];

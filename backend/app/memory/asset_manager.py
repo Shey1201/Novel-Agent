@@ -200,6 +200,168 @@ class AssetManager:
             return False
         return self.update_asset(asset_id, {"is_starred": not asset.is_starred}) is not None
 
+    # ==================== 以下方法为兼容API路由而添加 ====================
+
+    def get_assets_by_type(self, asset_type: str) -> List[Asset]:
+        """按类型获取资产"""
+        return self.get_global_assets(asset_type)
+
+    def get_novel_assets(self, novel_id: str) -> List[Asset]:
+        """获取小说已挂载的资产（当前实现为获取小说本地资产）"""
+        return self.get_assets_by_novel(novel_id)
+
+    def get_asset_mount_count(self, asset_id: str) -> int:
+        """获取资产挂载次数（当前返回0，需要后续实现）"""
+        # TODO: 实现挂载计数逻辑
+        return 0
+
+    def search_assets(self, query: str) -> List[Asset]:
+        """搜索资产"""
+        if not self._ensure_connected():
+            return []
+        try:
+            # 使用 ilike 进行模糊搜索
+            response = self.supabase.table("assets").select("*").ilike("name", f"%{query}%").is_("deleted_at", "null").execute()
+            if response.data:
+                return [Asset(**item) for item in response.data]
+        except Exception as e:
+            print(f"[AssetManager] Error searching assets: {e}")
+        return []
+
+    def get_starred_assets(self) -> List[Asset]:
+        """获取收藏的资产"""
+        if not self._ensure_connected():
+            return []
+        try:
+            response = self.supabase.table("assets").select("*").eq("is_starred", True).is_("deleted_at", "null").execute()
+            if response.data:
+                return [Asset(**item) for item in response.data]
+        except Exception as e:
+            print(f"[AssetManager] Error fetching starred assets: {e}")
+        return []
+
+    def mount_asset_to_novel(self, asset_id: str, novel_id: str, reference_type: str = "linked", version_id: Optional[str] = None) -> bool:
+        """挂载资产到小说（当前实现为更新 novel_id）"""
+        return self.update_asset(asset_id, {"novel_id": novel_id}) is not None
+
+    def unmount_asset_from_novel(self, asset_id: str, novel_id: str) -> bool:
+        """从小说卸载资产"""
+        asset = self.get_asset(asset_id)
+        if asset and asset.novel_id == novel_id:
+            return self.update_asset(asset_id, {"novel_id": None}) is not None
+        return False
+
+    def get_mount_info(self, asset_id: str, novel_id: str) -> Optional[Dict[str, Any]]:
+        """获取资产挂载信息"""
+        asset = self.get_asset(asset_id)
+        if asset and asset.novel_id == novel_id:
+            return {"asset_id": asset_id, "novel_id": novel_id, "mounted": True}
+        return None
+
+    def create_asset_version(self, asset_id: str, version: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """创建资产版本（当前实现为将版本信息存储在 content 中）"""
+        asset = self.get_asset(asset_id)
+        if not asset:
+            return None
+        
+        versions = asset.content.get("versions", [])
+        versions.append(version)
+        
+        if self.update_asset(asset_id, {"content": {**asset.content, "versions": versions}}):
+            return version
+        return None
+
+    # ==================== 资产分类操作 ====================
+
+    def get_asset_categories(self, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """获取资产分类列表"""
+        print(f"[AssetManager] Getting asset categories")
+        if not self._ensure_connected():
+            return []
+
+        try:
+            query = self.supabase.table("asset_categories").select("*").is_("deleted_at", "null")
+            if user_id:
+                query = query.eq("user_id", user_id)
+            response = query.order("order").execute()
+            if response.data:
+                return response.data
+        except Exception as e:
+            print(f"[AssetManager] Error fetching asset categories: {e}")
+        return []
+
+    def create_asset_category(self, name: str, color: str = "#6366f1", order: int = 0, user_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """创建资产分类"""
+        print(f"[AssetManager] Creating asset category: {name}")
+        if not self._ensure_connected():
+            return None
+
+        try:
+            data = {
+                "name": name,
+                "color": color,
+                "order": order,
+                "user_id": user_id,
+            }
+            response = self.supabase.table("asset_categories").insert(data).execute()
+            if response.data:
+                print(f"[AssetManager] Asset category created: {response.data[0]['id']}")
+                return response.data[0]
+        except Exception as e:
+            print(f"[AssetManager] Error creating asset category: {e}")
+            import traceback
+            traceback.print_exc()
+        return None
+
+    def update_asset_category(self, category_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """更新资产分类"""
+        if not self._ensure_connected():
+            return None
+
+        try:
+            updates["updated_at"] = datetime.now().isoformat()
+            response = self.supabase.table("asset_categories").update(updates).eq("id", category_id).execute()
+            if response.data:
+                return response.data[0]
+        except Exception as e:
+            print(f"[AssetManager] Error updating asset category: {e}")
+        return None
+
+    def delete_asset_category(self, category_id: str) -> bool:
+        """删除资产分类（软删除）"""
+        if not self._ensure_connected():
+            return False
+
+        try:
+            updates = {
+                "deleted_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat()
+            }
+            response = self.supabase.table("asset_categories").update(updates).eq("id", category_id).execute()
+            return len(response.data) > 0
+        except Exception as e:
+            print(f"[AssetManager] Error deleting asset category: {e}")
+        return False
+
+    def set_asset_category(self, asset_id: str, category_id: Optional[str]) -> bool:
+        """设置资产所属分类"""
+        print(f"[AssetManager] Setting asset {asset_id} category to {category_id}")
+        return self.update_asset(asset_id, {"category_id": category_id}) is not None
+
+    def get_assets_by_category(self, category_id: str) -> List[Asset]:
+        """获取指定分类下的所有资产"""
+        print(f"[AssetManager] Getting assets by category: {category_id}")
+        if not self._ensure_connected():
+            return []
+
+        try:
+            response = self.supabase.table("assets").select("*").eq("category_id", category_id).is_("deleted_at", "null").execute()
+            if response.data:
+                return [Asset(**item) for item in response.data]
+        except Exception as e:
+            print(f"[AssetManager] Error fetching assets by category: {e}")
+        return []
+
 
 # 全局实例
 asset_manager = AssetManager()

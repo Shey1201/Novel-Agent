@@ -33,6 +33,8 @@ class Category:
     user_id: Optional[str] = None
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    deleted_at: Optional[str] = None
+    order: int = 0
 
 
 class CategoryMemory:
@@ -70,11 +72,23 @@ class CategoryMemory:
         try:
             print("[CategoryMemory] Fetching categories from Supabase...")
             response = self.supabase.table("categories").select("*").order("created_at").execute()
+            print(f"[CategoryMemory] Response type: {type(response)}")
+            print(f"[CategoryMemory] Response data: {response.data}")
             print(f"[CategoryMemory] Fetched {len(response.data) if response.data else 0} categories")
             if response.data:
-                return [Category(**cat) for cat in response.data]
+                categories = []
+                for cat in response.data:
+                    print(f"[CategoryMemory] Processing category: {cat}")
+                    try:
+                        category = Category(**cat)
+                        categories.append(category)
+                    except Exception as e:
+                        print(f"[CategoryMemory] Error parsing category {cat}: {e}")
+                return categories
         except Exception as e:
             print(f"[CategoryMemory] Error fetching categories: {e}")
+            import traceback
+            traceback.print_exc()
         return []
     
     def create_category(self, name: str, color: str) -> Optional[Category]:

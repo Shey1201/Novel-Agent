@@ -35,6 +35,9 @@ class AgentConfig:
     prompt: str
     enabled: bool
     user_id: Optional[str] = None
+    avatar_url: str = ""
+    description: str = ""
+    deleted_at: Optional[str] = None
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
 

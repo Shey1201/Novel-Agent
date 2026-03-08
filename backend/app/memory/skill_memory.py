@@ -25,6 +25,28 @@ except ImportError:
         SUPABASE_AVAILABLE = False
 
 
+def _process_constraints(raw_constraints: Any) -> List[Dict[str, Any]]:
+    """处理从数据库读取的 constraints 数据"""
+    if raw_constraints is None:
+        return []
+    elif isinstance(raw_constraints, dict):
+        raw_constraints = [raw_constraints]
+    elif not isinstance(raw_constraints, list):
+        return []
+    
+    # 只保留 SkillConstraint 模型需要的字段
+    filtered_constraints = []
+    for constraint in raw_constraints:
+        if isinstance(constraint, dict):
+            filtered_constraints.append({
+                "id": constraint.get("id"),
+                "content": constraint.get("content"),
+                "priority": constraint.get("priority"),
+                "enabled": constraint.get("enabled", True)
+            })
+    return filtered_constraints
+
+
 class SkillMemory:
     """技能存储管理器 - Supabase 版本"""
 
@@ -208,31 +230,32 @@ class SkillMemory:
             if not response.data:
                 return []
 
-            # 获取所有约束
-            print("[SkillMemory] Querying skill_constraints...")
-            constraints_response = self.supabase.table("skill_constraints").select("*").execute()
-            print(f"[SkillMemory] Fetched {len(constraints_response.data) if constraints_response.data else 0} constraints")
-            
-            constraints_map = {}
-            if constraints_response.data:
-                for constraint in constraints_response.data:
-                    skill_id = constraint.get("skill_id")
-                    if skill_id not in constraints_map:
-                        constraints_map[skill_id] = []
-                    # 只保留 SkillConstraint 模型需要的字段
-                    filtered_constraint = {
-                        "id": constraint.get("id"),
-                        "content": constraint.get("content"),
-                        "priority": constraint.get("priority"),
-                        "enabled": constraint.get("enabled", True)
-                    }
-                    constraints_map[skill_id].append(filtered_constraint)
-
-            # 组装技能数据
+            # 组装技能数据（constraints 已从 skills 表的 JSONB 字段中读取）
             skills = []
             for skill_data in response.data:
                 skill_id = skill_data.get("id")
-                skill_data["constraints"] = constraints_map.get(skill_id, [])
+                # 确保 constraints 是列表格式
+                raw_constraints = skill_data.get("constraints", [])
+                if raw_constraints is None:
+                    raw_constraints = []
+                elif isinstance(raw_constraints, dict):
+                    raw_constraints = [raw_constraints]
+                elif not isinstance(raw_constraints, list):
+                    raw_constraints = []
+                
+                # 只保留 SkillConstraint 模型需要的字段
+                filtered_constraints = []
+                for constraint in raw_constraints:
+                    if isinstance(constraint, dict):
+                        filtered_constraints.append({
+                            "id": constraint.get("id"),
+                            "content": constraint.get("content"),
+                            "priority": constraint.get("priority"),
+                            "enabled": constraint.get("enabled", True)
+                        })
+                
+                skill_data["constraints"] = filtered_constraints
+                
                 try:
                     skill = Skill(**skill_data)
                     skills.append(skill)
@@ -261,19 +284,8 @@ class SkillMemory:
 
             skill_data = response.data
 
-            # 获取约束
-            constraints_response = self.supabase.table("skill_constraints").select("*").eq("skill_id", skill_id).execute()
-            # 只保留 SkillConstraint 模型需要的字段
-            constraints = []
-            if constraints_response.data:
-                for constraint in constraints_response.data:
-                    constraints.append({
-                        "id": constraint.get("id"),
-                        "content": constraint.get("content"),
-                        "priority": constraint.get("priority"),
-                        "enabled": constraint.get("enabled", True)
-                    })
-            skill_data["constraints"] = constraints
+            # 从 skills 表的 constraints 字段直接读取
+            skill_data["constraints"] = _process_constraints(skill_data.get("constraints"))
 
             return Skill(**skill_data)
         except Exception as e:
@@ -290,29 +302,10 @@ class SkillMemory:
             if not response.data:
                 return []
 
-            # 获取这些技能的所有约束
-            skill_ids = [skill.get("id") for skill in response.data]
-            constraints_map = {}
-            if skill_ids:
-                constraints_response = self.supabase.table("skill_constraints").select("*").in_("skill_id", skill_ids).execute()
-                if constraints_response.data:
-                    for constraint in constraints_response.data:
-                        skill_id = constraint.get("skill_id")
-                        if skill_id not in constraints_map:
-                            constraints_map[skill_id] = []
-                        # 只保留 SkillConstraint 模型需要的字段
-                        constraints_map[skill_id].append({
-                            "id": constraint.get("id"),
-                            "content": constraint.get("content"),
-                            "priority": constraint.get("priority"),
-                            "enabled": constraint.get("enabled", True)
-                        })
-
-            # 组装技能数据
+            # 组装技能数据（constraints 已从 skills 表的 JSONB 字段中读取）
             skills = []
             for skill_data in response.data:
-                skill_id = skill_data.get("id")
-                skill_data["constraints"] = constraints_map.get(skill_id, [])
+                skill_data["constraints"] = _process_constraints(skill_data.get("constraints"))
                 skills.append(Skill(**skill_data))
 
             return skills
@@ -326,20 +319,13 @@ class SkillMemory:
             raise Exception("Supabase not available")
 
         try:
-            # 分离约束和技能数据
+            # constraints 现在直接存储在 skills 表的 JSONB 字段中
             skill_data = skill.model_dump()
-            constraints = skill_data.pop("constraints", [])
 
-            # 插入技能
+            # 插入技能（包含 constraints）
             response = self.supabase.table("skills").insert(skill_data).execute()
             if not response.data:
                 raise Exception("Failed to create skill")
-
-            # 插入约束
-            if constraints:
-                for constraint in constraints:
-                    constraint["skill_id"] = skill.id
-                self.supabase.table("skill_constraints").insert(constraints).execute()
 
             return skill
         except Exception as e:
@@ -352,22 +338,11 @@ class SkillMemory:
             return None
 
         try:
-            # 分离约束和其他更新
-            constraints = updates.pop("constraints", None)
-
-            # 更新技能
+            # constraints 现在直接存储在 skills 表的 JSONB 字段中
             updates["updated_at"] = datetime.now().isoformat()
             response = self.supabase.table("skills").update(updates).eq("id", skill_id).execute()
             if not response.data:
                 return None
-
-            # 如果有约束更新，先删除旧约束再插入新约束
-            if constraints is not None:
-                self.supabase.table("skill_constraints").delete().eq("skill_id", skill_id).execute()
-                if constraints:
-                    for constraint in constraints:
-                        constraint["skill_id"] = skill_id
-                    self.supabase.table("skill_constraints").insert(constraints).execute()
 
             return self.get_skill_by_id(skill_id)
         except Exception as e:
@@ -380,10 +355,7 @@ class SkillMemory:
             return False
 
         try:
-            # 删除约束（级联删除应该会自动处理，但为了安全）
-            self.supabase.table("skill_constraints").delete().eq("skill_id", skill_id).execute()
-
-            # 删除技能
+            # constraints 现在直接存储在 skills 表中，删除技能时会自动删除
             self.supabase.table("skills").delete().eq("id", skill_id).execute()
             return True
         except Exception as e:
@@ -481,29 +453,10 @@ class SkillMemory:
             if not response.data:
                 return []
 
-            # 获取这些技能的所有约束
-            skill_ids = [skill.get("id") for skill in response.data]
-            constraints_map = {}
-            if skill_ids:
-                constraints_response = self.supabase.table("skill_constraints").select("*").in_("skill_id", skill_ids).execute()
-                if constraints_response.data:
-                    for constraint in constraints_response.data:
-                        skill_id = constraint.get("skill_id")
-                        if skill_id not in constraints_map:
-                            constraints_map[skill_id] = []
-                        # 只保留 SkillConstraint 模型需要的字段
-                        constraints_map[skill_id].append({
-                            "id": constraint.get("id"),
-                            "content": constraint.get("content"),
-                            "priority": constraint.get("priority"),
-                            "enabled": constraint.get("enabled", True)
-                        })
-
-            # 组装技能数据
+            # 组装技能数据（constraints 已从 skills 表的 JSONB 字段中读取）
             skills = []
             for skill_data in response.data:
-                skill_id = skill_data.get("id")
-                skill_data["constraints"] = constraints_map.get(skill_id, [])
+                skill_data["constraints"] = _process_constraints(skill_data.get("constraints"))
                 skills.append(Skill(**skill_data))
 
             return skills
@@ -521,29 +474,10 @@ class SkillMemory:
             if not response.data:
                 return []
 
-            # 获取这些技能的所有约束
-            skill_ids = [skill.get("id") for skill in response.data]
-            constraints_map = {}
-            if skill_ids:
-                constraints_response = self.supabase.table("skill_constraints").select("*").in_("skill_id", skill_ids).execute()
-                if constraints_response.data:
-                    for constraint in constraints_response.data:
-                        skill_id = constraint.get("skill_id")
-                        if skill_id not in constraints_map:
-                            constraints_map[skill_id] = []
-                        # 只保留 SkillConstraint 模型需要的字段
-                        constraints_map[skill_id].append({
-                            "id": constraint.get("id"),
-                            "content": constraint.get("content"),
-                            "priority": constraint.get("priority"),
-                            "enabled": constraint.get("enabled", True)
-                        })
-
-            # 组装技能数据
+            # 组装技能数据（constraints 已从 skills 表的 JSONB 字段中读取）
             skills = []
             for skill_data in response.data:
-                skill_id = skill_data.get("id")
-                skill_data["constraints"] = constraints_map.get(skill_id, [])
+                skill_data["constraints"] = _process_constraints(skill_data.get("constraints"))
                 skills.append(Skill(**skill_data))
 
             return skills

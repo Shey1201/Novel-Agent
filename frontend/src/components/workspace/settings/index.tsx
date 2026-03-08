@@ -836,11 +836,20 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
               <div className="space-y-4">
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-zinc-700">Storage Used</span>
-                    <span className="text-sm text-zinc-500">45MB / 100MB</span>
+                    <span className="text-sm text-zinc-700">Database Size</span>
+                    <span className="text-sm text-zinc-500">27MB / 500MB</span>
                   </div>
                   <div className="w-full h-2 bg-zinc-100 rounded-full overflow-hidden">
-                    <div className="w-[45%] h-full bg-indigo-500 rounded-full" />
+                    <div className="w-[5%] h-full bg-indigo-500 rounded-full" />
+                  </div>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-zinc-700">File Storage</span>
+                    <span className="text-sm text-zinc-500">0GB / 1GB</span>
+                  </div>
+                  <div className="w-full h-2 bg-zinc-100 rounded-full overflow-hidden">
+                    <div className="w-[0%] h-full bg-green-500 rounded-full" />
                   </div>
                 </div>
                 <div className="flex gap-3">

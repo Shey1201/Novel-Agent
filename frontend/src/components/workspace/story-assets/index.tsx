@@ -1,18 +1,11 @@
 "use client";
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { useAssetStore, type AssetType, type GlobalAsset } from '@/store/assetStore';
+import { useAssetStore, type AssetType, type GlobalAsset, type AssetCategory } from '@/store/assetStore';
 import { useSupabaseStore } from '@/store/supabaseStore';
 
-type ViewMode = 'by-type' | 'starred' | 'uncategorized';
+type ViewMode = 'by-type' | 'starred' | 'uncategorized' | 'by-category';
 type PanelMode = 'view' | 'edit';
-
-// 自定义分类类型
-interface CustomCategory {
-  id: string;
-  name: string;
-  color: string;
-}
 
 const typeLabels: Record<AssetType, string> = {
   characters: '角色',
@@ -48,17 +41,7 @@ const typeColors: Record<AssetType, string> = {
   timeline: '#ec4899',
 };
 
-// 从localStorage加载自定义分类
-const loadCustomCategories = (): CustomCategory[] => {
-  if (typeof window === 'undefined') return [];
-  const saved = localStorage.getItem('asset-custom-categories');
-  return saved ? JSON.parse(saved) : [];
-};
 
-// 保存自定义分类到localStorage
-const saveCustomCategories = (categories: CustomCategory[]) => {
-  localStorage.setItem('asset-custom-categories', JSON.stringify(categories));
-};
 
 // 获取按小说分组的资产
 const getAssetsByNovel = (assets: GlobalAsset[]) => {
@@ -86,8 +69,13 @@ const StoryAssets: React.FC = () => {
   const { novels, currentNovelId } = useSupabaseStore();
   const {
     assets,
+    assetCategories,
     isLoading,
     fetchAllAssets,
+    fetchAssetCategories,
+    createAssetCategory,
+    updateAssetCategory,
+    deleteAssetCategory,
     mountAssetToNovel,
     unmountAssetFromNovel,
     toggleStarAsset,
@@ -136,16 +124,16 @@ const StoryAssets: React.FC = () => {
   const [targetNovelId, setTargetNovelId] = useState<string>('');
 
   // 自定义分类
-  const [customCategories, setCustomCategories] = useState<CustomCategory[]>([]);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newCategoryColor, setNewCategoryColor] = useState('#6366f1');
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
 
-  // 加载自定义分类
+  // 加载资产分类
   useEffect(() => {
-    setCustomCategories(loadCustomCategories());
-  }, []);
+    fetchAssetCategories();
+  }, [fetchAssetCategories]);
 
   // 初始加载
   useEffect(() => {
@@ -317,33 +305,24 @@ const StoryAssets: React.FC = () => {
   };
 
   // 创建自定义分类
-  const handleCreateCategory = () => {
+  const handleCreateCategory = async () => {
     if (!newCategoryName.trim()) return;
     
     // 随机颜色
     const colors = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#ef4444', '#6b7280', '#14b8a6', '#f97316'];
     const randomColor = colors[Math.floor(Math.random() * colors.length)];
     
-    const newCategory: CustomCategory = {
-      id: `cat_${Date.now()}`,
-      name: newCategoryName.trim(),
-      color: randomColor,
-    };
-    
-    const updated = [...customCategories, newCategory];
-    setCustomCategories(updated);
-    saveCustomCategories(updated);
+    const order = assetCategories.length;
+    await createAssetCategory(newCategoryName.trim(), randomColor, order);
     setNewCategoryName('');
     setShowCategoryModal(false);
   };
 
   // 删除自定义分类
-  const handleDeleteCategory = (categoryId: string) => {
+  const handleDeleteCategory = async (categoryId: string) => {
     if (!confirm('确定要删除此分类吗？分类中的资产将被移至未分类。')) return;
     
-    const updated = customCategories.filter(c => c.id !== categoryId);
-    setCustomCategories(updated);
-    saveCustomCategories(updated);
+    await deleteAssetCategory(categoryId);
     
     if (selectedCategoryId === categoryId) {
       setSelectedCategoryId(null);
@@ -533,7 +512,7 @@ const StoryAssets: React.FC = () => {
             </div>
             
             <div className="space-y-0.5">
-              {customCategories.map(category => {
+              {assetCategories.map(category => {
                 const count = assets.filter(a => (a as GlobalAsset & { category_id?: string }).category_id === category.id).length;
                 const isSelected = selectedCategoryId === category.id;
                 return (
@@ -570,7 +549,7 @@ const StoryAssets: React.FC = () => {
                   </div>
                 );
               })}
-              {customCategories.length === 0 && (
+              {assetCategories.length === 0 && (
                 <p className="text-[11px] text-zinc-400 px-3 py-2 italic">暂无自定义分类</p>
               )}
             </div>
@@ -897,8 +876,8 @@ const StoryAssets: React.FC = () => {
                     className="w-full px-3 py-2 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-sm bg-white flex items-center justify-between"
                   >
                     <span className={createType ? 'text-zinc-900' : 'text-zinc-400'}>
-                      {createType 
-                        ? (typeLabels[createType as AssetType] || customCategories.find(c => c.id === createType)?.name || '请选择资产类型')
+                      {createType
+                        ? (typeLabels[createType as AssetType] || assetCategories.find(c => c.id === createType)?.name || '请选择资产类型')
                         : '请选择资产类型'
                       }
                     </span>
@@ -952,10 +931,10 @@ const StoryAssets: React.FC = () => {
                             </button>
                           ))}
                         
-                        {customCategories.length > 0 && (
+                        {assetCategories.length > 0 && (
                           <>
                             <div className="px-3 py-1 text-xs text-zinc-400 bg-zinc-50">自定义分类</div>
-                            {customCategories
+                            {assetCategories
                               .filter(cat => cat.name.toLowerCase().includes(typeSearchQuery.toLowerCase()))
                               .map(category => (
                                 <button

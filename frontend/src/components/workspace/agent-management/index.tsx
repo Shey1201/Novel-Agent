@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useSupabaseStore, type Agent } from '@/store/supabaseStore';
 
 interface EditingAgent {
@@ -8,16 +8,16 @@ interface EditingAgent {
   prompt: string;
 }
 
-const AgentConfigForm: React.FC<{ 
-  agent: Agent; 
+const AgentConfigForm: React.FC<{
+  agent: Agent;
   onSave: (updates: Partial<Agent>) => void;
   onChange: (hasChanges: boolean) => void;
 }> = ({ agent, onSave, onChange }) => {
   const [editData, setEditData] = useState<EditingAgent>({
-    role: agent.role,
+    role: agent.role || '',
     personality: agent.personality || '',
-    temperature: agent.temperature,
-    prompt: agent.prompt,
+    temperature: agent.temperature ?? 0.7,
+    prompt: agent.prompt || '',
   });
   const [hasChanges, setHasChanges] = useState(false);
 
@@ -36,10 +36,10 @@ const AgentConfigForm: React.FC<{
   // 当切换 agent 时重置编辑数据
   useEffect(() => {
     setEditData({
-      role: agent.role,
+      role: agent.role || '',
       personality: agent.personality || '',
-      temperature: agent.temperature,
-      prompt: agent.prompt,
+      temperature: agent.temperature ?? 0.7,
+      prompt: agent.prompt || '',
     });
     setHasChanges(false);
   }, [agent.id]);
@@ -57,10 +57,10 @@ const AgentConfigForm: React.FC<{
   const handleCancel = () => {
     // 重置为原始值
     setEditData({
-      role: agent.role,
+      role: agent.role || '',
       personality: agent.personality || '',
-      temperature: agent.temperature,
-      prompt: agent.prompt,
+      temperature: agent.temperature ?? 0.7,
+      prompt: agent.prompt || '',
     });
     setHasChanges(false);
   };
@@ -149,20 +149,16 @@ const AgentConfigForm: React.FC<{
 };
 
 const AgentManagement: React.FC = () => {
-  const { agents, updateAgent, loadFromSupabase } = useSupabaseStore();
+  const { agents, updateAgent, isLoading, loadAgents } = useSupabaseStore();
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  
-  // 组件挂载时加载数据
+
+  // 组件挂载时按需加载 agents
   useEffect(() => {
-    const loadData = async () => {
-      setIsLoading(true);
-      await loadFromSupabase();
-      setIsLoading(false);
-    };
-    loadData();
-  }, [loadFromSupabase]);
+    if (agents.length === 0) {
+      loadAgents();
+    }
+  }, [agents.length, loadAgents]);
   
   // 当agents数据加载完成后，设置默认选中的agent
   useEffect(() => {
@@ -201,24 +197,38 @@ const AgentManagement: React.FC = () => {
       <div className="flex-1 overflow-hidden flex">
         {/* 左侧 Agent 列表 */}
         <div className="w-64 border-r border-zinc-200 overflow-y-auto p-3">
-          {agents.map(agent => (
-            <button
-              key={agent.id}
-              onClick={() => handleAgentSelect(agent.id)}
-              className={`w-full text-left p-3 rounded-lg transition-colors mb-2 relative ${
-                selectedAgentId === agent.id
-                  ? 'bg-indigo-100 text-indigo-700'
-                  : 'hover:bg-zinc-100'
-              }`}>
-              <div className="font-semibold text-sm flex items-center gap-2">
-                {agent.name}
-                {selectedAgentId === agent.id && hasUnsavedChanges && (
-                  <span className="w-2 h-2 bg-amber-500 rounded-full" title="有未保存的更改" />
-                )}
-              </div>
-              <div className="text-xs text-zinc-500 truncate">{agent.role}</div>
-            </button>
-          ))}
+          {isLoading ? (
+            <div className="flex items-center justify-center h-32 text-zinc-400 text-sm">
+              <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              加载中...
+            </div>
+          ) : agents.length === 0 ? (
+            <div className="flex items-center justify-center h-32 text-zinc-400 text-sm">
+              暂无 Agent 数据
+            </div>
+          ) : (
+            agents.map(agent => (
+              <button
+                key={agent.id}
+                onClick={() => handleAgentSelect(agent.id)}
+                className={`w-full text-left p-3 rounded-lg transition-colors mb-2 relative ${
+                  selectedAgentId === agent.id
+                    ? 'bg-indigo-100 text-indigo-700'
+                    : 'hover:bg-zinc-100'
+                }`}>
+                <div className="font-semibold text-sm flex items-center gap-2">
+                  {agent.name}
+                  {selectedAgentId === agent.id && hasUnsavedChanges && (
+                    <span className="w-2 h-2 bg-amber-500 rounded-full" title="有未保存的更改" />
+                  )}
+                </div>
+                <div className="text-xs text-zinc-500 truncate">{agent.role}</div>
+              </button>
+            ))
+          )}
         </div>
         
         {/* 右侧配置区域 */}
