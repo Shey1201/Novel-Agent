@@ -9,10 +9,12 @@ from app.models.skill import Skill, SkillCategory, SkillConstraint, SkillTestRes
 
 # 尝试导入 supabase，如果没有则使用本地存储作为回退
 try:
-    from supabase import create_client, Client
+    from supabase import create_client
+    from supabase._sync.client import SyncClient as Client
     SUPABASE_AVAILABLE = True
 except ImportError:
     SUPABASE_AVAILABLE = False
+    Client = Any
 
 
 class SkillMemory:
