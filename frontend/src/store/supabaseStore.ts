@@ -903,6 +903,7 @@ export const useSupabaseStore = create<NovelState>()(
                 title: novel.title,
                 outline: novel.outline || '',
                 locked: novel.locked || false,
+                categoryId: novel.category_id || null,  // 添加分类ID映射
                 createdAt: new Date(novel.created_at).getTime(),
                 updatedAt: new Date(novel.updated_at).getTime(),
                 chapters: (novel.chapters || []).map((ch: any) => ({
