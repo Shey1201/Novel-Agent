@@ -93,7 +93,9 @@ async def get_novels():
 @router.get("/with-chapters", response_model=List[NovelWithChaptersResponse])
 async def get_novels_with_chapters():
     """获取所有小说及其章节"""
+    print(f"[API] GET /api/novels/with-chapters called")
     novels = novel_memory.get_all_novels()
+    print(f"[API] Retrieved {len(novels)} novels from memory")
     result = []
     
     for novel in novels:
