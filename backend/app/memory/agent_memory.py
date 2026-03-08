@@ -2,6 +2,8 @@
 Agent 配置数据管理模块
 """
 import os
+import sys
+import subprocess
 import uuid
 from datetime import datetime
 from typing import List, Optional, Dict, Any
@@ -11,7 +13,15 @@ try:
     from supabase import create_client
     SUPABASE_AVAILABLE = True
 except ImportError:
-    SUPABASE_AVAILABLE = False
+    print("[AgentMemory] Failed to import supabase, attempting to install...")
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "supabase", "-q"])
+        from supabase import create_client
+        SUPABASE_AVAILABLE = True
+        print("[AgentMemory] Supabase installed and imported successfully")
+    except Exception as e:
+        print(f"[AgentMemory] Failed to install supabase: {e}")
+        SUPABASE_AVAILABLE = False
 
 
 @dataclass

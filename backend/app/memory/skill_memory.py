@@ -2,6 +2,8 @@
 Skill 存储管理模块 - 使用 Supabase
 """
 import os
+import sys
+import subprocess
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
@@ -12,7 +14,15 @@ try:
     from supabase import create_client
     SUPABASE_AVAILABLE = True
 except ImportError:
-    SUPABASE_AVAILABLE = False
+    print("[SkillMemory] Failed to import supabase, attempting to install...")
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "supabase", "-q"])
+        from supabase import create_client
+        SUPABASE_AVAILABLE = True
+        print("[SkillMemory] Supabase installed and imported successfully")
+    except Exception as e:
+        print(f"[SkillMemory] Failed to install supabase: {e}")
+        SUPABASE_AVAILABLE = False
 
 
 class SkillMemory:

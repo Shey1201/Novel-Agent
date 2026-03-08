@@ -2,6 +2,8 @@
 分类管理内存模块 - 使用 Supabase
 """
 import os
+import sys
+import subprocess
 import uuid
 from typing import List, Optional
 from dataclasses import dataclass, field
@@ -12,7 +14,15 @@ try:
     from supabase import create_client
     SUPABASE_AVAILABLE = True
 except ImportError:
-    SUPABASE_AVAILABLE = False
+    print("[CategoryMemory] Failed to import supabase, attempting to install...")
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "supabase", "-q"])
+        from supabase import create_client
+        SUPABASE_AVAILABLE = True
+        print("[CategoryMemory] Supabase installed and imported successfully")
+    except Exception as e:
+        print(f"[CategoryMemory] Failed to install supabase: {e}")
+        SUPABASE_AVAILABLE = False
 
 
 @dataclass
