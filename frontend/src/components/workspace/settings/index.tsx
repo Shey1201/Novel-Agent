@@ -383,7 +383,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             {/* AI Configuration - Collapsible */}
             <CollapsibleSection
               title="AI Configuration"
-              subtitle="Configure AI Model (OpenAI Compatible)"
+              subtitle="Configure AI API (OpenAI Compatible)"
               defaultExpanded={true}
               alignSubtitle="left"
               badge={
@@ -395,28 +395,48 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                 </span>
               }
             >
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs text-zinc-500 mb-1">OpenAI API Key</label>
+              <div className="space-y-4">
+                {/* OpenAI */}
+                <div className="space-y-2">
+                  <label className="block text-xs font-medium text-zinc-700">OpenAI</label>
+                  <input
+                    type="text"
+                    placeholder="API URL (e.g., https://api.openai.com/v1)"
+                    className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  />
                   <input
                     type="password"
-                    placeholder="sk-..."
+                    placeholder="API Key (sk-...)"
                     className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                   />
                 </div>
-                <div>
-                  <label className="block text-xs text-zinc-500 mb-1">Claude API Key</label>
+                
+                {/* Claude */}
+                <div className="space-y-2">
+                  <label className="block text-xs font-medium text-zinc-700">Claude (Anthropic)</label>
+                  <input
+                    type="text"
+                    placeholder="API URL (e.g., https://api.anthropic.com/v1)"
+                    className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  />
                   <input
                     type="password"
-                    placeholder="..."
+                    placeholder="API Key"
                     className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                   />
                 </div>
-                <div>
-                  <label className="block text-xs text-zinc-500 mb-1">DeepSeek API Key</label>
+                
+                {/* DeepSeek */}
+                <div className="space-y-2">
+                  <label className="block text-xs font-medium text-zinc-700">DeepSeek</label>
+                  <input
+                    type="text"
+                    placeholder="API URL (e.g., https://api.deepseek.com/v1)"
+                    className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  />
                   <input
                     type="password"
-                    placeholder="..."
+                    placeholder="API Key"
                     className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                   />
                 </div>
@@ -728,34 +748,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             {/* 写作生成设置 */}
             <CollapsibleSection
               title="写作生成设置"
-              subtitle="分段生成和流式输出"
+              subtitle="流式输出控制"
               defaultExpanded={true}
             >
               <div className="space-y-4">
-                <div>
-                  <label className="block text-xs text-zinc-500 mb-1">
-                    每段字数
-                  </label>
-                  <input
-                    type="number"
-                    min="300"
-                    max="1000"
-                    step="100"
-                    value={generationSettings.paragraph_length}
-                    onChange={(e) => {
-                      setGenerationSettings(prev => ({ 
-                        ...prev, 
-                        paragraph_length: parseInt(e.target.value) || 500 
-                      }));
-                    }}
-                    onBlur={saveGenerationSettings}
-                    className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg"
-                  />
-                  <p className="text-xs text-zinc-400 mt-1">
-                    分段生成可更好控制 Token 使用
-                  </p>
-                </div>
-                
                 <div className="flex items-center justify-between">
                   <div>
                     <label className="block text-sm font-medium text-zinc-700">流式生成</label>
