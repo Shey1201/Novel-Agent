@@ -1,9 +1,9 @@
 "use client";
 
-import { useNovelStore } from "@/store/novelStore";
+import { useSupabaseStore } from "@/store/supabaseStore";
 
 export default function WorldPage() {
-  const { worldBible, worldApproved } = useNovelStore();
+  const { worldBible, worldApproved } = useSupabaseStore();
 
   return (
     <main className="p-8 space-y-6">

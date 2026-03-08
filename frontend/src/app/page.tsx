@@ -9,7 +9,7 @@ import { TiptapEditor, type TiptapEditorHandle } from "@/components/editor/Tipta
 import { StreamingEditor } from "@/components/editor/StreamingEditor";
 import { AgentTimeline } from "@/components/visualization/AgentTimeline";
 import { DownloadDialog } from "@/components/editor/DownloadDialog";
-import { useNovelStore } from "@/store/novelStore";
+import { useSupabaseStore } from "@/store/supabaseStore";
 import AgentManagement from "@/components/workspace/agent-management";
 import StoryAssets from "@/components/workspace/story-assets";
 import SkillsManagement from "@/components/workspace/skills";
@@ -26,15 +26,14 @@ export default function Home() {
   const {
     workspaceModule,
     currentSidebarView,
-    selectedAssetCategory,
     storyAssets,
     currentNovelId,
     novels,
     currentChapterId,
-    updateChapterTitle,
+    updateChapter,
     agents,
     updateAgent,
-  } = useNovelStore();
+  } = useSupabaseStore();
 
   const currentNovel = novels.find((n) => n.id === currentNovelId);
   const currentChapter = currentNovel?.chapters.find((c) => c.id === currentChapterId);
@@ -46,22 +45,10 @@ export default function Home() {
     
     setSaveStatus('saving');
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/novel/draft", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          novel_id: currentNovelId,
-          chapter_id: currentChapterId,
-          content: currentChapter.content,
-        }),
-      });
-      
-      if (response.ok) {
-        setSaveStatus('saved');
-        setTimeout(() => setSaveStatus('idle'), 2000);
-      } else {
-        setSaveStatus('error');
-      }
+      // 调用编辑器的保存方法
+      editorRef.current?.saveContent();
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus('idle'), 2000);
     } catch (error) {
       console.error("Save failed:", error);
       setSaveStatus('error');
@@ -99,7 +86,7 @@ export default function Home() {
                   <div className="flex items-center justify-between border-b border-zinc-200 pb-2">
                     <input
                       value={currentChapter?.title || ''}
-                      onChange={(e) => currentNovel && currentChapter && updateChapterTitle(currentNovel.id, currentChapter.id, e.target.value)}
+                      onChange={(e) => currentNovel && currentChapter && updateChapter(currentNovel.id, currentChapter.id, { title: e.target.value })}
                       className="flex-1 text-2xl font-bold outline-none bg-transparent px-0"
                       placeholder="请输入章节标题..."
                     />
