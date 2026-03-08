@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, type PersistOptions } from 'zustand/middleware';
 
 export type WorkspaceModule = 'novels' | 'agent-management' | 'story-assets' | 'skills' | 'settings' | 'recycle-bin';
 export type SidebarView = 'chapter' | 'outline';
@@ -312,36 +312,7 @@ export const useNovelStore = create<NovelState>()(
     }),
     { 
       name: 'novel-storage-v4',
-      storage: {
-        getItem: (name) => {
-          if (typeof window === 'undefined') return null;
-          try {
-            const str = localStorage.getItem(name);
-            return str ? JSON.parse(str) : null;
-          } catch (e) {
-            console.error('Error reading from localStorage:', e);
-            return null;
-          }
-        },
-        setItem: (name, value) => {
-          if (typeof window === 'undefined') return;
-          try {
-            localStorage.setItem(name, JSON.stringify(value));
-          } catch (e) {
-            console.error('Error writing to localStorage:', e);
-          }
-        },
-        removeItem: (name) => {
-          if (typeof window === 'undefined') return;
-          try {
-            localStorage.removeItem(name);
-          } catch (e) {
-            console.error('Error removing from localStorage:', e);
-          }
-        },
-      },
-      partialize: (state): Partial<NovelState> => ({
-        // 持久化所有用户数据
+      partialize: (state) => ({
         workspaceModule: state.workspaceModule,
         currentSidebarView: state.currentSidebarView,
         selectedAssetCategory: state.selectedAssetCategory,
@@ -361,7 +332,6 @@ export const useNovelStore = create<NovelState>()(
         agents: state.agents,
       }),
       onRehydrateStorage: (state) => {
-        // 数据迁移：确保 agents 有 personality 字段
         if (state && state.agents && state.agents.length > 0) {
           const defaultPersonalities: Record<string, string> = {
             'facilitator': 'structure',
@@ -383,7 +353,6 @@ export const useNovelStore = create<NovelState>()(
         
         state?.checkRecycleBin?.();
       },
-      skipHydration: true,
-    }
+    } as PersistOptions<NovelState>
   )
 );
