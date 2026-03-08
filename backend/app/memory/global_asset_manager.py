@@ -66,8 +66,9 @@ class GlobalAssetManager:
             print("Warning: Supabase not available, global asset management will be limited")
             return
         
-        supabase_url = os.getenv("SUPABASE_URL")
-        supabase_key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_ANON_KEY")
+        # 支持多种环境变量名（本地开发和 Vercel 部署）
+        supabase_url = os.getenv("SUPABASE_URL") or os.getenv("NEXT_PUBLIC_SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_ANON_KEY") or os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY")
         
         if supabase_url and supabase_key:
             try:
