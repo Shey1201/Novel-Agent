@@ -16,13 +16,15 @@ from app.api import writers_room_api, stream_api, collaboration_api, cache_api, 
 
 app = FastAPI(title="Novel Agent Studio v3")
 
-# 允许前端访问（本地和 Vercel）
+# 允许前端访问（本地、Vercel 和 Railway）
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "https://*.vercel.app",
+        "https://*.railway.app",
+        "https://*.up.railway.app",
     ],
     allow_credentials=True,
     allow_methods=["*"],
