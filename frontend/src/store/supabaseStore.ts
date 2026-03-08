@@ -387,6 +387,26 @@ export const useSupabaseStore = create<NovelState>()(
                 return agent;
               }),
             }));
+          } else {
+            // 数据库中没有配置，将本地默认配置同步到数据库
+            console.log('No agent configs in database, syncing local defaults...');
+            const { agents } = get();
+            for (const agent of agents) {
+              try {
+                await supabase.from('agent_configs').insert({
+                  user_id: user.id,
+                  agent_id: agent.id,
+                  name: agent.name,
+                  role: agent.role,
+                  personality: agent.personality,
+                  temperature: agent.temperature,
+                  prompt: agent.prompt,
+                  enabled: true,
+                });
+              } catch (err) {
+                console.error(`Failed to sync agent ${agent.id}:`, err);
+              }
+            }
           }
           
           console.log('Data loaded from Supabase successfully');
