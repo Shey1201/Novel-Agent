@@ -83,15 +83,16 @@ export const SecondarySidebar: React.FC = () => {
 
   const currentNovel = useMemo(() => novels.find((n) => n.id === currentNovelId), [novels, currentNovelId]);
 
-  // 初始化默认卷
+  // 初始化默认卷 - 当切换小说时重置
   useEffect(() => {
-    if (volumes.length === 0 && currentNovel) {
+    if (currentNovel) {
+      console.log('[SecondarySidebar] Initializing volumes for novel:', currentNovel.id, 'chapters:', currentNovel.chapters.length);
       setVolumes([
         { id: "vol-default", name: "未分卷", chapterIds: currentNovel.chapters.map(ch => ch.id), order: 0 }
       ]);
       setExpandedVolumes(new Set(['vol-default']));
     }
-  }, [currentNovel, volumes.length]);
+  }, [currentNovel?.id]); // 只在小说ID变化时执行
 
   useEffect(() => {
     if (currentNovel?.chapters.length && !currentChapterId) {
