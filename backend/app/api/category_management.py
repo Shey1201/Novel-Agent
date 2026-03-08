@@ -61,13 +61,16 @@ async def get_categories():
 @router.post("", response_model=CategoryResponse)
 async def create_category(request: CategoryCreateRequest):
     """创建新分类"""
+    print(f"[API] POST /api/categories called with: {request}")
     try:
         category = supabase_memory.create_category(
             name=request.name,
             color=request.color
         )
         if not category:
+            print("[API] ERROR: create_category returned None")
             raise HTTPException(status_code=500, detail="Failed to create category")
+        print(f"[API] Category created: {category}")
         return CategoryResponse(
             id=category.id,
             name=category.name,
@@ -77,6 +80,9 @@ async def create_category(request: CategoryCreateRequest):
             updated_at=category.updated_at
         )
     except Exception as e:
+        print(f"[API] ERROR creating category: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to create category: {str(e)}")
 
 
