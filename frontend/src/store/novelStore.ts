@@ -340,7 +340,7 @@ export const useNovelStore = create<NovelState>()(
           }
         },
       },
-      partialize: (state) => ({
+      partialize: (state): Partial<NovelState> => ({
         // 持久化所有用户数据
         workspaceModule: state.workspaceModule,
         currentSidebarView: state.currentSidebarView,
