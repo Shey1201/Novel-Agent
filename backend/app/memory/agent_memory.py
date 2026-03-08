@@ -76,7 +76,8 @@ class AgentMemory:
             return []
         
         try:
-            response = self.supabase.table("agent_configs").select("*").execute()
+            # 使用新表名 "agents"，过滤已删除的记录
+            response = self.supabase.table("agents").select("*").is_("deleted_at", "null").execute()
             print(f"[AgentMemory] Fetched {len(response.data) if response.data else 0} configs")
             if response.data:
                 return [AgentConfig(**config) for config in response.data]
@@ -92,8 +93,8 @@ class AgentMemory:
             return None
         
         try:
-            # 不使用 .single()，改用 .limit(1) 避免记录不存在时抛出异常
-            response = self.supabase.table("agent_configs").select("*").eq("agent_id", agent_id).limit(1).execute()
+            # 使用新表名 "agents"，过滤已删除的记录
+            response = self.supabase.table("agents").select("*").eq("agent_id", agent_id).is_("deleted_at", "null").limit(1).execute()
             print(f"[AgentMemory] Query response: {response}")
             if response.data and len(response.data) > 0:
                 print(f"[AgentMemory] Found config: {response.data[0]}")
@@ -106,18 +107,18 @@ class AgentMemory:
             traceback.print_exc()
         return None
     
-    def create_config(self, agent_id: str, name: str, role: str, personality: str, 
+    def create_config(self, agent_id: str, name: str, role: str, personality: str,
                       temperature: float, prompt: str, enabled: bool = True) -> Optional[AgentConfig]:
         """创建新配置"""
         print(f"[AgentMemory] create_config called for {agent_id}")
         if not self.supabase:
             print("[AgentMemory] ERROR: Supabase not connected")
             return None
-        
+
         try:
             config_id = str(uuid.uuid4())
             now = datetime.now().isoformat()
-            
+
             data = {
                 "id": config_id,
                 "agent_id": agent_id,
@@ -130,10 +131,12 @@ class AgentMemory:
                 "user_id": None,  # 匿名用户
                 "created_at": now,
                 "updated_at": now,
+                "deleted_at": None,  # 新表结构添加的字段
             }
             print(f"[AgentMemory] Inserting data: {data}")
-            
-            response = self.supabase.table("agent_configs").insert(data).execute()
+
+            # 使用新表名 "agents"
+            response = self.supabase.table("agents").insert(data).execute()
             print(f"[AgentMemory] Insert response: {response}")
             if response.data:
                 return AgentConfig(**response.data[0])
@@ -149,24 +152,30 @@ class AgentMemory:
         """更新配置"""
         if not self.supabase:
             return None
-        
+
         try:
             updates["updated_at"] = datetime.now().isoformat()
-            
-            response = self.supabase.table("agent_configs").update(updates).eq("agent_id", agent_id).execute()
+
+            # 使用新表名 "agents"，只更新未删除的记录
+            response = self.supabase.table("agents").update(updates).eq("agent_id", agent_id).is_("deleted_at", "null").execute()
             if response.data:
                 return AgentConfig(**response.data[0])
         except Exception as e:
             print(f"AgentMemory: Error updating config: {e}")
         return None
-    
+
     def delete_config(self, agent_id: str) -> bool:
-        """删除配置"""
+        """删除配置（软删除）"""
         if not self.supabase:
             return False
-        
+
         try:
-            response = self.supabase.table("agent_configs").delete().eq("agent_id", agent_id).execute()
+            # 使用软删除而不是硬删除
+            updates = {
+                "deleted_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat()
+            }
+            response = self.supabase.table("agents").update(updates).eq("agent_id", agent_id).is_("deleted_at", "null").execute()
             return len(response.data) > 0
         except Exception as e:
             print(f"AgentMemory: Error deleting config: {e}")

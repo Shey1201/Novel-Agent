@@ -112,15 +112,15 @@ class SystemSettingsManager:
             print("Warning: Supabase credentials not found, using default settings")
     
     def _load(self):
-        """从 Supabase 加载设置"""
+        """从 Supabase 加载设置（使用新表名 settings）"""
         if not self.supabase:
             self.settings = SystemSettings()
             return
-        
+
         try:
-            # 获取系统设置（使用默认用户ID或全局设置）
-            response = self.supabase.table("system_settings").select("*").limit(1).execute()
-            
+            # 使用新表名 "settings"，过滤已删除的记录
+            response = self.supabase.table("settings").select("*").is_("deleted_at", "null").limit(1).execute()
+
             if response.data and len(response.data) > 0:
                 data = response.data[0]
                 self.settings = self._dict_to_settings(data)
@@ -134,10 +134,10 @@ class SystemSettingsManager:
             self.settings = SystemSettings()
     
     def _create_default_settings(self):
-        """创建默认设置"""
+        """创建默认设置（使用新表名 settings）"""
         if not self.supabase:
             return
-        
+
         try:
             default_data = {
                 "token_enabled": False,
@@ -159,32 +159,35 @@ class SystemSettingsManager:
                 "cache_enable_planner": True,
                 "cache_enable_conflict": True,
                 "cache_enable_consistency": True,
+                "deleted_at": None,  # 新表结构添加的字段
             }
-            
-            self.supabase.table("system_settings").insert(default_data).execute()
+
+            # 使用新表名 "settings"
+            self.supabase.table("settings").insert(default_data).execute()
             print("Default system settings created")
         except Exception as e:
             print(f"Error creating default settings: {e}")
     
     def _save(self):
-        """保存设置到 Supabase"""
+        """保存设置到 Supabase（使用新表名 settings）"""
         if not self.supabase:
             return
-        
+
         try:
             data = self._settings_to_dict(self.settings)
-            
-            # 检查是否已有设置
-            response = self.supabase.table("system_settings").select("id").limit(1).execute()
-            
+
+            # 检查是否已有设置（使用新表名，过滤已删除的记录）
+            response = self.supabase.table("settings").select("id").is_("deleted_at", "null").limit(1).execute()
+
             if response.data and len(response.data) > 0:
                 # 更新现有设置
                 setting_id = response.data[0]["id"]
-                self.supabase.table("system_settings").update(data).eq("id", setting_id).execute()
+                self.supabase.table("settings").update(data).eq("id", setting_id).execute()
             else:
                 # 创建新设置
-                self.supabase.table("system_settings").insert(data).execute()
-            
+                data["deleted_at"] = None  # 新表结构添加的字段
+                self.supabase.table("settings").insert(data).execute()
+
             print("System settings saved to Supabase")
         except Exception as e:
             print(f"Error saving system settings: {e}")

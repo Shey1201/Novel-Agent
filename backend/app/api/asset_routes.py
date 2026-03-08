@@ -1,13 +1,14 @@
 """
-Asset API Routes: 资产管理API
+Asset API Routes: 资产管理API (适配优化后的数据库结构)
 """
 
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.memory.global_asset_manager import (
-    asset_manager, GlobalAsset, AssetVersion
+# 使用新的 asset_manager（合并后的统一资产表）
+from app.memory.asset_manager import (
+    asset_manager, Asset
 )
 from app.memory.agent_skill_manager import skill_manager, AgentSkill
 
