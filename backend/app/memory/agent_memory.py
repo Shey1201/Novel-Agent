@@ -1,0 +1,143 @@
+"""
+Agent 配置数据管理模块
+"""
+import os
+import uuid
+from datetime import datetime
+from typing import List, Optional, Dict, Any
+from dataclasses import dataclass, field
+
+try:
+    from supabase import create_client, Client
+    SUPABASE_AVAILABLE = True
+except ImportError:
+    SUPABASE_AVAILABLE = False
+    Client = Any
+
+
+@dataclass
+class AgentConfig:
+    id: str
+    agent_id: str
+    name: str
+    role: str
+    personality: str
+    temperature: float
+    prompt: str
+    enabled: bool
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
+
+
+class AgentMemory:
+    """Agent 配置内存管理器"""
+    
+    def __init__(self):
+        self.supabase: Optional[Client] = None
+        self._init_supabase()
+    
+    def _init_supabase(self):
+        """初始化 Supabase 客户端"""
+        if not SUPABASE_AVAILABLE:
+            print("Warning: Supabase not available, agent management will be limited")
+            return
+        
+        # 支持多种环境变量名（本地开发和 Vercel 部署）
+        supabase_url = os.getenv("SUPABASE_URL") or os.getenv("NEXT_PUBLIC_SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_ANON_KEY") or os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+        
+        if supabase_url and supabase_key:
+            try:
+                self.supabase = create_client(supabase_url, supabase_key)
+                print("AgentMemory: Connected to Supabase")
+            except Exception as e:
+                print(f"AgentMemory: Error connecting to Supabase: {e}")
+        else:
+            print("AgentMemory: Warning - Supabase credentials not found")
+    
+    def get_all_configs(self) -> List[AgentConfig]:
+        """获取所有 Agent 配置"""
+        if not self.supabase:
+            return []
+        
+        try:
+            response = self.supabase.table("agent_configs").select("*").execute()
+            if response.data:
+                return [AgentConfig(**config) for config in response.data]
+        except Exception as e:
+            print(f"AgentMemory: Error fetching configs: {e}")
+        return []
+    
+    def get_config(self, agent_id: str) -> Optional[AgentConfig]:
+        """根据 agent_id 获取配置"""
+        if not self.supabase:
+            return None
+        
+        try:
+            response = self.supabase.table("agent_configs").select("*").eq("agent_id", agent_id).single().execute()
+            if response.data:
+                return AgentConfig(**response.data)
+        except Exception as e:
+            print(f"AgentMemory: Error fetching config: {e}")
+        return None
+    
+    def create_config(self, agent_id: str, name: str, role: str, personality: str, 
+                      temperature: float, prompt: str, enabled: bool = True) -> Optional[AgentConfig]:
+        """创建新配置"""
+        if not self.supabase:
+            return None
+        
+        try:
+            config_id = str(uuid.uuid4())
+            now = datetime.now().isoformat()
+            
+            data = {
+                "id": config_id,
+                "agent_id": agent_id,
+                "name": name,
+                "role": role,
+                "personality": personality,
+                "temperature": temperature,
+                "prompt": prompt,
+                "enabled": enabled,
+                "created_at": now,
+                "updated_at": now,
+            }
+            
+            response = self.supabase.table("agent_configs").insert(data).execute()
+            if response.data:
+                return AgentConfig(**response.data[0])
+        except Exception as e:
+            print(f"AgentMemory: Error creating config: {e}")
+        return None
+    
+    def update_config(self, agent_id: str, **updates) -> Optional[AgentConfig]:
+        """更新配置"""
+        if not self.supabase:
+            return None
+        
+        try:
+            updates["updated_at"] = datetime.now().isoformat()
+            
+            response = self.supabase.table("agent_configs").update(updates).eq("agent_id", agent_id).execute()
+            if response.data:
+                return AgentConfig(**response.data[0])
+        except Exception as e:
+            print(f"AgentMemory: Error updating config: {e}")
+        return None
+    
+    def delete_config(self, agent_id: str) -> bool:
+        """删除配置"""
+        if not self.supabase:
+            return False
+        
+        try:
+            response = self.supabase.table("agent_configs").delete().eq("agent_id", agent_id).execute()
+            return len(response.data) > 0
+        except Exception as e:
+            print(f"AgentMemory: Error deleting config: {e}")
+        return False
+
+
+# 全局实例
+agent_memory = AgentMemory()

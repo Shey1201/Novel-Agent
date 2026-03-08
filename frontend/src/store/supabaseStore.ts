@@ -472,18 +472,19 @@ export const useSupabaseStore = create<NovelState>()(
           ),
         }));
         
-        // 同步到 Supabase
+        // 通过后端API同步到数据库
         try {
-          const { error } = await supabase
-            .from('chapters')
-            .update({
-              ...updates,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', chapterId);
+          const response = await fetch(`${API_BASE}/api/novels/${novelId}/chapters/${chapterId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updates),
+          });
           
-          if (error) {
-            console.error('Failed to update chapter in Supabase:', error);
+          if (!response.ok) {
+            const error = await response.json();
+            console.error('Failed to update chapter via API:', error);
+          } else {
+            console.log('Chapter updated via API:', chapterId);
           }
         } catch (err) {
           console.error('Error updating chapter:', err);
@@ -499,15 +500,17 @@ export const useSupabaseStore = create<NovelState>()(
           ),
         }));
         
-        // 同步到 Supabase
+        // 通过后端API删除
         try {
-          const { error } = await supabase
-            .from('chapters')
-            .delete()
-            .eq('id', chapterId);
+          const response = await fetch(`${API_BASE}/api/novels/${novelId}/chapters/${chapterId}`, {
+            method: 'DELETE',
+          });
           
-          if (error) {
-            console.error('Failed to delete chapter in Supabase:', error);
+          if (!response.ok) {
+            const error = await response.json();
+            console.error('Failed to delete chapter via API:', error);
+          } else {
+            console.log('Chapter deleted via API:', chapterId);
           }
         } catch (err) {
           console.error('Error deleting chapter:', err);
@@ -528,19 +531,22 @@ export const useSupabaseStore = create<NovelState>()(
           ),
         }));
         
-        // 同步到 Supabase
+        // 通过后端API同步到数据库
         try {
-          const { error } = await supabase
-            .from('chapters')
-            .update({
+          const response = await fetch(`${API_BASE}/api/novels/${novelId}/chapters/${chapterId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
               content,
               trace_data: trace_data || [],
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', chapterId);
+            }),
+          });
           
-          if (error) {
-            console.error('Failed to update chapter content in Supabase:', error);
+          if (!response.ok) {
+            const error = await response.json();
+            console.error('Failed to update chapter content via API:', error);
+          } else {
+            console.log('Chapter content updated via API:', chapterId);
           }
         } catch (err) {
           console.error('Error updating chapter content:', err);
@@ -615,24 +621,22 @@ export const useSupabaseStore = create<NovelState>()(
           agents: state.agents.map((a) => (a.id === id ? { ...a, ...updates } : a)),
         }));
 
-        // 同步到 Supabase（不需要用户登录）
+        // 通过后端API同步到数据库
         try {
-          const { error } = await supabase
-            .from('agent_configs')
-            .update({
-              ...updates,
-              user_id: ANONYMOUS_USER_ID,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('agent_id', id);
+          const response = await fetch(`${API_BASE}/api/agents/configs/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updates),
+          });
 
-          if (error) {
-            console.error('Failed to sync agent config to Supabase:', error);
+          if (!response.ok) {
+            const error = await response.json();
+            console.error('Failed to update agent via API:', error);
           } else {
-            console.log(`Agent ${id} updated successfully`);
+            console.log(`Agent ${id} updated via API successfully`);
           }
         } catch (err) {
-          console.error('Error syncing agent config:', err);
+          console.error('Error updating agent via API:', err);
         }
       },
 
