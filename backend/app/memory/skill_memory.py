@@ -20,6 +20,7 @@ class SkillMemory:
 
     def __init__(self):
         self.supabase = None
+        self._initialized = False
         self._init_supabase()
 
     def _init_supabase(self):
@@ -45,11 +46,23 @@ class SkillMemory:
         if supabase_url and supabase_key:
             try:
                 self.supabase = create_client(supabase_url, supabase_key)
+                self._initialized = True
                 print("SkillMemory: Connected to Supabase successfully")
             except Exception as e:
                 print(f"SkillMemory: Error connecting to Supabase: {e}")
+                self.supabase = None
+                self._initialized = False
         else:
             print("SkillMemory: Warning - Supabase credentials not found, skill management will not work")
+            self.supabase = None
+            self._initialized = False
+    
+    def _ensure_connected(self):
+        """确保 Supabase 已连接，如果未连接则尝试重新连接"""
+        if not self._initialized or self.supabase is None:
+            print("SkillMemory: Attempting to reconnect to Supabase...")
+            self._init_supabase()
+        return self.supabase is not None
 
     def _get_supabase(self):
         """获取 Supabase 客户端"""
@@ -59,7 +72,7 @@ class SkillMemory:
 
     def get_all_categories(self) -> List[SkillCategory]:
         """获取所有分类"""
-        if not self.supabase:
+        if not self._ensure_connected():
             print("SkillMemory: Cannot fetch categories - Supabase not connected")
             return []
 
@@ -71,6 +84,8 @@ class SkillMemory:
                 return [SkillCategory(**cat) for cat in response.data]
         except Exception as e:
             print(f"SkillMemory: Error fetching categories: {e}")
+            import traceback
+            traceback.print_exc()
         return []
 
     def get_category_by_id(self, category_id: str) -> Optional[SkillCategory]:
@@ -155,7 +170,7 @@ class SkillMemory:
 
     def get_all_skills(self) -> List[Skill]:
         """获取所有技能"""
-        if not self.supabase:
+        if not self._ensure_connected():
             return []
 
         try:
