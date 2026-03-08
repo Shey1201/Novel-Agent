@@ -72,18 +72,31 @@ class SkillMemory:
 
     def get_all_categories(self) -> List[SkillCategory]:
         """获取所有分类"""
+        print(f"[SkillMemory] get_all_categories called, connected: {self._ensure_connected()}")
+        
         if not self._ensure_connected():
-            print("SkillMemory: Cannot fetch categories - Supabase not connected")
+            print("[SkillMemory] Error: Cannot fetch categories - Supabase not connected")
             return []
 
         try:
-            print("SkillMemory: Fetching categories from Supabase...")
+            print("[SkillMemory] Querying skill_categories from Supabase...")
             response = self.supabase.table("skill_categories").select("*").order("order").execute()
-            print(f"SkillMemory: Fetched {len(response.data) if response.data else 0} categories")
+            print(f"[SkillMemory] Fetched {len(response.data) if response.data else 0} raw categories")
+            
             if response.data:
-                return [SkillCategory(**cat) for cat in response.data]
+                categories = []
+                for cat_data in response.data:
+                    try:
+                        cat = SkillCategory(**cat_data)
+                        categories.append(cat)
+                    except Exception as e:
+                        print(f"[SkillMemory] Error parsing category {cat_data.get('id')}: {e}")
+                        print(f"[SkillMemory] Category data: {cat_data}")
+                
+                print(f"[SkillMemory] Successfully parsed {len(categories)} categories")
+                return categories
         except Exception as e:
-            print(f"SkillMemory: Error fetching categories: {e}")
+            print(f"[SkillMemory] Error fetching categories: {e}")
             import traceback
             traceback.print_exc()
         return []
@@ -170,17 +183,26 @@ class SkillMemory:
 
     def get_all_skills(self) -> List[Skill]:
         """获取所有技能"""
+        print(f"[SkillMemory] get_all_skills called, connected: {self._ensure_connected()}")
+        
         if not self._ensure_connected():
+            print("[SkillMemory] Error: Supabase not connected")
             return []
 
         try:
             # 获取所有技能
+            print("[SkillMemory] Querying skills from Supabase...")
             response = self.supabase.table("skills").select("*").execute()
+            print(f"[SkillMemory] Fetched {len(response.data) if response.data else 0} raw skills")
+            
             if not response.data:
                 return []
 
             # 获取所有约束
+            print("[SkillMemory] Querying skill_constraints...")
             constraints_response = self.supabase.table("skill_constraints").select("*").execute()
+            print(f"[SkillMemory] Fetched {len(constraints_response.data) if constraints_response.data else 0} constraints")
+            
             constraints_map = {}
             if constraints_response.data:
                 for constraint in constraints_response.data:
@@ -201,11 +223,19 @@ class SkillMemory:
             for skill_data in response.data:
                 skill_id = skill_data.get("id")
                 skill_data["constraints"] = constraints_map.get(skill_id, [])
-                skills.append(Skill(**skill_data))
-
+                try:
+                    skill = Skill(**skill_data)
+                    skills.append(skill)
+                except Exception as e:
+                    print(f"[SkillMemory] Error parsing skill {skill_id}: {e}")
+                    print(f"[SkillMemory] Skill data: {skill_data}")
+            
+            print(f"[SkillMemory] Successfully parsed {len(skills)} skills")
             return skills
         except Exception as e:
-            print(f"Error fetching skills: {e}")
+            print(f"[SkillMemory] Error fetching skills: {e}")
+            import traceback
+            traceback.print_exc()
         return []
 
     def get_skill_by_id(self, skill_id: str) -> Optional[Skill]:
