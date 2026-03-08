@@ -13,8 +13,19 @@ try:
     SUPABASE_AVAILABLE = True
     print("[NovelMemory] Supabase imported successfully")
 except ImportError as e:
-    SUPABASE_AVAILABLE = False
     print(f"[NovelMemory] Failed to import supabase: {e}")
+    # 尝试自动安装
+    import subprocess
+    import sys
+    print("[NovelMemory] Attempting to install supabase...")
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "supabase==2.15.0", "-q"])
+        from supabase import create_client
+        SUPABASE_AVAILABLE = True
+        print("[NovelMemory] Supabase installed and imported successfully")
+    except Exception as install_error:
+        SUPABASE_AVAILABLE = False
+        print(f"[NovelMemory] Failed to install supabase: {install_error}")
 
 
 @dataclass
