@@ -51,7 +51,7 @@ class SkillMemory:
         else:
             print("SkillMemory: Warning - Supabase credentials not found, skill management will not work")
 
-    def _get_supabase(self) -> Optional[Client]:
+    def _get_supabase(self):
         """获取 Supabase 客户端"""
         return self.supabase
 
