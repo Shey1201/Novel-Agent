@@ -115,10 +115,19 @@ export const useSkillStore = create<SkillState>((set, get) => ({
   isTesting: false,
 
   fetchCategories: async () => {
+    console.log('[SkillStore] fetchCategories called, API_BASE:', API_BASE);
     try {
-      const response = await fetch(`${API_BASE}/api/skills/categories`);
-      if (!response.ok) throw new Error('Failed to fetch categories');
+      const url = `${API_BASE}/api/skills/categories`;
+      console.log('[SkillStore] Fetching categories from:', url);
+      const response = await fetch(url);
+      console.log('[SkillStore] Categories response status:', response.status);
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[SkillStore] Failed to fetch categories:', errorText);
+        throw new Error(`Failed to fetch categories: ${response.status}`);
+      }
       const data = await response.json();
+      console.log('[SkillStore] Fetched categories:', data.length);
       // 默认展开所有根分类（parent_id === null）
       const rootCategoryIds = data.filter((c: SkillCategory) => c.parent_id === null).map((c: SkillCategory) => c.id);
       set({ 
@@ -126,17 +135,28 @@ export const useSkillStore = create<SkillState>((set, get) => ({
         expandedCategories: rootCategoryIds
       });
     } catch (err) {
+      console.error('[SkillStore] Error in fetchCategories:', err);
       set({ error: err instanceof Error ? err.message : 'Unknown error' });
     }
   },
 
   fetchSkills: async () => {
+    console.log('[SkillStore] fetchSkills called, API_BASE:', API_BASE);
     try {
-      const response = await fetch(`${API_BASE}/api/skills`);
-      if (!response.ok) throw new Error('Failed to fetch skills');
+      const url = `${API_BASE}/api/skills`;
+      console.log('[SkillStore] Fetching skills from:', url);
+      const response = await fetch(url);
+      console.log('[SkillStore] Skills response status:', response.status);
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[SkillStore] Failed to fetch skills:', errorText);
+        throw new Error(`Failed to fetch skills: ${response.status}`);
+      }
       const data = await response.json();
+      console.log('[SkillStore] Fetched skills:', data.length);
       set({ skills: data });
     } catch (err) {
+      console.error('[SkillStore] Error in fetchSkills:', err);
       set({ error: err instanceof Error ? err.message : 'Unknown error' });
     }
   },
