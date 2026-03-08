@@ -277,24 +277,23 @@ export const useSupabaseStore = create<NovelState>()(
           agents: state.agents.map((a) => (a.id === id ? { ...a, ...updates } : a)),
         }));
         
-        // 如果用户已登录，同步到 Supabase
-        const { user } = get();
-        if (user) {
-          try {
-            const { error } = await supabase
-              .from('agent_configs')
-              .update({
-                ...updates,
-                updated_at: new Date().toISOString(),
-              })
-              .eq('agent_id', id);
-            
-            if (error) {
-              console.error('Failed to sync agent config to Supabase:', error);
-            }
-          } catch (err) {
-            console.error('Error syncing agent config:', err);
+        // 同步到 Supabase（不需要用户登录）
+        try {
+          const { error } = await supabase
+            .from('agent_configs')
+            .update({
+              ...updates,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('agent_id', id);
+          
+          if (error) {
+            console.error('Failed to sync agent config to Supabase:', error);
+          } else {
+            console.log(`Agent ${id} updated successfully`);
           }
+        } catch (err) {
+          console.error('Error syncing agent config:', err);
         }
       },
 
@@ -357,9 +356,6 @@ export const useSupabaseStore = create<NovelState>()(
         console.log('Syncing with Supabase...');
       },
       loadFromSupabase: async () => {
-        const { user } = get();
-        if (!user) return;
-        
         try {
           set({ isLoading: true });
           
@@ -394,7 +390,6 @@ export const useSupabaseStore = create<NovelState>()(
             for (const agent of agents) {
               try {
                 await supabase.from('agent_configs').insert({
-                  user_id: user.id,
                   agent_id: agent.id,
                   name: agent.name,
                   role: agent.role,
@@ -434,18 +429,10 @@ export const useSupabaseStore = create<NovelState>()(
   )
 );
 
-// 初始化时检查用户登录状态并加载数据
-supabase.auth.getSession().then(({ data: { session } }) => {
-  useSupabaseStore.getState().setUser(session?.user ?? null);
-  if (session?.user) {
-    useSupabaseStore.getState().loadFromSupabase();
-  }
-});
+// 初始化时加载数据（不需要登录）
+useSupabaseStore.getState().loadFromSupabase();
 
-// 监听登录状态变化
+// 监听登录状态变化（可选功能）
 supabase.auth.onAuthStateChange((_event, session) => {
   useSupabaseStore.getState().setUser(session?.user ?? null);
-  if (session?.user) {
-    useSupabaseStore.getState().loadFromSupabase();
-  }
 });
