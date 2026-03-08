@@ -40,7 +40,9 @@ class AgentConfigResponse(BaseModel):
 @router.get("/configs", response_model=List[AgentConfigResponse])
 async def get_agent_configs():
     """获取所有 Agent 配置"""
+    print("[API] GET /api/agents/configs called")
     configs = agent_memory.get_all_configs()
+    print(f"[API] Returning {len(configs)} agent configs")
     return [
         AgentConfigResponse(
             id=c.id,

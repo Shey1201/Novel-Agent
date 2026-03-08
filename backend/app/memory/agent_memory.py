@@ -39,34 +39,40 @@ class AgentMemory:
     
     def _init_supabase(self):
         """初始化 Supabase 客户端"""
+        print("[AgentMemory] _init_supabase called")
         if not SUPABASE_AVAILABLE:
-            print("Warning: Supabase not available, agent management will be limited")
+            print("[AgentMemory] Warning: Supabase not available, agent management will be limited")
             return
         
         # 支持多种环境变量名（本地开发和 Vercel 部署）
         supabase_url = os.getenv("SUPABASE_URL") or os.getenv("NEXT_PUBLIC_SUPABASE_URL")
         supabase_key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_ANON_KEY") or os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY")
         
+        print(f"[AgentMemory] URL: {supabase_url[:30] + '...' if supabase_url else 'Not set'}")
+        print(f"[AgentMemory] KEY: {'Set' if supabase_key else 'Not set'}")
+        
         if supabase_url and supabase_key:
             try:
                 self.supabase = create_client(supabase_url, supabase_key)
-                print("AgentMemory: Connected to Supabase")
+                print("[AgentMemory] Connected to Supabase successfully")
             except Exception as e:
-                print(f"AgentMemory: Error connecting to Supabase: {e}")
+                print(f"[AgentMemory] Error connecting to Supabase: {e}")
         else:
-            print("AgentMemory: Warning - Supabase credentials not found")
+            print("[AgentMemory] Warning - Supabase credentials not found")
     
     def get_all_configs(self) -> List[AgentConfig]:
         """获取所有 Agent 配置"""
+        print(f"[AgentMemory] get_all_configs called, supabase: {self.supabase is not None}")
         if not self.supabase:
             return []
         
         try:
             response = self.supabase.table("agent_configs").select("*").execute()
+            print(f"[AgentMemory] Fetched {len(response.data) if response.data else 0} configs")
             if response.data:
                 return [AgentConfig(**config) for config in response.data]
         except Exception as e:
-            print(f"AgentMemory: Error fetching configs: {e}")
+            print(f"[AgentMemory] Error fetching configs: {e}")
         return []
     
     def get_config(self, agent_id: str) -> Optional[AgentConfig]:
