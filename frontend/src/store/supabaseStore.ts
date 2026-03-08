@@ -18,6 +18,10 @@ import type {
   TraceItem,
 } from './novelStore';
 
+// 匿名用户ID，用于没有登录系统的情况
+// 使用随机生成的UUID，避免与真实用户ID冲突
+const ANONYMOUS_USER_ID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+
 // 重新导出类型
 export type {
   WorkspaceModule,
@@ -210,23 +214,26 @@ export const useSupabaseStore = create<NovelState>()(
 
       // 小说方法
       addNovel: async (novel) => {
-        // 先更新本地状态
-        set((state) => ({ novels: [...state.novels, novel] }));
-        
-        // 同步到 Supabase
+        // 同步到 Supabase - 不指定ID，让数据库自动生成UUID
         try {
-          const { error } = await supabase.from('novels').insert({
-            id: novel.id,
+          const { data, error } = await supabase.from('novels').insert({
+            user_id: ANONYMOUS_USER_ID,
             title: novel.title,
+            locked: novel.locked || false,
+            category_id: novel.categoryId || null,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
-          });
+          }).select('id').single();
           
           if (error) {
             console.error('Failed to create novel in Supabase:', error);
-          } else {
-            console.log('Novel created in Supabase:', novel.id);
+            return;
           }
+          
+          // 使用数据库返回的ID更新本地状态
+          const novelWithDbId = { ...novel, id: data.id };
+          set((state) => ({ novels: [...state.novels, novelWithDbId] }));
+          console.log('Novel created in Supabase:', data.id);
         } catch (err) {
           console.error('Error creating novel:', err);
         }
@@ -399,28 +406,30 @@ export const useSupabaseStore = create<NovelState>()(
 
       // 章节方法
       addChapter: async (novelId, chapter) => {
-        // 先更新本地状态
-        set((state) => ({
-          novels: state.novels.map((n) =>
-            n.id === novelId ? { ...n, chapters: [...n.chapters, chapter] } : n
-          ),
-        }));
-        
-        // 同步到 Supabase
+        // 同步到 Supabase - 不指定ID，让数据库自动生成UUID
         try {
-          const { error } = await supabase.from('chapters').insert({
-            id: chapter.id,
+          const { data, error } = await supabase.from('chapters').insert({
             novel_id: novelId,
             title: chapter.title,
-            content: chapter.content,
+            content: chapter.content || '',
             order_index: (chapter as any).orderIndex || 0,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
-          });
+          }).select('id').single();
           
           if (error) {
             console.error('Failed to create chapter in Supabase:', error);
+            return;
           }
+          
+          // 使用数据库返回的ID更新本地状态
+          const chapterWithDbId = { ...chapter, id: data.id };
+          set((state) => ({
+            novels: state.novels.map((n) =>
+              n.id === novelId ? { ...n, chapters: [...n.chapters, chapterWithDbId] } : n
+            ),
+          }));
+          console.log('Chapter created in Supabase:', data.id);
         } catch (err) {
           console.error('Error creating chapter:', err);
         }
@@ -520,7 +529,7 @@ export const useSupabaseStore = create<NovelState>()(
         // 先更新本地状态
         set((state) => {
           const newConstraints = [...state.constraints, constraint];
-          
+
           // 同步到 Supabase
           (async () => {
             try {
@@ -528,10 +537,11 @@ export const useSupabaseStore = create<NovelState>()(
                 .from('user_settings')
                 .upsert({
                   id: 'default',
+                  user_id: ANONYMOUS_USER_ID,
                   constraints: newConstraints,
                   updated_at: new Date().toISOString(),
                 }, { onConflict: 'id' });
-              
+
               if (error) {
                 console.error('Failed to sync constraints to Supabase:', error);
               }
@@ -539,7 +549,7 @@ export const useSupabaseStore = create<NovelState>()(
               console.error('Error syncing constraints:', err);
             }
           })();
-          
+
           return { constraints: newConstraints };
         });
       },
@@ -547,7 +557,7 @@ export const useSupabaseStore = create<NovelState>()(
         // 先更新本地状态
         set((state) => {
           const newConstraints = state.constraints.filter((_, i) => i !== index);
-          
+
           // 同步到 Supabase
           (async () => {
             try {
@@ -555,10 +565,11 @@ export const useSupabaseStore = create<NovelState>()(
                 .from('user_settings')
                 .upsert({
                   id: 'default',
+                  user_id: ANONYMOUS_USER_ID,
                   constraints: newConstraints,
                   updated_at: new Date().toISOString(),
                 }, { onConflict: 'id' });
-              
+
               if (error) {
                 console.error('Failed to sync constraints to Supabase:', error);
               }
@@ -566,7 +577,7 @@ export const useSupabaseStore = create<NovelState>()(
               console.error('Error syncing constraints:', err);
             }
           })();
-          
+
           return { constraints: newConstraints };
         });
       },
@@ -580,17 +591,18 @@ export const useSupabaseStore = create<NovelState>()(
         set((state) => ({
           agents: state.agents.map((a) => (a.id === id ? { ...a, ...updates } : a)),
         }));
-        
+
         // 同步到 Supabase（不需要用户登录）
         try {
           const { error } = await supabase
             .from('agent_configs')
             .update({
               ...updates,
+              user_id: ANONYMOUS_USER_ID,
               updated_at: new Date().toISOString(),
             })
             .eq('agent_id', id);
-          
+
           if (error) {
             console.error('Failed to sync agent config to Supabase:', error);
           } else {
@@ -603,26 +615,29 @@ export const useSupabaseStore = create<NovelState>()(
 
       // 消息方法
       addMessage: async (message) => {
-        // 先更新本地状态
-        set((state) => ({
-          messages: [...state.messages, message],
-        }));
-        
-        // 同步到 Supabase
+        // 同步到 Supabase - 不指定ID，让数据库自动生成UUID
         try {
-          const { error } = await supabase.from('messages').insert({
-            id: message.id,
+          const { data, error } = await supabase.from('messages').insert({
+            user_id: ANONYMOUS_USER_ID,
             role: message.role,
             content: message.content,
             agent_id: (message as any).agentId || null,
             agent_name: (message as any).agentName || null,
             timestamp: (message as any).timestamp || new Date().toISOString(),
             created_at: new Date().toISOString(),
-          });
-          
+          }).select('id').single();
+
           if (error) {
             console.error('Failed to create message in Supabase:', error);
+            return;
           }
+          
+          // 使用数据库返回的ID更新本地状态
+          const messageWithDbId = { ...message, id: data.id };
+          set((state) => ({
+            messages: [...state.messages, messageWithDbId],
+          }));
+          console.log('Message created in Supabase:', data.id);
         } catch (err) {
           console.error('Error creating message:', err);
         }
@@ -679,17 +694,18 @@ export const useSupabaseStore = create<NovelState>()(
         set((state) => ({
           categories: [...state.categories, category],
         }));
-        
+
         // 同步到 Supabase
         try {
           const { error } = await supabase.from('categories').insert({
             id: category.id,
+            user_id: ANONYMOUS_USER_ID,
             name: category.name,
             color: category.color,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           });
-          
+
           if (error) {
             console.error('Failed to create category in Supabase:', error);
           }
@@ -766,29 +782,32 @@ export const useSupabaseStore = create<NovelState>()(
 
       // 资源方法
       addStoryAsset: async (category, asset) => {
-        // 先更新本地状态
-        set((state) => ({
-          storyAssets: {
-            ...state.storyAssets,
-            [category]: [...state.storyAssets[category], asset],
-          },
-        }));
-        
-        // 同步到 Supabase
+        // 同步到 Supabase - 不指定ID，让数据库自动生成UUID
         try {
-          const { error } = await supabase.from('story_assets').insert({
-            id: asset.id,
+          const { data, error } = await supabase.from('story_assets').insert({
+            user_id: ANONYMOUS_USER_ID,
             novel_id: asset.novelId,
             category: category,
             name: asset.name,
             content: {},
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
-          });
-          
+          }).select('id').single();
+
           if (error) {
             console.error('Failed to create story asset in Supabase:', error);
+            return;
           }
+
+          // 使用数据库返回的ID更新本地状态
+          const assetWithDbId = { ...asset, id: data.id };
+          set((state) => ({
+            storyAssets: {
+              ...state.storyAssets,
+              [category]: [...state.storyAssets[category], assetWithDbId],
+            },
+          }));
+          console.log('Story asset created in Supabase:', data.id);
         } catch (err) {
           console.error('Error creating story asset:', err);
         }

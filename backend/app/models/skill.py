@@ -33,7 +33,7 @@ class Skill(BaseModel):
     id: str
     name: str
     description: str = ""
-    category_id: str
+    category_id: Optional[str] = None
     constraints: List[SkillConstraint] = Field(default_factory=list)
     target_agents: List[str] = Field(default_factory=lambda: ["writer"])
     version: str = "1.0.0"
@@ -58,7 +58,7 @@ class SkillCreateRequest(BaseModel):
     """创建技能请求"""
     name: str
     description: str = ""
-    category_id: str
+    category_id: Optional[str] = None
     constraints: List[SkillConstraint] = Field(default_factory=list)
     target_agents: List[str] = Field(default_factory=lambda: ["writer"])
     is_active: bool = True

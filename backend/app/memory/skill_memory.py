@@ -159,7 +159,14 @@ class SkillMemory:
                     skill_id = constraint.get("skill_id")
                     if skill_id not in constraints_map:
                         constraints_map[skill_id] = []
-                    constraints_map[skill_id].append(constraint)
+                    # 只保留 SkillConstraint 模型需要的字段
+                    filtered_constraint = {
+                        "id": constraint.get("id"),
+                        "content": constraint.get("content"),
+                        "priority": constraint.get("priority"),
+                        "enabled": constraint.get("enabled", True)
+                    }
+                    constraints_map[skill_id].append(filtered_constraint)
 
             # 组装技能数据
             skills = []
@@ -188,7 +195,17 @@ class SkillMemory:
 
             # 获取约束
             constraints_response = self.supabase.table("skill_constraints").select("*").eq("skill_id", skill_id).execute()
-            skill_data["constraints"] = constraints_response.data or []
+            # 只保留 SkillConstraint 模型需要的字段
+            constraints = []
+            if constraints_response.data:
+                for constraint in constraints_response.data:
+                    constraints.append({
+                        "id": constraint.get("id"),
+                        "content": constraint.get("content"),
+                        "priority": constraint.get("priority"),
+                        "enabled": constraint.get("enabled", True)
+                    })
+            skill_data["constraints"] = constraints
 
             return Skill(**skill_data)
         except Exception as e:
@@ -202,8 +219,35 @@ class SkillMemory:
 
         try:
             response = self.supabase.table("skills").select("*").eq("category_id", category_id).execute()
-            if response.data:
-                return [Skill(**skill) for skill in response.data]
+            if not response.data:
+                return []
+
+            # 获取这些技能的所有约束
+            skill_ids = [skill.get("id") for skill in response.data]
+            constraints_map = {}
+            if skill_ids:
+                constraints_response = self.supabase.table("skill_constraints").select("*").in_("skill_id", skill_ids).execute()
+                if constraints_response.data:
+                    for constraint in constraints_response.data:
+                        skill_id = constraint.get("skill_id")
+                        if skill_id not in constraints_map:
+                            constraints_map[skill_id] = []
+                        # 只保留 SkillConstraint 模型需要的字段
+                        constraints_map[skill_id].append({
+                            "id": constraint.get("id"),
+                            "content": constraint.get("content"),
+                            "priority": constraint.get("priority"),
+                            "enabled": constraint.get("enabled", True)
+                        })
+
+            # 组装技能数据
+            skills = []
+            for skill_data in response.data:
+                skill_id = skill_data.get("id")
+                skill_data["constraints"] = constraints_map.get(skill_id, [])
+                skills.append(Skill(**skill_data))
+
+            return skills
         except Exception as e:
             print(f"Error fetching skills by category: {e}")
         return []
@@ -310,6 +354,182 @@ class SkillMemory:
             violations=violations,
             suggestions=suggestions
         )
+
+    def mount_skill_to_novel(self, skill_id: str, novel_id: str) -> bool:
+        """挂载技能到小说"""
+        if not self.supabase:
+            return False
+
+        try:
+            # 获取当前技能
+            skill = self.get_skill_by_id(skill_id)
+            if not skill:
+                return False
+
+            # 更新 applicable_novels 数组
+            applicable_novels = skill.applicable_novels or []
+            if novel_id not in applicable_novels:
+                applicable_novels.append(novel_id)
+
+            self.supabase.table("skills").update({
+                "applicable_novels": applicable_novels
+            }).eq("id", skill_id).execute()
+            return True
+        except Exception as e:
+            print(f"Error mounting skill to novel: {e}")
+        return False
+
+    def unmount_skill_from_novel(self, skill_id: str, novel_id: str) -> bool:
+        """从小说卸载技能"""
+        if not self.supabase:
+            return False
+
+        try:
+            # 获取当前技能
+            skill = self.get_skill_by_id(skill_id)
+            if not skill:
+                return False
+
+            # 更新 applicable_novels 数组
+            applicable_novels = skill.applicable_novels or []
+            if novel_id in applicable_novels:
+                applicable_novels.remove(novel_id)
+
+            self.supabase.table("skills").update({
+                "applicable_novels": applicable_novels
+            }).eq("id", skill_id).execute()
+            return True
+        except Exception as e:
+            print(f"Error unmounting skill from novel: {e}")
+        return False
+
+    def get_active_skills_for_novel(self, novel_id: str) -> List[Skill]:
+        """获取小说的所有激活技能"""
+        if not self.supabase:
+            return []
+
+        try:
+            response = self.supabase.table("skills").select("*").contains("applicable_novels", [novel_id]).eq("is_active", True).execute()
+            if not response.data:
+                return []
+
+            # 获取这些技能的所有约束
+            skill_ids = [skill.get("id") for skill in response.data]
+            constraints_map = {}
+            if skill_ids:
+                constraints_response = self.supabase.table("skill_constraints").select("*").in_("skill_id", skill_ids).execute()
+                if constraints_response.data:
+                    for constraint in constraints_response.data:
+                        skill_id = constraint.get("skill_id")
+                        if skill_id not in constraints_map:
+                            constraints_map[skill_id] = []
+                        # 只保留 SkillConstraint 模型需要的字段
+                        constraints_map[skill_id].append({
+                            "id": constraint.get("id"),
+                            "content": constraint.get("content"),
+                            "priority": constraint.get("priority"),
+                            "enabled": constraint.get("enabled", True)
+                        })
+
+            # 组装技能数据
+            skills = []
+            for skill_data in response.data:
+                skill_id = skill_data.get("id")
+                skill_data["constraints"] = constraints_map.get(skill_id, [])
+                skills.append(Skill(**skill_data))
+
+            return skills
+        except Exception as e:
+            print(f"Error fetching active skills for novel: {e}")
+        return []
+
+    def get_system_skills(self) -> List[Skill]:
+        """获取系统默认技能"""
+        if not self.supabase:
+            return []
+
+        try:
+            response = self.supabase.table("skills").select("*").eq("is_system", True).execute()
+            if not response.data:
+                return []
+
+            # 获取这些技能的所有约束
+            skill_ids = [skill.get("id") for skill in response.data]
+            constraints_map = {}
+            if skill_ids:
+                constraints_response = self.supabase.table("skill_constraints").select("*").in_("skill_id", skill_ids).execute()
+                if constraints_response.data:
+                    for constraint in constraints_response.data:
+                        skill_id = constraint.get("skill_id")
+                        if skill_id not in constraints_map:
+                            constraints_map[skill_id] = []
+                        # 只保留 SkillConstraint 模型需要的字段
+                        constraints_map[skill_id].append({
+                            "id": constraint.get("id"),
+                            "content": constraint.get("content"),
+                            "priority": constraint.get("priority"),
+                            "enabled": constraint.get("enabled", True)
+                        })
+
+            # 组装技能数据
+            skills = []
+            for skill_data in response.data:
+                skill_id = skill_data.get("id")
+                skill_data["constraints"] = constraints_map.get(skill_id, [])
+                skills.append(Skill(**skill_data))
+
+            return skills
+        except Exception as e:
+            print(f"Error fetching system skills: {e}")
+        return []
+
+    def link_asset_to_skill(self, skill_id: str, asset_id: str) -> bool:
+        """关联资产到技能"""
+        if not self.supabase:
+            return False
+
+        try:
+            # 获取当前技能
+            skill = self.get_skill_by_id(skill_id)
+            if not skill:
+                return False
+
+            # 更新 linked_assets 数组
+            linked_assets = skill.linked_assets or []
+            if asset_id not in linked_assets:
+                linked_assets.append(asset_id)
+
+            self.supabase.table("skills").update({
+                "linked_assets": linked_assets
+            }).eq("id", skill_id).execute()
+            return True
+        except Exception as e:
+            print(f"Error linking asset to skill: {e}")
+        return False
+
+    def unlink_asset_from_skill(self, skill_id: str, asset_id: str) -> bool:
+        """取消资产关联"""
+        if not self.supabase:
+            return False
+
+        try:
+            # 获取当前技能
+            skill = self.get_skill_by_id(skill_id)
+            if not skill:
+                return False
+
+            # 更新 linked_assets 数组
+            linked_assets = skill.linked_assets or []
+            if asset_id in linked_assets:
+                linked_assets.remove(asset_id)
+
+            self.supabase.table("skills").update({
+                "linked_assets": linked_assets
+            }).eq("id", skill_id).execute()
+            return True
+        except Exception as e:
+            print(f"Error unlinking asset from skill: {e}")
+        return False
 
 
 # 全局实例

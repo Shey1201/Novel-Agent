@@ -361,8 +361,15 @@ export default function Library() {
                       autoFocus
                       value={editTitle}
                       onChange={(e) => setEditTitle(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleRename(novel.id)}
-                      onBlur={() => setEditingId(null)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          handleRename(novel.id);
+                        } else if (e.key === 'Escape') {
+                          setEditingId(null);
+                          setEditTitle('');
+                        }
+                      }}
+                      onBlur={() => handleRename(novel.id)}
                       className="flex-1 text-lg font-bold outline-none border-b-2 border-indigo-500 bg-transparent py-1"
                     />
                   </div>
