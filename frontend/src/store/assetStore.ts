@@ -98,7 +98,7 @@ interface AssetState {
   getSkillsByAssetId: (assetId: string) => AgentSkill[];
 }
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
 
 export const useAssetStore = create<AssetState>((set, get) => ({
   assets: [],

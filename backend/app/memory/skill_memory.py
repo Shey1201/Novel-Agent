@@ -32,14 +32,24 @@ class SkillMemory:
         supabase_url = os.getenv("SUPABASE_URL") or os.getenv("NEXT_PUBLIC_SUPABASE_URL")
         supabase_key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_ANON_KEY") or os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY")
 
+        # 调试日志
+        print(f"SkillMemory: Checking Supabase credentials...")
+        print(f"  SUPABASE_URL: {'Set' if os.getenv('SUPABASE_URL') else 'Not set'}")
+        print(f"  NEXT_PUBLIC_SUPABASE_URL: {'Set' if os.getenv('NEXT_PUBLIC_SUPABASE_URL') else 'Not set'}")
+        print(f"  SUPABASE_SERVICE_KEY: {'Set' if os.getenv('SUPABASE_SERVICE_KEY') else 'Not set'}")
+        print(f"  SUPABASE_ANON_KEY: {'Set' if os.getenv('SUPABASE_ANON_KEY') else 'Not set'}")
+        print(f"  NEXT_PUBLIC_SUPABASE_ANON_KEY: {'Set' if os.getenv('NEXT_PUBLIC_SUPABASE_ANON_KEY') else 'Not set'}")
+        print(f"  Final URL: {'Set' if supabase_url else 'Not set'}")
+        print(f"  Final KEY: {'Set' if supabase_key else 'Not set'}")
+
         if supabase_url and supabase_key:
             try:
                 self.supabase = create_client(supabase_url, supabase_key)
-                print("SkillMemory: Connected to Supabase")
+                print("SkillMemory: Connected to Supabase successfully")
             except Exception as e:
-                print(f"Error connecting to Supabase: {e}")
+                print(f"SkillMemory: Error connecting to Supabase: {e}")
         else:
-            print("Warning: Supabase credentials not found")
+            print("SkillMemory: Warning - Supabase credentials not found, skill management will not work")
 
     def _get_supabase(self) -> Optional[Client]:
         """获取 Supabase 客户端"""
@@ -50,14 +60,17 @@ class SkillMemory:
     def get_all_categories(self) -> List[SkillCategory]:
         """获取所有分类"""
         if not self.supabase:
+            print("SkillMemory: Cannot fetch categories - Supabase not connected")
             return []
 
         try:
+            print("SkillMemory: Fetching categories from Supabase...")
             response = self.supabase.table("skill_categories").select("*").order("order").execute()
+            print(f"SkillMemory: Fetched {len(response.data) if response.data else 0} categories")
             if response.data:
                 return [SkillCategory(**cat) for cat in response.data]
         except Exception as e:
-            print(f"Error fetching categories: {e}")
+            print(f"SkillMemory: Error fetching categories: {e}")
         return []
 
     def get_category_by_id(self, category_id: str) -> Optional[SkillCategory]:
