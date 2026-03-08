@@ -11,8 +11,10 @@ from dataclasses import dataclass, field
 try:
     from supabase import create_client
     SUPABASE_AVAILABLE = True
-except ImportError:
+    print("[NovelMemory] Supabase imported successfully")
+except ImportError as e:
     SUPABASE_AVAILABLE = False
+    print(f"[NovelMemory] Failed to import supabase: {e}")
 
 
 @dataclass
