@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from "react";
+import { useEffect, useRef, useState, forwardRef, useImperativeHandle, useCallback } from "react";
 import { useEditor, EditorContent, BubbleMenu } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Highlight from "@tiptap/extension-highlight";
@@ -20,6 +20,23 @@ interface GenerateChapterResponse {
 
 export interface TiptapEditorHandle {
   handleRunAgents: () => Promise<void>;
+  saveContent: () => void;
+}
+
+// 防抖函数
+type DebouncedFunction<T extends (...args: string[]) => void> = (
+  ...args: Parameters<T>
+) => void;
+
+function debounce<T extends (...args: string[]) => void>(
+  func: T,
+  wait: number
+): DebouncedFunction<T> {
+  let timeout: NodeJS.Timeout | null = null;
+  return (...args: Parameters<T>) => {
+    if (timeout) clearTimeout(timeout);
+    timeout = setTimeout(() => func(...args), wait);
+  };
 }
 
 export const TiptapEditor = forwardRef<TiptapEditorHandle>((_, ref) => {
@@ -28,7 +45,10 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle>((_, ref) => {
   const currentChapter = currentNovel?.chapters.find((c) => c.id === currentChapterId);
 
   const [selectedTrace, setSelectedTrace] = useState<TraceItem | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const msgCounterRef = useRef(1);
+  const pendingContentRef = useRef<string>("");
 
   const nextMessageMeta = () => {
     msgCounterRef.current += 1;
@@ -38,10 +58,28 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle>((_, ref) => {
     };
   };
 
+  // 防抖保存函数
+  const debouncedSave = useCallback(
+    debounce((novelId: string, chapterId: string, content: string) => {
+      updateChapterContent(novelId, chapterId, content);
+      setHasUnsavedChanges(false);
+      setLastSaved(new Date());
+    }, 2000), // 2秒防抖
+    [updateChapterContent]
+  );
+
+  // 立即保存函数
+  const saveImmediately = useCallback(() => {
+    if (currentNovelId && currentChapterId && pendingContentRef.current) {
+      updateChapterContent(currentNovelId, currentChapterId, pendingContentRef.current);
+      setHasUnsavedChanges(false);
+      setLastSaved(new Date());
+    }
+  }, [currentNovelId, currentChapterId, updateChapterContent]);
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
-        // 禁用默认的 Tab 行为，使用自定义处理
         codeBlock: false,
       }),
       Highlight.configure({ multicolor: true }),
@@ -68,7 +106,10 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle>((_, ref) => {
     },
     onUpdate: ({ editor }) => {
       if (currentNovelId && currentChapterId) {
-        updateChapterContent(currentNovelId, currentChapterId, editor.getHTML());
+        const content = editor.getHTML();
+        pendingContentRef.current = content;
+        setHasUnsavedChanges(true);
+        debouncedSave(currentNovelId, currentChapterId, content);
       }
     },
     onSelectionUpdate: ({ editor }) => {
@@ -91,13 +132,27 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle>((_, ref) => {
       if (currentContent !== currentChapter.content) {
         editor.commands.setContent(currentChapter.content || "<p>在这里开始你的小说创作...</p>", false);
       }
+      setHasUnsavedChanges(false);
+      pendingContentRef.current = currentChapter.content || "";
     }
   }, [currentChapterId, currentChapter, editor]);
+
+  // 组件卸载时保存
+  useEffect(() => {
+    return () => {
+      if (hasUnsavedChanges) {
+        saveImmediately();
+      }
+    };
+  }, [hasUnsavedChanges, saveImmediately]);
 
   useImperativeHandle(ref, () => ({
     handleRunAgents: async () => {
       const { agentConfigs, constraints } = useSupabaseStore.getState();
       if (!editor) return;
+
+      // 先保存当前内容
+      saveImmediately();
 
       const outline = editor.getText();
       try {
@@ -112,6 +167,8 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle>((_, ref) => {
           editor.commands.setContent(data.final_text, false);
           if (currentNovelId && currentChapterId) {
             updateChapterContent(currentNovelId, currentChapterId, data.final_text, data.trace_data);
+            setHasUnsavedChanges(false);
+            setLastSaved(new Date());
           }
         }
 
@@ -131,10 +188,27 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle>((_, ref) => {
         console.error("Failed to run agents:", error);
       }
     },
+    saveContent: () => {
+      saveImmediately();
+    },
   }));
 
   return (
     <div className="w-full h-full relative">
+      {/* 保存状态指示器 */}
+      <div className="absolute top-2 right-2 z-10 flex items-center gap-2">
+        {hasUnsavedChanges && (
+          <span className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded-full border border-amber-200">
+            未保存
+          </span>
+        )}
+        {lastSaved && !hasUnsavedChanges && (
+          <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded-full border border-green-200">
+            已保存 {lastSaved.toLocaleTimeString()}
+          </span>
+        )}
+      </div>
+
       {editor && (
         <>
           <BubbleMenu editor={editor} shouldShow={({ state }) => !state.selection.empty}>
