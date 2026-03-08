@@ -42,6 +42,19 @@ async def health_check():
     return {"status": "ok"}
 
 
+@app.get("/debug/env")
+async def debug_env():
+    """调试端点：检查环境变量"""
+    import os
+    return {
+        "supabase_url_set": bool(os.getenv("SUPABASE_URL")),
+        "supabase_service_key_set": bool(os.getenv("SUPABASE_SERVICE_KEY")),
+        "next_public_supabase_url_set": bool(os.getenv("NEXT_PUBLIC_SUPABASE_URL")),
+        "next_public_supabase_anon_key_set": bool(os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY")),
+        "supabase_url_preview": os.getenv("SUPABASE_URL", "")[:30] + "..." if os.getenv("SUPABASE_URL") else "Not set",
+    }
+
+
 app.include_router(novel_routes.router)
 app.include_router(generate_chapter.router)
 app.include_router(world_routes.router)
