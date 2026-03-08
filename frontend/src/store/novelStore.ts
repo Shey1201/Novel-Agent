@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist, type PersistOptions } from 'zustand/middleware';
+import { persist, createJSONStorage, type PersistOptions } from 'zustand/middleware';
 
 export type WorkspaceModule = 'novels' | 'agent-management' | 'story-assets' | 'skills' | 'settings' | 'recycle-bin';
 export type SidebarView = 'chapter' | 'outline';
@@ -310,8 +310,9 @@ export const useNovelStore = create<NovelState>()(
         novels: state.novels.map((n) => n.id === novelId ? { ...n, categoryId } : n)
       })),
     }),
-    { 
+    {
       name: 'novel-storage-v4',
+      storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         workspaceModule: state.workspaceModule,
         currentSidebarView: state.currentSidebarView,
