@@ -18,6 +18,9 @@ import type {
   TraceItem,
 } from './novelStore';
 
+// API 基础URL
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+
 // 匿名用户ID，用于没有登录系统的情况
 // 使用随机生成的UUID，避免与真实用户ID冲突
 const ANONYMOUS_USER_ID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
@@ -214,26 +217,35 @@ export const useSupabaseStore = create<NovelState>()(
 
       // 小说方法
       addNovel: async (novel) => {
-        // 同步到 Supabase - 不指定ID，让数据库自动生成UUID
+        // 通过后端API创建小说
         try {
-          const { data, error } = await supabase.from('novels').insert({
-            user_id: ANONYMOUS_USER_ID,
-            title: novel.title,
-            locked: novel.locked || false,
-            category_id: novel.categoryId || null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          }).select('id').single();
+          const response = await fetch(`${API_BASE}/api/novels`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: novel.title,
+              locked: novel.locked || false,
+              category_id: novel.categoryId || null,
+            }),
+          });
           
-          if (error) {
-            console.error('Failed to create novel in Supabase:', error);
+          if (!response.ok) {
+            const error = await response.json();
+            console.error('Failed to create novel via API:', error);
             return;
           }
           
+          const data = await response.json();
+          
           // 使用数据库返回的ID更新本地状态
-          const novelWithDbId = { ...novel, id: data.id };
+          const novelWithDbId = { 
+            ...novel, 
+            id: data.id,
+            categoryId: data.category_id,
+            locked: data.locked,
+          };
           set((state) => ({ novels: [...state.novels, novelWithDbId] }));
-          console.log('Novel created in Supabase:', data.id);
+          console.log('Novel created via API:', data.id);
         } catch (err) {
           console.error('Error creating novel:', err);
         }
