@@ -271,9 +271,32 @@ export const useSupabaseStore = create<NovelState>()(
       updateAgentConfig: (config) => set((state) => ({
         agentConfigs: { ...state.agentConfigs, ...config },
       })),
-      updateAgent: (id, updates) => set((state) => ({
-        agents: state.agents.map((a) => (a.id === id ? { ...a, ...updates } : a)),
-      })),
+      updateAgent: async (id, updates) => {
+        // 先更新本地状态
+        set((state) => ({
+          agents: state.agents.map((a) => (a.id === id ? { ...a, ...updates } : a)),
+        }));
+        
+        // 如果用户已登录，同步到 Supabase
+        const { user } = get();
+        if (user) {
+          try {
+            const { error } = await supabase
+              .from('agent_configs')
+              .update({
+                ...updates,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('agent_id', id);
+            
+            if (error) {
+              console.error('Failed to sync agent config to Supabase:', error);
+            }
+          } catch (err) {
+            console.error('Error syncing agent config:', err);
+          }
+        }
+      },
 
       // 消息方法
       addMessage: (message) => set((state) => ({
@@ -334,8 +357,44 @@ export const useSupabaseStore = create<NovelState>()(
         console.log('Syncing with Supabase...');
       },
       loadFromSupabase: async () => {
-        // TODO: 实现从 Supabase 加载数据
-        console.log('Loading from Supabase...');
+        const { user } = get();
+        if (!user) return;
+        
+        try {
+          set({ isLoading: true });
+          
+          // 加载 Agent 配置
+          const { data: agentConfigs, error: agentError } = await supabase
+            .from('agent_configs')
+            .select('*');
+          
+          if (agentError) {
+            console.error('Failed to load agent configs:', agentError);
+          } else if (agentConfigs && agentConfigs.length > 0) {
+            // 将数据库中的配置合并到本地 agents
+            set((state) => ({
+              agents: state.agents.map((agent) => {
+                const dbConfig = agentConfigs.find((c) => c.agent_id === agent.id);
+                if (dbConfig) {
+                  return {
+                    ...agent,
+                    role: dbConfig.role || agent.role,
+                    personality: dbConfig.personality || agent.personality,
+                    temperature: dbConfig.temperature ?? agent.temperature,
+                    prompt: dbConfig.prompt || agent.prompt,
+                  };
+                }
+                return agent;
+              }),
+            }));
+          }
+          
+          console.log('Data loaded from Supabase successfully');
+        } catch (err) {
+          console.error('Error loading from Supabase:', err);
+        } finally {
+          set({ isLoading: false });
+        }
       },
     }),
     {
@@ -355,12 +414,18 @@ export const useSupabaseStore = create<NovelState>()(
   )
 );
 
-// 初始化时检查用户登录状态
+// 初始化时检查用户登录状态并加载数据
 supabase.auth.getSession().then(({ data: { session } }) => {
   useSupabaseStore.getState().setUser(session?.user ?? null);
+  if (session?.user) {
+    useSupabaseStore.getState().loadFromSupabase();
+  }
 });
 
 // 监听登录状态变化
 supabase.auth.onAuthStateChange((_event, session) => {
   useSupabaseStore.getState().setUser(session?.user ?? null);
+  if (session?.user) {
+    useSupabaseStore.getState().loadFromSupabase();
+  }
 });
