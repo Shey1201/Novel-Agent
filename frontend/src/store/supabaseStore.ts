@@ -77,6 +77,9 @@ interface NovelState {
   deleteNovel: (id: string) => void;
   restoreNovel: (id: string) => void;
   permanentlyDeleteNovel: (id: string) => void;
+  clearRecycleBin: () => void;
+  renameNovel: (id: string, newTitle: string) => void;
+  toggleLockNovel: (id: string) => void;
   setCurrentNovelId: (id: string | null) => void;
   setCurrentChapterId: (id: string | null) => void;
 
@@ -322,6 +325,73 @@ export const useSupabaseStore = create<NovelState>()(
           }
         } catch (err) {
           console.error('Error permanently deleting novel:', err);
+        }
+      },
+      clearRecycleBin: () => set((state) => {
+        const now = Date.now();
+        const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+        const expired = state.deletedNovels.filter((n) => now - (n.deletedAt || 0) >= thirtyDays);
+        const remaining = state.deletedNovels.filter((n) => now - (n.deletedAt || 0) < thirtyDays);
+        
+        // 同步到 Supabase：删除过期的小说
+        expired.forEach(async (novel) => {
+          try {
+            await supabase.from('novels').delete().eq('id', novel.id);
+          } catch (err) {
+            console.error('Error deleting expired novel:', err);
+          }
+        });
+        
+        return { deletedNovels: remaining };
+      }),
+      renameNovel: async (id, newTitle) => {
+        // 先更新本地状态
+        set((state) => ({
+          novels: state.novels.map((n) =>
+            n.id === id ? { ...n, title: newTitle } : n
+          ),
+        }));
+        
+        // 同步到 Supabase
+        try {
+          const { error } = await supabase
+            .from('novels')
+            .update({ title: newTitle, updated_at: new Date().toISOString() })
+            .eq('id', id);
+          
+          if (error) {
+            console.error('Failed to rename novel in Supabase:', error);
+          }
+        } catch (err) {
+          console.error('Error renaming novel:', err);
+        }
+      },
+      toggleLockNovel: async (id) => {
+        // 先获取当前状态
+        const novel = get().novels.find((n) => n.id === id);
+        if (!novel) return;
+        
+        const newLockState = !novel.isLocked;
+        
+        // 更新本地状态
+        set((state) => ({
+          novels: state.novels.map((n) =>
+            n.id === id ? { ...n, isLocked: newLockState } : n
+          ),
+        }));
+        
+        // 同步到 Supabase
+        try {
+          const { error } = await supabase
+            .from('novels')
+            .update({ is_locked: newLockState, updated_at: new Date().toISOString() })
+            .eq('id', id);
+          
+          if (error) {
+            console.error('Failed to toggle lock in Supabase:', error);
+          }
+        } catch (err) {
+          console.error('Error toggling lock:', err);
         }
       },
       setCurrentNovelId: (id) => set({ currentNovelId: id }),
