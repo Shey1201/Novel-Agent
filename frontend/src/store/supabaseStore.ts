@@ -205,10 +205,51 @@ export const useSupabaseStore = create<NovelState>()(
       setSelectedAssetCategory: (c) => set({ selectedAssetCategory: c }),
 
       // 小说方法
-      addNovel: (novel) => set((state) => ({ novels: [...state.novels, novel] })),
-      updateNovel: (id, updates) => set((state) => ({
-        novels: state.novels.map((n) => (n.id === id ? { ...n, ...updates } : n)),
-      })),
+      addNovel: async (novel) => {
+        // 先更新本地状态
+        set((state) => ({ novels: [...state.novels, novel] }));
+        
+        // 同步到 Supabase
+        try {
+          const { error } = await supabase.from('novels').insert({
+            id: novel.id,
+            title: novel.title,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+          
+          if (error) {
+            console.error('Failed to create novel in Supabase:', error);
+          } else {
+            console.log('Novel created in Supabase:', novel.id);
+          }
+        } catch (err) {
+          console.error('Error creating novel:', err);
+        }
+      },
+      updateNovel: async (id, updates) => {
+        // 先更新本地状态
+        set((state) => ({
+          novels: state.novels.map((n) => (n.id === id ? { ...n, ...updates } : n)),
+        }));
+        
+        // 同步到 Supabase
+        try {
+          const { error } = await supabase
+            .from('novels')
+            .update({
+              ...updates,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', id);
+          
+          if (error) {
+            console.error('Failed to update novel in Supabase:', error);
+          }
+        } catch (err) {
+          console.error('Error updating novel:', err);
+        }
+      },
       deleteNovel: async (id) => {
         const novel = get().novels.find((n) => n.id === id);
         if (!novel) return;
@@ -286,30 +327,89 @@ export const useSupabaseStore = create<NovelState>()(
       setCurrentChapterId: (id) => set({ currentChapterId: id }),
 
       // 章节方法
-      addChapter: (novelId, chapter) => set((state) => ({
-        novels: state.novels.map((n) =>
-          n.id === novelId ? { ...n, chapters: [...n.chapters, chapter] } : n
-        ),
-      })),
-      updateChapter: (novelId, chapterId, updates) => set((state) => ({
-        novels: state.novels.map((n) =>
-          n.id === novelId
-            ? {
-                ...n,
-                chapters: n.chapters.map((c) =>
-                  c.id === chapterId ? { ...c, ...updates } : c
-                ),
-              }
-            : n
-        ),
-      })),
-      deleteChapter: (novelId, chapterId) => set((state) => ({
-        novels: state.novels.map((n) =>
-          n.id === novelId
-            ? { ...n, chapters: n.chapters.filter((c) => c.id !== chapterId) }
-            : n
-        ),
-      })),
+      addChapter: async (novelId, chapter) => {
+        // 先更新本地状态
+        set((state) => ({
+          novels: state.novels.map((n) =>
+            n.id === novelId ? { ...n, chapters: [...n.chapters, chapter] } : n
+          ),
+        }));
+        
+        // 同步到 Supabase
+        try {
+          const { error } = await supabase.from('chapters').insert({
+            id: chapter.id,
+            novel_id: novelId,
+            title: chapter.title,
+            content: chapter.content,
+            order_index: chapter.orderIndex || 0,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+          
+          if (error) {
+            console.error('Failed to create chapter in Supabase:', error);
+          }
+        } catch (err) {
+          console.error('Error creating chapter:', err);
+        }
+      },
+      updateChapter: async (novelId, chapterId, updates) => {
+        // 先更新本地状态
+        set((state) => ({
+          novels: state.novels.map((n) =>
+            n.id === novelId
+              ? {
+                  ...n,
+                  chapters: n.chapters.map((c) =>
+                    c.id === chapterId ? { ...c, ...updates } : c
+                  ),
+                }
+              : n
+          ),
+        }));
+        
+        // 同步到 Supabase
+        try {
+          const { error } = await supabase
+            .from('chapters')
+            .update({
+              ...updates,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', chapterId);
+          
+          if (error) {
+            console.error('Failed to update chapter in Supabase:', error);
+          }
+        } catch (err) {
+          console.error('Error updating chapter:', err);
+        }
+      },
+      deleteChapter: async (novelId, chapterId) => {
+        // 先更新本地状态
+        set((state) => ({
+          novels: state.novels.map((n) =>
+            n.id === novelId
+              ? { ...n, chapters: n.chapters.filter((c) => c.id !== chapterId) }
+              : n
+          ),
+        }));
+        
+        // 同步到 Supabase
+        try {
+          const { error } = await supabase
+            .from('chapters')
+            .delete()
+            .eq('id', chapterId);
+          
+          if (error) {
+            console.error('Failed to delete chapter in Supabase:', error);
+          }
+        } catch (err) {
+          console.error('Error deleting chapter:', err);
+        }
+      },
 
       // 约束方法
       addConstraint: (constraint) => set((state) => ({
@@ -363,21 +463,95 @@ export const useSupabaseStore = create<NovelState>()(
       setWorldApproved: (approved) => set({ worldApproved: approved }),
 
       // 分类方法
-      addCategory: (category) => set((state) => ({
-        categories: [...state.categories, category],
-      })),
-      updateCategory: (id, updates) => set((state) => ({
-        categories: state.categories.map((c) => (c.id === id ? { ...c, ...updates } : c)),
-      })),
-      deleteCategory: (id) => set((state) => ({
-        categories: state.categories.filter((c) => c.id !== id),
-        novels: state.novels.map((n) => (n.categoryId === id ? { ...n, categoryId: null } : n)),
-        selectedCategoryId: state.selectedCategoryId === id ? 'cat-all' : state.selectedCategoryId,
-      })),
+      addCategory: async (category) => {
+        // 先更新本地状态
+        set((state) => ({
+          categories: [...state.categories, category],
+        }));
+        
+        // 同步到 Supabase
+        try {
+          const { error } = await supabase.from('categories').insert({
+            id: category.id,
+            name: category.name,
+            color: category.color,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+          
+          if (error) {
+            console.error('Failed to create category in Supabase:', error);
+          }
+        } catch (err) {
+          console.error('Error creating category:', err);
+        }
+      },
+      updateCategory: async (id, updates) => {
+        // 先更新本地状态
+        set((state) => ({
+          categories: state.categories.map((c) => (c.id === id ? { ...c, ...updates } : c)),
+        }));
+        
+        // 同步到 Supabase
+        try {
+          const { error } = await supabase
+            .from('categories')
+            .update({
+              ...updates,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', id);
+          
+          if (error) {
+            console.error('Failed to update category in Supabase:', error);
+          }
+        } catch (err) {
+          console.error('Error updating category:', err);
+        }
+      },
+      deleteCategory: async (id) => {
+        // 先更新本地状态
+        set((state) => ({
+          categories: state.categories.filter((c) => c.id !== id),
+          novels: state.novels.map((n) => (n.categoryId === id ? { ...n, categoryId: null } : n)),
+          selectedCategoryId: state.selectedCategoryId === id ? 'cat-all' : state.selectedCategoryId,
+        }));
+        
+        // 同步到 Supabase
+        try {
+          const { error } = await supabase
+            .from('categories')
+            .delete()
+            .eq('id', id);
+          
+          if (error) {
+            console.error('Failed to delete category in Supabase:', error);
+          }
+        } catch (err) {
+          console.error('Error deleting category:', err);
+        }
+      },
       setSelectedCategoryId: (id) => set({ selectedCategoryId: id }),
-      setNovelCategory: (novelId, categoryId) => set((state) => ({
-        novels: state.novels.map((n) => (n.id === novelId ? { ...n, categoryId } : n)),
-      })),
+      setNovelCategory: async (novelId, categoryId) => {
+        // 先更新本地状态
+        set((state) => ({
+          novels: state.novels.map((n) => (n.id === novelId ? { ...n, categoryId } : n)),
+        }));
+        
+        // 同步到 Supabase
+        try {
+          const { error } = await supabase
+            .from('novels')
+            .update({ category_id: categoryId })
+            .eq('id', novelId);
+          
+          if (error) {
+            console.error('Failed to update novel category in Supabase:', error);
+          }
+        } catch (err) {
+          console.error('Error updating novel category:', err);
+        }
+      },
 
       // 资源方法
       addStoryAsset: (category, asset) => set((state) => ({
