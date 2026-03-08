@@ -89,7 +89,9 @@ class AgentMemory:
     def create_config(self, agent_id: str, name: str, role: str, personality: str, 
                       temperature: float, prompt: str, enabled: bool = True) -> Optional[AgentConfig]:
         """创建新配置"""
+        print(f"[AgentMemory] create_config called for {agent_id}")
         if not self.supabase:
+            print("[AgentMemory] ERROR: Supabase not connected")
             return None
         
         try:
@@ -108,12 +110,16 @@ class AgentMemory:
                 "created_at": now,
                 "updated_at": now,
             }
+            print(f"[AgentMemory] Inserting data: {data}")
             
             response = self.supabase.table("agent_configs").insert(data).execute()
+            print(f"[AgentMemory] Insert response: {response}")
             if response.data:
                 return AgentConfig(**response.data[0])
         except Exception as e:
-            print(f"AgentMemory: Error creating config: {e}")
+            print(f"[AgentMemory] ERROR creating config: {e}")
+            import traceback
+            traceback.print_exc()
         return None
     
     def update_config(self, agent_id: str, **updates) -> Optional[AgentConfig]:

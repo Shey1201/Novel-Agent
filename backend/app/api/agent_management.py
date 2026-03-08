@@ -158,12 +158,16 @@ async def create_agent_config(request: AgentUpdateRequest):
 @router.post("/configs/{agent_id}/sync", response_model=AgentConfigResponse)
 async def sync_agent_config(agent_id: str, request: AgentUpdateRequest):
     """同步 Agent 配置（如果不存在则创建）"""
+    print(f"[API] POST /api/agents/configs/{agent_id}/sync called")
+    print(f"[API] Request data: {request}")
     try:
         # 先尝试获取
         config = agent_memory.get_config(agent_id)
+        print(f"[API] Existing config: {config}")
         
         if config:
             # 存在则更新
+            print(f"[API] Updating existing config for {agent_id}")
             updates = {}
             if request.name is not None:
                 updates["name"] = request.name
@@ -179,8 +183,10 @@ async def sync_agent_config(agent_id: str, request: AgentUpdateRequest):
                 updates["enabled"] = request.enabled
             
             config = agent_memory.update_config(agent_id, **updates)
+            print(f"[API] Updated config: {config}")
         else:
             # 不存在则创建
+            print(f"[API] Creating new config for {agent_id}")
             config = agent_memory.create_config(
                 agent_id=agent_id,
                 name=request.name or agent_id,
@@ -190,8 +196,10 @@ async def sync_agent_config(agent_id: str, request: AgentUpdateRequest):
                 prompt=request.prompt or "",
                 enabled=request.enabled if request.enabled is not None else True
             )
+            print(f"[API] Created config: {config}")
         
         if not config:
+            print(f"[API] ERROR: Failed to sync config for {agent_id}")
             raise HTTPException(status_code=500, detail="Failed to sync agent config")
         
         return AgentConfigResponse(
