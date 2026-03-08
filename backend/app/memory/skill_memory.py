@@ -14,14 +14,14 @@ try:
     SUPABASE_AVAILABLE = True
 except ImportError:
     SUPABASE_AVAILABLE = False
-    Client = Any
+    Client = None
 
 
 class SkillMemory:
     """技能存储管理器 - Supabase 版本"""
 
     def __init__(self):
-        self.supabase: Optional[Client] = None
+        self.supabase: Optional[Any] = None
         self._init_supabase()
 
     def _init_supabase(self):

@@ -13,7 +13,7 @@ try:
     SUPABASE_AVAILABLE = True
 except ImportError:
     SUPABASE_AVAILABLE = False
-    Client = Any
+    Client = None
 
 
 @dataclass
@@ -34,7 +34,7 @@ class AgentMemory:
     """Agent 配置内存管理器"""
     
     def __init__(self):
-        self.supabase: Optional[Client] = None
+        self.supabase: Optional[Any] = None
         self._init_supabase()
     
     def _init_supabase(self):

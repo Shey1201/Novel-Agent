@@ -14,7 +14,7 @@ try:
     SUPABASE_AVAILABLE = True
 except ImportError:
     SUPABASE_AVAILABLE = False
-    Client = Any
+    Client = None
 
 
 @dataclass
@@ -89,7 +89,7 @@ class SystemSettingsManager:
     """系统设置管理器 - Supabase 版本"""
     
     def __init__(self):
-        self.supabase: Optional[Client] = None
+        self.supabase: Optional[Any] = None
         self.settings = SystemSettings()
         self._init_supabase()
         self._load()
