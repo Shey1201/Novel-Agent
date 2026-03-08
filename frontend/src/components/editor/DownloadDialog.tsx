@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { useNovelStore } from "@/store/novelStore";
+import { useSupabaseStore } from "@/store/supabaseStore";
 
 interface DownloadDialogProps {
   isOpen: boolean;
@@ -17,7 +17,7 @@ export const DownloadDialog: React.FC<DownloadDialogProps> = ({
   onClose,
   novelId,
 }) => {
-  const { novels, currentChapterId } = useNovelStore();
+  const { novels, currentChapterId } = useSupabaseStore();
   const novel = novels.find((n) => n.id === novelId);
 
   const [downloadType, setDownloadType] = useState<DownloadType>("full");

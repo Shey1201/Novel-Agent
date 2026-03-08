@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { useNovelStore } from "@/store/novelStore";
+import { useSupabaseStore } from "@/store/supabaseStore";
 
 interface Message {
   id: string;
@@ -27,7 +27,7 @@ interface Discussion {
 }
 
 export const WritersRoomPanel: React.FC = () => {
-  const { currentNovelId } = useNovelStore();
+  const { currentNovelId } = useSupabaseStore();
   const [discussion, setDiscussion] = useState<Discussion | null>(null);
   const [proposalTitle, setProposalTitle] = useState("");
   const [proposalDesc, setProposalDesc] = useState("");

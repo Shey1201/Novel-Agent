@@ -5,7 +5,7 @@ import { useEditor, EditorContent, BubbleMenu } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Highlight from "@tiptap/extension-highlight";
 import BubbleMenuExtension from "@tiptap/extension-bubble-menu";
-import { useNovelStore, type TraceItem } from "@/store/novelStore";
+import { useSupabaseStore, type TraceItem } from "@/store/supabaseStore";
 
 interface AgentLog {
   agent?: string;
@@ -23,7 +23,7 @@ export interface TiptapEditorHandle {
 }
 
 export const TiptapEditor = forwardRef<TiptapEditorHandle>((_, ref) => {
-  const { novels, currentNovelId, currentChapterId, updateChapterContent, addMessage } = useNovelStore();
+  const { novels, currentNovelId, currentChapterId, updateChapterContent, addMessage } = useSupabaseStore();
   const currentNovel = novels.find((n) => n.id === currentNovelId);
   const currentChapter = currentNovel?.chapters.find((c) => c.id === currentChapterId);
 

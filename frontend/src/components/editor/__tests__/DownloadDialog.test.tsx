@@ -11,8 +11,8 @@ import '@testing-library/jest-dom';
 const mockNovels: any[] = [];
 const mockSetCurrentNovelId = jest.fn();
 
-jest.mock('../../../store/novelStore', () => ({
-  useNovelStore: () => ({
+jest.mock('../../../store/supabaseStore', () => ({
+  useSupabaseStore: () => ({
     novels: mockNovels,
     setCurrentNovelId: mockSetCurrentNovelId,
   }),

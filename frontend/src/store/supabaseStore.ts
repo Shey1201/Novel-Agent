@@ -342,7 +342,7 @@ export const useSupabaseStore = create<NovelState>()(
             novel_id: novelId,
             title: chapter.title,
             content: chapter.content,
-            order_index: chapter.orderIndex || 0,
+            order_index: (chapter as any).orderIndex || 0,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           });
@@ -498,10 +498,49 @@ export const useSupabaseStore = create<NovelState>()(
       },
 
       // 消息方法
-      addMessage: (message) => set((state) => ({
-        messages: [...state.messages, message],
-      })),
-      clearMessages: () => set({ messages: [] }),
+      addMessage: async (message) => {
+        // 先更新本地状态
+        set((state) => ({
+          messages: [...state.messages, message],
+        }));
+        
+        // 同步到 Supabase
+        try {
+          const { error } = await supabase.from('messages').insert({
+            id: message.id,
+            role: message.role,
+            content: message.content,
+            agent_id: (message as any).agentId || null,
+            agent_name: (message as any).agentName || null,
+            timestamp: (message as any).timestamp || new Date().toISOString(),
+            created_at: new Date().toISOString(),
+          });
+          
+          if (error) {
+            console.error('Failed to create message in Supabase:', error);
+          }
+        } catch (err) {
+          console.error('Error creating message:', err);
+        }
+      },
+      clearMessages: async () => {
+        // 先更新本地状态
+        set({ messages: [] });
+        
+        // 同步到 Supabase - 删除所有消息
+        try {
+          const { error } = await supabase
+            .from('messages')
+            .delete()
+            .neq('id', '00000000-0000-0000-0000-000000000000'); // 删除所有记录
+          
+          if (error) {
+            console.error('Failed to clear messages in Supabase:', error);
+          }
+        } catch (err) {
+          console.error('Error clearing messages:', err);
+        }
+      },
 
       // 写作模式
       setWritingMode: (mode) => set({ writingMode: mode }),
@@ -516,7 +555,7 @@ export const useSupabaseStore = create<NovelState>()(
           const { error } = await supabase
             .from('world_bibles')
             .upsert({
-              id: worldBible.id || crypto.randomUUID(),
+              id: (worldBible as any).id || crypto.randomUUID(),
               content: worldBible,
               updated_at: new Date().toISOString(),
             }, { onConflict: 'id' });
@@ -703,7 +742,7 @@ export const useSupabaseStore = create<NovelState>()(
             // 将数据库中的配置合并到本地 agents
             set((state) => ({
               agents: state.agents.map((agent) => {
-                const dbConfig = agentConfigs.find((c) => c.agent_id === agent.id);
+                const dbConfig = agentConfigs.find((c: any) => c.agent_id === agent.id);
                 if (dbConfig) {
                   return {
                     ...agent,
@@ -766,6 +805,6 @@ export const useSupabaseStore = create<NovelState>()(
 useSupabaseStore.getState().loadFromSupabase();
 
 // 监听登录状态变化（可选功能）
-supabase.auth.onAuthStateChange((_event, session) => {
+supabase.auth.onAuthStateChange((_event: any, session: any) => {
   useSupabaseStore.getState().setUser(session?.user ?? null);
 });

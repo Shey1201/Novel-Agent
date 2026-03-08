@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useAssetStore, type AssetType, type GlobalAsset } from '@/store/assetStore';
-import { useNovelStore } from '@/store/novelStore';
+import { useSupabaseStore } from '@/store/supabaseStore';
 
 type ViewMode = 'by-type' | 'starred' | 'uncategorized';
 type PanelMode = 'view' | 'edit';
@@ -83,7 +83,7 @@ const getUncategorizedAssets = (assets: GlobalAsset[]) => {
 };
 
 const StoryAssets: React.FC = () => {
-  const { novels, currentNovelId } = useNovelStore();
+  const { novels, currentNovelId } = useSupabaseStore();
   const {
     assets,
     isLoading,

@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useSkillStore, type Skill, type SkillCategory } from '@/store/skillStore';
-import { useNovelStore } from '@/store/novelStore';
+import { useSupabaseStore } from '@/store/supabaseStore';
 
 interface SkillMountPanelProps {
   novelId: string;
@@ -31,7 +31,7 @@ export const SkillMountPanel: React.FC<SkillMountPanelProps> = ({ novelId }) => 
     fetchSkills,
   } = useSkillStore();
 
-  const { novels, updateNovel } = useNovelStore();
+  const { novels, updateNovel } = useSupabaseStore();
   const [expandedCategories, setExpandedCategories] = useState<string[]>([]);
   const [showGlobalLibrary, setShowGlobalLibrary] = useState(false);
 
@@ -391,7 +391,7 @@ const GlobalSkillLibraryModal: React.FC<{
   onClose: () => void;
 }> = ({ novelId, onClose }) => {
   const { categories, skills, fetchCategories, fetchSkills } = useSkillStore();
-  const { novels, updateNovel } = useNovelStore();
+  const { novels, updateNovel } = useSupabaseStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 

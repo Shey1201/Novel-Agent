@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useState, useEffect } from "react";
-import { useNovelStore, type SidebarView } from "@/store/novelStore";
+import { useSupabaseStore, type SidebarView } from "@/store/supabaseStore";
 import { useAssetStore, type AssetType } from "@/store/assetStore";
 import { SkillMountPanel } from "@/components/workspace/skills/SkillMountPanel";
 
@@ -53,7 +53,7 @@ export const SecondarySidebar: React.FC = () => {
     setCurrentChapterId,
     setCurrentSidebarView,
     addChapter,
-  } = useNovelStore();
+  } = useSupabaseStore();
 
   const {
     assets,

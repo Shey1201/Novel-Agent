@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { useNovelStore, type Novel, type NovelCategory } from "@/store/novelStore";
+import { useSupabaseStore, type Novel, type NovelCategory } from "@/store/supabaseStore";
 
 export default function Library() {
   const {
@@ -18,7 +18,7 @@ export default function Library() {
     updateCategory,
     deleteCategory,
     setNovelCategory,
-  } = useNovelStore();
+  } = useSupabaseStore();
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");

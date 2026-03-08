@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { useNovelStore } from "@/store/novelStore";
+import { useSupabaseStore } from "@/store/supabaseStore";
 
 interface ChatResponse {
   final_text?: string;
@@ -22,7 +22,7 @@ const WORD_COUNT_OPTIONS = [
 
 export const AgentPanel: React.FC = () => {
   const { messages, addMessage, currentNovelId, currentChapterId, updateChapterContent, setWorldBible, setWorldApproved } =
-    useNovelStore();
+    useSupabaseStore();
   const [inputValue, setEditValue] = useState("");
   const [selectedWordCount, setSelectedWordCount] = useState(WORD_COUNT_OPTIONS[2]); // 默认标准
   const [showSettings, setShowSettings] = useState(false);

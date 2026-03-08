@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useNovelStore } from "@/store/novelStore";
+import { useSupabaseStore } from "@/store/supabaseStore";
 
 interface Character {
   id: string;
@@ -29,7 +29,7 @@ interface StoryBibleData {
 }
 
 export const StoryBibleManager: React.FC = () => {
-  const { currentNovelId, novels } = useNovelStore();
+  const { currentNovelId, novels } = useSupabaseStore();
   const [activeTab, setActiveTab] = useState<"overview" | "characters" | "world" | "plot">("overview");
   const [bible, setBible] = useState<StoryBibleData>({
     title: "",

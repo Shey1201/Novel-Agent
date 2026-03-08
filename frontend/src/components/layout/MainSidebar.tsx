@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { useNovelStore, type WorkspaceModule } from "@/store/novelStore";
+import { useSupabaseStore, type WorkspaceModule } from "@/store/supabaseStore";
 import { SettingsModal } from "@/components/workspace/settings";
 
 const navItems: Array<{ key: WorkspaceModule; label: string; icon: React.ReactNode }> = [
@@ -28,7 +28,7 @@ const navItems: Array<{ key: WorkspaceModule; label: string; icon: React.ReactNo
 ];
 
 export const MainSidebar: React.FC = () => {
-  const { workspaceModule, setWorkspaceModule, setCurrentNovelId } = useNovelStore();
+  const { workspaceModule, setWorkspaceModule, setCurrentNovelId } = useSupabaseStore();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const handleNavClick = (key: WorkspaceModule) => {
