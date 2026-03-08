@@ -10,11 +10,9 @@ from dataclasses import dataclass, asdict
 # 尝试导入 supabase
 try:
     from supabase import create_client
-    from supabase._sync.client import SyncClient as Client
     SUPABASE_AVAILABLE = True
 except ImportError:
     SUPABASE_AVAILABLE = False
-    Client = None
 
 
 @dataclass
@@ -89,7 +87,7 @@ class SystemSettingsManager:
     """系统设置管理器 - Supabase 版本"""
     
     def __init__(self):
-        self.supabase: Optional[Any] = None
+        self.supabase = None
         self.settings = SystemSettings()
         self._init_supabase()
         self._load()

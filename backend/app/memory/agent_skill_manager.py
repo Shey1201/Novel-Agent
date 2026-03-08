@@ -11,11 +11,9 @@ from pydantic import BaseModel, Field
 # 尝试导入 supabase
 try:
     from supabase import create_client
-    from supabase._sync.client import SyncClient as Client
     SUPABASE_AVAILABLE = True
 except ImportError:
     SUPABASE_AVAILABLE = False
-    Client = None
 
 
 class AgentSkill(BaseModel):
@@ -52,7 +50,7 @@ class AgentSkillManager:
     ]
     
     def __init__(self):
-        self.supabase: Optional[Any] = None
+        self.supabase = None
         self._init_supabase()
     
     def _init_supabase(self):
