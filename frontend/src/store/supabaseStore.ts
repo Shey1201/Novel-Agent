@@ -200,7 +200,7 @@ export const useSupabaseStore = create<NovelState>()(
         locations: [],
         timeline: [],
       },
-      agents: defaultAgents,
+      agents: [],
 
       // 用户方法
       setUser: (user) => set({ user, isAuthenticated: !!user, isLoading: false }),
@@ -946,28 +946,35 @@ export const useSupabaseStore = create<NovelState>()(
             if (agentResponse.ok) {
               const agentConfigs = await agentResponse.json();
               if (agentConfigs && agentConfigs.length > 0) {
-                // 将数据库中的配置合并到本地 agents
-                set((state) => ({
-                  agents: state.agents.map((agent) => {
-                    const dbConfig = agentConfigs.find((c: any) => c.agent_id === agent.id);
-                    if (dbConfig) {
-                      return {
-                        ...agent,
-                        role: dbConfig.role || agent.role,
-                        personality: dbConfig.personality || agent.personality,
-                        temperature: dbConfig.temperature ?? agent.temperature,
-                        prompt: dbConfig.prompt || agent.prompt,
-                      };
-                    }
-                    return agent;
-                  }),
+                // 将数据库配置转换为本地 agents 格式
+                const loadedAgents = agentConfigs.map((config: any) => ({
+                  id: config.agent_id,
+                  name: config.name,
+                  role: config.role,
+                  personality: config.personality,
+                  temperature: config.temperature,
+                  prompt: config.prompt,
+                  enabled: config.enabled,
                 }));
+                set({ agents: loadedAgents });
                 console.log(`Loaded ${agentConfigs.length} agent configs from API`);
               } else {
-                // 数据库中没有配置，将本地默认配置同步到数据库
-                console.log('No agent configs in database, syncing local defaults...');
-                const { agents } = get();
-                for (const agent of agents) {
+                // 数据库中没有配置，使用默认配置创建
+                console.log('No agent configs in database, creating default agents...');
+                const defaultAgentsList = [
+                  { id: 'facilitator', name: 'Facilitator', role: '调度协调', prompt: '负责Agent调度和讨论主持', temperature: 0.5, enabled: true, personality: 'structure' },
+                  { id: 'planner', name: 'Planner', role: '规划架构', prompt: '负责章节规划和剧情架构', temperature: 0.7, enabled: true, personality: 'structure' },
+                  { id: 'writer', name: 'Writer', role: '章节写作', prompt: '负责具体章节写作', temperature: 0.9, enabled: true, personality: 'literary' },
+                  { id: 'editor', name: 'Editor', role: '润色修订', prompt: '负责文本润色和结构优化', temperature: 0.4, enabled: true, personality: 'logic' },
+                  { id: 'conflict', name: 'Conflict', role: '冲突设计', prompt: '负责冲突设计和戏剧性增强', temperature: 0.8, enabled: true, personality: 'drama' },
+                  { id: 'reader', name: 'Reader', role: '读者评估', prompt: '负责读者视角评估', temperature: 0.6, enabled: true, personality: 'reader' },
+                  { id: 'consistency', name: 'Consistency', role: '一致性检查', prompt: '负责逻辑一致性检查', temperature: 0.3, enabled: true, personality: 'logic' },
+                  { id: 'critic', name: 'Critic', role: '批判评估', prompt: '负责批判性评估和改进建议', temperature: 0.5, enabled: true, personality: 'logic' },
+                  { id: 'summary', name: 'Summary', role: '摘要总结', prompt: '负责内容摘要和总结', temperature: 0.4, enabled: true, personality: 'structure' },
+                ];
+                
+                // 同步默认配置到数据库
+                for (const agent of defaultAgentsList) {
                   try {
                     await fetch(`${API_BASE}/api/agents/configs/${agent.id}/sync`, {
                       method: 'POST',
@@ -978,13 +985,17 @@ export const useSupabaseStore = create<NovelState>()(
                         personality: agent.personality,
                         temperature: agent.temperature,
                         prompt: agent.prompt,
-                        enabled: true,
+                        enabled: agent.enabled,
                       }),
                     });
                   } catch (err) {
                     console.error(`Failed to sync agent ${agent.id}:`, err);
                   }
                 }
+                
+                // 设置本地状态
+                set({ agents: defaultAgentsList });
+                console.log('Default agents created and synced to database');
               }
             } else {
               console.error('Failed to load agent configs from API:', await agentResponse.text());
