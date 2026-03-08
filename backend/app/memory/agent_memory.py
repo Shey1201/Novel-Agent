@@ -24,6 +24,7 @@ class AgentConfig:
     temperature: float
     prompt: str
     enabled: bool
+    user_id: Optional[str] = None
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
@@ -116,6 +117,7 @@ class AgentMemory:
                 "temperature": temperature,
                 "prompt": prompt,
                 "enabled": enabled,
+                "user_id": None,  # 匿名用户
                 "created_at": now,
                 "updated_at": now,
             }
