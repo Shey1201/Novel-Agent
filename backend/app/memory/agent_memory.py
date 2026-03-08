@@ -75,15 +75,24 @@ class AgentMemory:
     
     def get_config(self, agent_id: str) -> Optional[AgentConfig]:
         """根据 agent_id 获取配置"""
+        print(f"[AgentMemory] get_config called for {agent_id}")
         if not self.supabase:
+            print("[AgentMemory] ERROR: Supabase not connected")
             return None
         
         try:
-            response = self.supabase.table("agent_configs").select("*").eq("agent_id", agent_id).single().execute()
-            if response.data:
-                return AgentConfig(**response.data)
+            # 不使用 .single()，改用 .limit(1) 避免记录不存在时抛出异常
+            response = self.supabase.table("agent_configs").select("*").eq("agent_id", agent_id).limit(1).execute()
+            print(f"[AgentMemory] Query response: {response}")
+            if response.data and len(response.data) > 0:
+                print(f"[AgentMemory] Found config: {response.data[0]}")
+                return AgentConfig(**response.data[0])
+            else:
+                print(f"[AgentMemory] No config found for {agent_id}")
         except Exception as e:
-            print(f"AgentMemory: Error fetching config: {e}")
+            print(f"[AgentMemory] ERROR fetching config: {e}")
+            import traceback
+            traceback.print_exc()
         return None
     
     def create_config(self, agent_id: str, name: str, role: str, personality: str, 

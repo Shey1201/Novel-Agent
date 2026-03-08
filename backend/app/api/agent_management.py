@@ -187,16 +187,40 @@ async def sync_agent_config(agent_id: str, request: AgentUpdateRequest):
         else:
             # 不存在则创建
             print(f"[API] Creating new config for {agent_id}")
-            config = agent_memory.create_config(
-                agent_id=agent_id,
-                name=request.name or agent_id,
-                role=request.role or "",
-                personality=request.personality or "balanced",
-                temperature=request.temperature or 0.7,
-                prompt=request.prompt or "",
-                enabled=request.enabled if request.enabled is not None else True
-            )
-            print(f"[API] Created config: {config}")
+            try:
+                config = agent_memory.create_config(
+                    agent_id=agent_id,
+                    name=request.name or agent_id,
+                    role=request.role or "",
+                    personality=request.personality or "balanced",
+                    temperature=request.temperature or 0.7,
+                    prompt=request.prompt or "",
+                    enabled=request.enabled if request.enabled is not None else True
+                )
+                print(f"[API] Created config: {config}")
+            except Exception as create_error:
+                # 如果创建失败（可能是唯一约束冲突），尝试再次查询
+                print(f"[API] Create failed, retrying get: {create_error}")
+                config = agent_memory.get_config(agent_id)
+                if config:
+                    # 现在存在了，执行更新
+                    print(f"[API] Config now exists, updating instead")
+                    updates = {}
+                    if request.name is not None:
+                        updates["name"] = request.name
+                    if request.role is not None:
+                        updates["role"] = request.role
+                    if request.personality is not None:
+                        updates["personality"] = request.personality
+                    if request.temperature is not None:
+                        updates["temperature"] = request.temperature
+                    if request.prompt is not None:
+                        updates["prompt"] = request.prompt
+                    if request.enabled is not None:
+                        updates["enabled"] = request.enabled
+                    config = agent_memory.update_config(agent_id, **updates)
+                else:
+                    raise create_error
         
         if not config:
             print(f"[API] ERROR: Failed to sync config for {agent_id}")
