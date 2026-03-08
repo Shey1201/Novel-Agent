@@ -53,6 +53,7 @@ export const SecondarySidebar: React.FC = () => {
     setCurrentChapterId,
     setCurrentSidebarView,
     addChapter,
+    updateChapter,
   } = useSupabaseStore();
 
   const {
@@ -62,7 +63,6 @@ export const SecondarySidebar: React.FC = () => {
     fetchMountedAssets,
   } = useAssetStore();
 
-  const [volumes, setVolumes] = useState<Volume[]>([]);
   const [editingVolumeId, setEditingVolumeId] = useState<string | null>(null);
   const [editVolumeName, setEditVolumeName] = useState("");
   const [isAddingVolume, setIsAddingVolume] = useState(false);
@@ -83,16 +83,44 @@ export const SecondarySidebar: React.FC = () => {
 
   const currentNovel = useMemo(() => novels.find((n) => n.id === currentNovelId), [novels, currentNovelId]);
 
-  // 初始化默认卷 - 当切换小说时重置
-  useEffect(() => {
-    if (currentNovel) {
-      console.log('[SecondarySidebar] Initializing volumes for novel:', currentNovel.id, 'chapters:', currentNovel.chapters.length);
-      setVolumes([
-        { id: "vol-default", name: "未分卷", chapterIds: currentNovel.chapters.map(ch => ch.id), order: 0 }
-      ]);
-      setExpandedVolumes(new Set(['vol-default']));
+  // 从章节数据聚合卷信息
+  const volumes = useMemo(() => {
+    if (!currentNovel) return [];
+    
+    // 从章节中聚合卷信息
+    const volumeMap = new Map<string, Volume>();
+    
+    currentNovel.chapters.forEach(ch => {
+      const volName = ch.volumeName || '未分卷';
+      const volOrder = ch.volumeOrder || 0;
+      const volId = `vol-${volOrder}-${volName}`;
+      
+      if (!volumeMap.has(volId)) {
+        volumeMap.set(volId, {
+          id: volId,
+          name: volName,
+          chapterIds: [],
+          order: volOrder,
+        });
+      }
+      volumeMap.get(volId)!.chapterIds.push(ch.id);
+    });
+    
+    // 如果没有章节，返回默认卷
+    if (volumeMap.size === 0) {
+      return [{ id: "vol-default", name: "未分卷", chapterIds: [], order: 0 }];
     }
-  }, [currentNovel?.id]); // 只在小说ID变化时执行
+    
+    // 按order排序
+    return Array.from(volumeMap.values()).sort((a, b) => a.order - b.order);
+  }, [currentNovel?.chapters]);
+
+  // 初始化展开状态
+  useEffect(() => {
+    if (volumes.length > 0 && expandedVolumes.size === 0) {
+      setExpandedVolumes(new Set(volumes.map(v => v.id)));
+    }
+  }, [volumes]);
 
   useEffect(() => {
     if (currentNovel?.chapters.length && !currentChapterId) {
@@ -130,20 +158,27 @@ export const SecondarySidebar: React.FC = () => {
     });
   };
 
-  const addNewChapter = (volumeId: string = "vol-default") => {
+  const addNewChapter = async (volumeId: string = "vol-default") => {
     if (!currentNovelId) return;
     const next = (currentNovel?.chapters.length || 0) + 1;
     const id = `chapter-${currentNovelId}-${next}`;
-    addChapter(currentNovelId, { id, title: `章节 ${next}`, content: "", trace_data: [] });
+    
+    // 获取目标卷的名称和顺序
+    const targetVolume = volumes.find(v => v.id === volumeId);
+    const volumeName = targetVolume?.name || '未分卷';
+    const volumeOrder = targetVolume?.order || 0;
+    
+    // 创建章节时包含卷信息
+    await addChapter(currentNovelId, { 
+      id, 
+      title: `章节 ${next}`, 
+      content: "", 
+      trace_data: [],
+      volumeName,
+      volumeOrder,
+    });
     setCurrentChapterId(id);
     setCurrentSidebarView("chapter");
-    
-    // 将新章节添加到指定卷
-    setVolumes(prev => prev.map(v => 
-      v.id === volumeId 
-        ? { ...v, chapterIds: [...v.chapterIds, id] }
-        : v
-    ));
     
     // 展开该卷
     setExpandedVolumes(prev => new Set([...prev, volumeId]));
@@ -151,44 +186,46 @@ export const SecondarySidebar: React.FC = () => {
 
   const handleAddVolume = () => {
     if (newVolumeName.trim()) {
-      const newVolume: Volume = {
-        id: `vol-${Date.now()}`,
-        name: newVolumeName.trim(),
-        chapterIds: [],
-        order: volumes.length,
-      };
-      setVolumes([...volumes, newVolume]);
+      // 卷是通过章节隐式创建的，这里只是清空输入
       setNewVolumeName("");
       setIsAddingVolume(false);
-      // 自动展开新卷
-      setExpandedVolumes(prev => new Set([...prev, newVolume.id]));
+      // 注意：新卷会在添加第一个章节时自动创建
     }
   };
 
-  const handleUpdateVolume = (id: string) => {
-    if (editVolumeName.trim()) {
-      setVolumes(prev => prev.map(v => 
-        v.id === id ? { ...v, name: editVolumeName.trim() } : v
-      ));
-      setEditingVolumeId(null);
+  const handleUpdateVolume = async (id: string) => {
+    if (!editVolumeName.trim() || !currentNovelId) return;
+    
+    const volume = volumes.find(v => v.id === id);
+    if (!volume) return;
+    
+    // 更新该卷下所有章节的卷名称
+    const chaptersInVolume = currentNovel?.chapters.filter(ch => volume.chapterIds.includes(ch.id)) || [];
+    for (const ch of chaptersInVolume) {
+      await updateChapter(currentNovelId, ch.id, { volumeName: editVolumeName.trim() });
     }
+    
+    setEditingVolumeId(null);
+    setEditVolumeName("");
   };
 
-  const handleDeleteVolume = (id: string) => {
+  const handleDeleteVolume = async (id: string) => {
     if (id === 'vol-default') {
       alert('不能删除"未分卷"');
       return;
     }
+    if (!currentNovelId) return;
+    
     if (confirm('确定要删除这个卷吗？该卷下的章节将移动到"未分卷"。')) {
       const volumeToDelete = volumes.find(v => v.id === id);
       if (volumeToDelete) {
-        // 将章节移动到未分卷
-        setVolumes(prev => prev.map(v => {
-          if (v.id === 'vol-default') {
-            return { ...v, chapterIds: [...v.chapterIds, ...volumeToDelete.chapterIds] };
-          }
-          return v;
-        }).filter(v => v.id !== id));
+        // 将该卷下的所有章节移动到未分卷
+        for (const chapterId of volumeToDelete.chapterIds) {
+          await updateChapter(currentNovelId, chapterId, { 
+            volumeName: '未分卷',
+            volumeOrder: 0 
+          });
+        }
       }
     }
   };
@@ -202,16 +239,17 @@ export const SecondarySidebar: React.FC = () => {
     setEditVolumeName(volume.name);
   };
 
-  const moveChapterToVolume = (chapterId: string, targetVolumeId: string) => {
-    setVolumes(prev => prev.map(v => {
-      // 从所有卷中移除该章节
-      const newChapterIds = v.chapterIds.filter(id => id !== chapterId);
-      // 添加到目标卷
-      if (v.id === targetVolumeId) {
-        return { ...v, chapterIds: [...newChapterIds, chapterId] };
-      }
-      return { ...v, chapterIds: newChapterIds };
-    }));
+  const moveChapterToVolume = async (chapterId: string, targetVolumeId: string) => {
+    if (!currentNovelId) return;
+    
+    const targetVolume = volumes.find(v => v.id === targetVolumeId);
+    if (!targetVolume) return;
+    
+    // 更新章节的卷信息
+    await updateChapter(currentNovelId, chapterId, { 
+      volumeName: targetVolume.name,
+      volumeOrder: targetVolume.order 
+    });
     setChapterMenuOpen(null);
   };
 

@@ -31,6 +31,8 @@ class ChapterCreateRequest(BaseModel):
     content: str = ""
     order_index: int = 0
     status: str = "draft"
+    volume_name: str = "未分卷"
+    volume_order: int = 0
 
 
 class ChapterUpdateRequest(BaseModel):
@@ -38,6 +40,8 @@ class ChapterUpdateRequest(BaseModel):
     content: Optional[str] = None
     order_index: Optional[int] = None
     status: Optional[str] = None
+    volume_name: Optional[str] = None
+    volume_order: Optional[int] = None
 
 
 class NovelResponse(BaseModel):
@@ -56,6 +60,8 @@ class ChapterResponse(BaseModel):
     content: str
     order_index: int
     status: str
+    volume_name: str = "未分卷"
+    volume_order: int = 0
     created_at: str
     updated_at: str
 
@@ -217,6 +223,8 @@ async def get_chapters(novel_id: str):
             content=c.content,
             order_index=c.order_index,
             status=c.status,
+            volume_name=c.volume_name,
+            volume_order=c.volume_order,
             created_at=c.created_at,
             updated_at=c.updated_at
         )
@@ -233,7 +241,9 @@ async def create_chapter(novel_id: str, request: ChapterCreateRequest):
             title=request.title,
             content=request.content,
             order_index=request.order_index,
-            status=request.status
+            status=request.status,
+            volume_name=request.volume_name,
+            volume_order=request.volume_order
         )
         return ChapterResponse(
             id=chapter.id,
@@ -242,6 +252,8 @@ async def create_chapter(novel_id: str, request: ChapterCreateRequest):
             content=chapter.content,
             order_index=chapter.order_index,
             status=chapter.status,
+            volume_name=chapter.volume_name,
+            volume_order=chapter.volume_order,
             created_at=chapter.created_at,
             updated_at=chapter.updated_at
         )

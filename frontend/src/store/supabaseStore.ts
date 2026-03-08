@@ -427,8 +427,10 @@ export const useSupabaseStore = create<NovelState>()(
             body: JSON.stringify({
               title: chapter.title,
               content: chapter.content || '',
-              order: (chapter as any).orderIndex || 0,
+              order_index: (chapter as any).orderIndex || 0,
               status: 'draft',
+              volume_name: chapter.volumeName || '未分卷',
+              volume_order: chapter.volumeOrder || 0,
             }),
           });
           
@@ -441,11 +443,11 @@ export const useSupabaseStore = create<NovelState>()(
           const data = await response.json();
           
           // 使用数据库返回的ID更新本地状态
-          const chapterWithDbId = { 
+          const chapterWithDbId: Chapter = { 
             ...chapter, 
             id: data.id,
-            order: data.order,
-            status: data.status,
+            volumeName: data.volume_name,
+            volumeOrder: data.volume_order,
           };
           set((state) => ({
             novels: state.novels.map((n) =>
@@ -914,6 +916,8 @@ export const useSupabaseStore = create<NovelState>()(
                   summary: '',
                   wordCount: 0,
                   status: ch.status || 'draft',
+                  volumeName: ch.volume_name || '未分卷',
+                  volumeOrder: ch.volume_order || 0,
                   createdAt: new Date(ch.created_at).getTime(),
                   updatedAt: new Date(ch.updated_at).getTime(),
                 })),

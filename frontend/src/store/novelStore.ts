@@ -26,6 +26,8 @@ export interface Chapter {
   title: string;
   content: string;
   trace_data: TraceItem[];
+  volumeName?: string;  // 卷名称
+  volumeOrder?: number; // 卷顺序
 }
 
 export interface NovelAssetRefs {
