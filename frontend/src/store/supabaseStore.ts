@@ -256,18 +256,19 @@ export const useSupabaseStore = create<NovelState>()(
           novels: state.novels.map((n) => (n.id === id ? { ...n, ...updates } : n)),
         }));
         
-        // 同步到 Supabase
+        // 通过后端API同步到数据库
         try {
-          const { error } = await supabase
-            .from('novels')
-            .update({
-              ...updates,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', id);
+          const response = await fetch(`${API_BASE}/api/novels/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updates),
+          });
           
-          if (error) {
-            console.error('Failed to update novel in Supabase:', error);
+          if (!response.ok) {
+            const error = await response.json();
+            console.error('Failed to update novel via API:', error);
+          } else {
+            console.log('Novel updated via API:', id);
           }
         } catch (err) {
           console.error('Error updating novel:', err);
@@ -418,30 +419,40 @@ export const useSupabaseStore = create<NovelState>()(
 
       // 章节方法
       addChapter: async (novelId, chapter) => {
-        // 同步到 Supabase - 不指定ID，让数据库自动生成UUID
+        // 通过后端API创建章节
         try {
-          const { data, error } = await supabase.from('chapters').insert({
-            novel_id: novelId,
-            title: chapter.title,
-            content: chapter.content || '',
-            order_index: (chapter as any).orderIndex || 0,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          }).select('id').single();
+          const response = await fetch(`${API_BASE}/api/novels/${novelId}/chapters`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: chapter.title,
+              content: chapter.content || '',
+              order: (chapter as any).orderIndex || 0,
+              status: 'draft',
+            }),
+          });
           
-          if (error) {
-            console.error('Failed to create chapter in Supabase:', error);
+          if (!response.ok) {
+            const error = await response.json();
+            console.error('Failed to create chapter via API:', error);
             return;
           }
           
+          const data = await response.json();
+          
           // 使用数据库返回的ID更新本地状态
-          const chapterWithDbId = { ...chapter, id: data.id };
+          const chapterWithDbId = { 
+            ...chapter, 
+            id: data.id,
+            order: data.order,
+            status: data.status,
+          };
           set((state) => ({
             novels: state.novels.map((n) =>
               n.id === novelId ? { ...n, chapters: [...n.chapters, chapterWithDbId] } : n
             ),
           }));
-          console.log('Chapter created in Supabase:', data.id);
+          console.log('Chapter created via API:', data.id);
         } catch (err) {
           console.error('Error creating chapter:', err);
         }
@@ -866,56 +877,42 @@ export const useSupabaseStore = create<NovelState>()(
         try {
           set({ isLoading: true });
 
-          // 加载小说列表
-          const { data: novelsData, error: novelsError } = await supabase
-            .from('novels')
-            .select('*')
-            .is('deleted_at', null)
-            .order('created_at', { ascending: false });
+          // 通过后端API加载小说列表（包含章节）
+          const response = await fetch(`${API_BASE}/api/novels/with-chapters`);
+          if (!response.ok) {
+            const error = await response.json();
+            console.error('Failed to load novels from API:', error);
+          } else {
+            const novelsData = await response.json();
+            
+            if (novelsData && novelsData.length > 0) {
+              const novelsWithChapters = novelsData.map((novel: any) => ({
+                id: novel.id,
+                title: novel.title,
+                outline: novel.outline || '',
+                locked: novel.locked || false,
+                createdAt: new Date(novel.created_at).getTime(),
+                updatedAt: new Date(novel.updated_at).getTime(),
+                chapters: (novel.chapters || []).map((ch: any) => ({
+                  id: ch.id,
+                  title: ch.title,
+                  content: ch.content || '',
+                  order: ch.order || 0,
+                  summary: '',
+                  wordCount: 0,
+                  status: ch.status || 'draft',
+                  createdAt: new Date(ch.created_at).getTime(),
+                  updatedAt: new Date(ch.updated_at).getTime(),
+                })),
+              }));
 
-          if (novelsError) {
-            console.error('Failed to load novels:', novelsError);
-          } else if (novelsData && novelsData.length > 0) {
-            // 加载每个小说的章节
-            const novelsWithChapters = await Promise.all(
-              novelsData.map(async (novel: any) => {
-                const { data: chaptersData, error: chaptersError } = await supabase
-                  .from('chapters')
-                  .select('*')
-                  .eq('novel_id', novel.id)
-                  .order('order', { ascending: true });
-
-                if (chaptersError) {
-                  console.error(`Failed to load chapters for novel ${novel.id}:`, chaptersError);
-                }
-
-                return {
-                  id: novel.id,
-                  title: novel.title,
-                  outline: novel.outline || '',
-                  locked: novel.locked || false,
-                  createdAt: new Date(novel.created_at).getTime(),
-                  updatedAt: new Date(novel.updated_at).getTime(),
-                  chapters: (chaptersData || []).map((ch: any) => ({
-                    id: ch.id,
-                    title: ch.title,
-                    content: ch.content || '',
-                    order: ch.order || 0,
-                    summary: ch.summary || '',
-                    wordCount: ch.word_count || 0,
-                    status: ch.status || 'draft',
-                    createdAt: new Date(ch.created_at).getTime(),
-                    updatedAt: new Date(ch.updated_at).getTime(),
-                  })),
-                };
-              })
-            );
-
-            set({ novels: novelsWithChapters });
-            console.log(`Loaded ${novelsWithChapters.length} novels from Supabase`);
+              set({ novels: novelsWithChapters });
+              console.log(`Loaded ${novelsWithChapters.length} novels from API`);
+            }
           }
 
-          // 加载已删除的小说（回收站）
+          // 加载已删除的小说（回收站）- 暂时仍使用Supabase直连
+          // TODO: 添加后端API支持
           const { data: deletedNovelsData, error: deletedError } = await supabase
             .from('novels')
             .select('*')
@@ -939,7 +936,8 @@ export const useSupabaseStore = create<NovelState>()(
             console.log(`Loaded ${deletedNovels.length} deleted novels from Supabase`);
           }
 
-          // 加载 Agent 配置
+          // 加载 Agent 配置 - 暂时仍使用Supabase直连
+          // TODO: 添加后端API支持
           const { data: agentConfigs, error: agentError } = await supabase
             .from('agent_configs')
             .select('*');
@@ -984,9 +982,9 @@ export const useSupabaseStore = create<NovelState>()(
             }
           }
 
-          console.log('Data loaded from Supabase successfully');
+          console.log('Data loaded successfully');
         } catch (err) {
-          console.error('Error loading from Supabase:', err);
+          console.error('Error loading data:', err);
         } finally {
           set({ isLoading: false });
         }

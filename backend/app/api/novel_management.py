@@ -62,6 +62,17 @@ class ChapterResponse(BaseModel):
 
 # ========== 小说 API ==========
 
+class NovelWithChaptersResponse(BaseModel):
+    id: str
+    title: str
+    outline: str
+    locked: bool
+    category_id: Optional[str]
+    created_at: str
+    updated_at: str
+    chapters: List[ChapterResponse]
+
+
 @router.get("", response_model=List[NovelResponse])
 async def get_novels():
     """获取所有小说"""
@@ -77,6 +88,40 @@ async def get_novels():
         )
         for n in novels
     ]
+
+
+@router.get("/with-chapters", response_model=List[NovelWithChaptersResponse])
+async def get_novels_with_chapters():
+    """获取所有小说及其章节"""
+    novels = novel_memory.get_all_novels()
+    result = []
+    
+    for novel in novels:
+        chapters = novel_memory.get_chapters_by_novel(novel.id)
+        result.append(NovelWithChaptersResponse(
+            id=novel.id,
+            title=novel.title,
+            outline="",
+            locked=novel.locked,
+            category_id=novel.category_id,
+            created_at=novel.created_at,
+            updated_at=novel.updated_at,
+            chapters=[
+                ChapterResponse(
+                    id=c.id,
+                    novel_id=c.novel_id,
+                    title=c.title,
+                    content=c.content,
+                    order=c.order,
+                    status=c.status,
+                    created_at=c.created_at,
+                    updated_at=c.updated_at
+                )
+                for c in chapters
+            ]
+        ))
+    
+    return result
 
 
 @router.post("", response_model=NovelResponse)
