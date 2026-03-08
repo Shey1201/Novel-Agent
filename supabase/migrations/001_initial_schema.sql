@@ -87,7 +87,7 @@ BEGIN
     NEW.updated_at = NOW();
     RETURN NEW;
 END;
-$$ language 'plpgsql';
+$$ language 'plpgsql' SET search_path = public;
 
 -- 为所有表添加更新时间触发器（使用 DROP IF EXISTS + CREATE）
 DROP TRIGGER IF EXISTS update_novels_updated_at ON novels;
