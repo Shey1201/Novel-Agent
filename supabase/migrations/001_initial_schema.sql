@@ -89,22 +89,28 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
--- 为所有表添加更新时间触发器
+-- 为所有表添加更新时间触发器（使用 DROP IF EXISTS + CREATE）
+DROP TRIGGER IF EXISTS update_novels_updated_at ON novels;
 CREATE TRIGGER update_novels_updated_at BEFORE UPDATE ON novels
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_chapters_updated_at ON chapters;
 CREATE TRIGGER update_chapters_updated_at BEFORE UPDATE ON chapters
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_agent_configs_updated_at ON agent_configs;
 CREATE TRIGGER update_agent_configs_updated_at BEFORE UPDATE ON agent_configs
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_story_assets_updated_at ON story_assets;
 CREATE TRIGGER update_story_assets_updated_at BEFORE UPDATE ON story_assets
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_world_bibles_updated_at ON world_bibles;
 CREATE TRIGGER update_world_bibles_updated_at BEFORE UPDATE ON world_bibles
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_user_settings_updated_at ON user_settings;
 CREATE TRIGGER update_user_settings_updated_at BEFORE UPDATE ON user_settings
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
@@ -117,10 +123,12 @@ ALTER TABLE world_bibles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_settings ENABLE ROW LEVEL SECURITY;
 
--- 创建 RLS 策略
+-- 创建 RLS 策略（使用 DROP IF EXISTS + CREATE）
+DROP POLICY IF EXISTS "Users can only access their own novels" ON novels;
 CREATE POLICY "Users can only access their own novels" ON novels
     FOR ALL USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can only access their own chapters" ON chapters;
 CREATE POLICY "Users can only access their own chapters" ON chapters
     FOR ALL USING (
         EXISTS (
@@ -128,18 +136,23 @@ CREATE POLICY "Users can only access their own chapters" ON chapters
         )
     );
 
+DROP POLICY IF EXISTS "Users can only access their own agent configs" ON agent_configs;
 CREATE POLICY "Users can only access their own agent configs" ON agent_configs
     FOR ALL USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can only access their own story assets" ON story_assets;
 CREATE POLICY "Users can only access their own story assets" ON story_assets
     FOR ALL USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can only access their own world bibles" ON world_bibles;
 CREATE POLICY "Users can only access their own world bibles" ON world_bibles
     FOR ALL USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can only access their own categories" ON categories;
 CREATE POLICY "Users can only access their own categories" ON categories
     FOR ALL USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can only access their own settings" ON user_settings;
 CREATE POLICY "Users can only access their own settings" ON user_settings
     FOR ALL USING (auth.uid() = user_id);
 
