@@ -715,27 +715,36 @@ export const useSupabaseStore = create<NovelState>()(
       },
       setWorldApproved: (approved) => set({ worldApproved: approved }),
 
-      // 分类方法
+      // 分类方法 - 使用后端API
       addCategory: async (category) => {
-        // 先更新本地状态
-        set((state) => ({
-          categories: [...state.categories, category],
-        }));
-
-        // 同步到 Supabase
+        // 通过后端API创建分类
         try {
-          const { error } = await supabase.from('categories').insert({
-            id: category.id,
-            user_id: ANONYMOUS_USER_ID,
-            name: category.name,
-            color: category.color,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
+          const response = await fetch(`${API_BASE}/api/categories`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: category.name,
+              color: category.color,
+            }),
           });
-
-          if (error) {
-            console.error('Failed to create category in Supabase:', error);
+          
+          if (!response.ok) {
+            const error = await response.json();
+            console.error('Failed to create category via API:', error);
+            return;
           }
+          
+          const data = await response.json();
+          
+          // 使用数据库返回的ID更新本地状态
+          const categoryWithDbId = {
+            ...category,
+            id: data.id,
+          };
+          set((state) => ({
+            categories: [...state.categories, categoryWithDbId],
+          }));
+          console.log('Category created via API:', data.id);
         } catch (err) {
           console.error('Error creating category:', err);
         }
@@ -746,18 +755,17 @@ export const useSupabaseStore = create<NovelState>()(
           categories: state.categories.map((c) => (c.id === id ? { ...c, ...updates } : c)),
         }));
         
-        // 同步到 Supabase
+        // 通过后端API同步到数据库
         try {
-          const { error } = await supabase
-            .from('categories')
-            .update({
-              ...updates,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', id);
+          const response = await fetch(`${API_BASE}/api/categories/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updates),
+          });
           
-          if (error) {
-            console.error('Failed to update category in Supabase:', error);
+          if (!response.ok) {
+            const error = await response.json();
+            console.error('Failed to update category via API:', error);
           }
         } catch (err) {
           console.error('Error updating category:', err);
@@ -771,15 +779,15 @@ export const useSupabaseStore = create<NovelState>()(
           selectedCategoryId: state.selectedCategoryId === id ? 'cat-all' : state.selectedCategoryId,
         }));
         
-        // 同步到 Supabase
+        // 通过后端API删除
         try {
-          const { error } = await supabase
-            .from('categories')
-            .delete()
-            .eq('id', id);
+          const response = await fetch(`${API_BASE}/api/categories/${id}`, {
+            method: 'DELETE',
+          });
           
-          if (error) {
-            console.error('Failed to delete category in Supabase:', error);
+          if (!response.ok) {
+            const error = await response.json();
+            console.error('Failed to delete category via API:', error);
           }
         } catch (err) {
           console.error('Error deleting category:', err);
@@ -938,6 +946,27 @@ export const useSupabaseStore = create<NovelState>()(
             }));
             set({ deletedNovels });
             console.log(`Loaded ${deletedNovels.length} deleted novels from Supabase`);
+          }
+
+          // 加载分类 - 使用后端API
+          try {
+            const categoryResponse = await fetch(`${API_BASE}/api/categories`);
+            if (categoryResponse.ok) {
+              const categoriesData = await categoryResponse.json();
+              if (categoriesData && categoriesData.length > 0) {
+                const loadedCategories = categoriesData.map((cat: any) => ({
+                  id: cat.id,
+                  name: cat.name,
+                  color: cat.color,
+                }));
+                set({ categories: loadedCategories });
+                console.log(`Loaded ${categoriesData.length} categories from API`);
+              }
+            } else {
+              console.error('Failed to load categories from API:', await categoryResponse.text());
+            }
+          } catch (categoryError) {
+            console.error('Error loading categories from API:', categoryError);
           }
 
           // 加载 Agent 配置 - 使用后端API
