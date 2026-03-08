@@ -111,25 +111,27 @@ export async function deleteChapter(id: string) {
   if (error) throw error;
 }
 
-// Agent 配置相关操作
+// Agent 配置相关操作（适配优化后的数据库结构）
 export async function getAgentConfigs() {
   const { data, error } = await supabase
-    .from('agent_configs')
+    .from('agents')  // 表名从 agent_configs 改为 agents
     .select('*')
+    .is('deleted_at', null)  // 过滤已删除的记录
     .order('created_at', { ascending: true });
-  
+
   if (error) throw error;
   return data || [];
 }
 
 export async function updateAgentConfig(agentId: string, updates: Partial<Agent>) {
   const { data, error } = await supabase
-    .from('agent_configs')
+    .from('agents')  // 表名从 agent_configs 改为 agents
     .update(updates)
     .eq('agent_id', agentId)
+    .is('deleted_at', null)  // 只更新未删除的记录
     .select()
     .single();
-  
+
   if (error) throw error;
   return data;
 }
@@ -200,24 +202,25 @@ export async function upsertWorldBible(worldBible: Partial<WorldBible> & { novel
   return data;
 }
 
-// 用户设置相关操作
+// 用户设置相关操作（适配优化后的数据库结构 - 使用 settings 表）
 export async function getUserSettings() {
   const { data, error } = await supabase
-    .from('user_settings')
+    .from('settings')  // 表名从 user_settings 改为 settings
     .select('*')
+    .is('deleted_at', null)  // 过滤已删除的记录
     .single();
-  
+
   if (error && error.code !== 'PGRST116') throw error;
   return data;
 }
 
 export async function upsertUserSettings(settings: Record<string, unknown>) {
   const { data, error } = await supabase
-    .from('user_settings')
+    .from('settings')  // 表名从 user_settings 改为 settings
     .upsert([settings])
     .select()
     .single();
-  
+
   if (error) throw error;
   return data;
 }

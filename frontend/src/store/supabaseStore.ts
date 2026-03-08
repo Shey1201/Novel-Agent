@@ -564,14 +564,14 @@ export const useSupabaseStore = create<NovelState>()(
           // 同步到 Supabase
           (async () => {
             try {
+              // 使用新的 settings 表（合并 user_settings 和 system_settings）
               const { error } = await supabase
-                .from('user_settings')
+                .from('settings')
                 .upsert({
-                  id: 'default',
                   user_id: ANONYMOUS_USER_ID,
                   constraints: newConstraints,
                   updated_at: new Date().toISOString(),
-                }, { onConflict: 'id' });
+                }, { onConflict: 'user_id' });
 
               if (error) {
                 console.error('Failed to sync constraints to Supabase:', error);
@@ -592,14 +592,14 @@ export const useSupabaseStore = create<NovelState>()(
           // 同步到 Supabase
           (async () => {
             try {
+              // 使用新的 settings 表（合并 user_settings 和 system_settings）
               const { error } = await supabase
-                .from('user_settings')
+                .from('settings')
                 .upsert({
-                  id: 'default',
                   user_id: ANONYMOUS_USER_ID,
                   constraints: newConstraints,
                   updated_at: new Date().toISOString(),
-                }, { onConflict: 'id' });
+                }, { onConflict: 'user_id' });
 
               if (error) {
                 console.error('Failed to sync constraints to Supabase:', error);
@@ -819,16 +819,18 @@ export const useSupabaseStore = create<NovelState>()(
 
       // 资源方法
       addStoryAsset: async (category, asset) => {
-        // 同步到 Supabase - 不指定ID，让数据库自动生成UUID
+        // 同步到 Supabase - 使用新的 assets 表（合并 story_assets 和 global_assets）
         try {
-          const { data, error } = await supabase.from('story_assets').insert({
+          const { data, error } = await supabase.from('assets').insert({
             user_id: ANONYMOUS_USER_ID,
             novel_id: asset.novelId,
-            category: category,
+            type: category,  // 字段名从 category 改为 type
             name: asset.name,
             content: {},
+            is_global: false,  // 本地资产
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
+            deleted_at: null,
           }).select('id').single();
 
           if (error) {
@@ -857,12 +859,12 @@ export const useSupabaseStore = create<NovelState>()(
             [category]: state.storyAssets[category].filter((a) => a.id !== id),
           },
         }));
-        
-        // 同步到 Supabase
+
+        // 同步到 Supabase - 使用软删除
         try {
           const { error } = await supabase
-            .from('story_assets')
-            .delete()
+            .from('assets')
+            .update({ deleted_at: new Date().toISOString() })
             .eq('id', id);
           
           if (error) {
