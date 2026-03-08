@@ -311,7 +311,7 @@ export const useNovelStore = create<NovelState>()(
       })),
     }),
     { 
-      name: 'novel-storage-v5',
+      name: 'novel-storage-v4',
       partialize: (state) => ({
         // 持久化所有用户数据
         workspaceModule: state.workspaceModule,
