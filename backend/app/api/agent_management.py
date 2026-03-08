@@ -118,6 +118,43 @@ async def update_agent_config(agent_id: str, request: AgentUpdateRequest):
         raise HTTPException(status_code=500, detail=f"Failed to update agent config: {str(e)}")
 
 
+@router.post("/configs", response_model=AgentConfigResponse)
+async def create_agent_config(request: AgentUpdateRequest):
+    """创建新的 Agent 配置"""
+    try:
+        # 生成 agent_id（使用时间戳和随机数）
+        import uuid
+        agent_id = f"agent_{uuid.uuid4().hex[:8]}"
+        
+        config = agent_memory.create_config(
+            agent_id=agent_id,
+            name=request.name or agent_id,
+            role=request.role or "",
+            personality=request.personality or "balanced",
+            temperature=request.temperature or 0.7,
+            prompt=request.prompt or "",
+            enabled=request.enabled if request.enabled is not None else True
+        )
+        
+        if not config:
+            raise HTTPException(status_code=500, detail="Failed to create agent config")
+        
+        return AgentConfigResponse(
+            id=config.id,
+            agent_id=config.agent_id,
+            name=config.name,
+            role=config.role,
+            personality=config.personality,
+            temperature=config.temperature,
+            prompt=config.prompt,
+            enabled=config.enabled,
+            created_at=config.created_at,
+            updated_at=config.updated_at
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create agent config: {str(e)}")
+
+
 @router.post("/configs/{agent_id}/sync", response_model=AgentConfigResponse)
 async def sync_agent_config(agent_id: str, request: AgentUpdateRequest):
     """同步 Agent 配置（如果不存在则创建）"""

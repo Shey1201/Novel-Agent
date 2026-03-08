@@ -969,11 +969,10 @@ export const useSupabaseStore = create<NovelState>()(
                 const { agents } = get();
                 for (const agent of agents) {
                   try {
-                    await fetch(`${API_BASE}/api/agents/configs`, {
+                    await fetch(`${API_BASE}/api/agents/configs/${agent.id}/sync`, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({
-                        agent_id: agent.id,
                         name: agent.name,
                         role: agent.role,
                         personality: agent.personality,
