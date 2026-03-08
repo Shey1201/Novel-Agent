@@ -249,7 +249,7 @@ export default function Library() {
             </div>
             <button
               onClick={handleCreateNovel}
-              className="text-indigo-600 hover:text-indigo-700 text-sm font-medium transition-colors"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm"
             >
               创建小说
             </button>

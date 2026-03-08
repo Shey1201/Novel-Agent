@@ -35,6 +35,7 @@ class Novel:
     locked: bool = False
     category_id: Optional[str] = None
     user_id: Optional[str] = None
+    mounted_skills: Optional[list] = None
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
