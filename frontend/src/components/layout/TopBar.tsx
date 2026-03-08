@@ -1,14 +1,14 @@
 "use client";
 
 import React from "react";
-import { useNovelStore, type WorkspaceModule } from "@/store/novelStore";
+import { useSupabaseStore, type WorkspaceModule } from "@/store/supabaseStore";
 
 interface TopBarProps {
   // 所有操作已移至对话框，此组件不再需要props
 }
 
 const WritingModeSwitch: React.FC = () => {
-  const { writingMode, setWritingMode } = useNovelStore();
+  const { writingMode, setWritingMode } = useSupabaseStore();
   const modes: Array<{ key: "manual" | "ai-assisted" | "ai-writer"; name: string }> = [
     { key: "manual", name: "Manual" },
     { key: "ai-assisted", name: "Assist" },
@@ -49,7 +49,7 @@ export const TopBar: React.FC<TopBarProps> = () => {
     removeConstraint,
     agentConfigs,
     updateAgentConfig,
-  } = useNovelStore();
+  } = useSupabaseStore();
   const currentNovel = novels.find(n => n.id === currentNovelId);
 
   // 只有在小说编辑页面（选中小说且在工作区模块为 novels）时才显示小说相关内容

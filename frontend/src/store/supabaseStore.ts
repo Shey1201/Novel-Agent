@@ -412,12 +412,60 @@ export const useSupabaseStore = create<NovelState>()(
       },
 
       // 约束方法
-      addConstraint: (constraint) => set((state) => ({
-        constraints: [...state.constraints, constraint],
-      })),
-      removeConstraint: (index) => set((state) => ({
-        constraints: state.constraints.filter((_, i) => i !== index),
-      })),
+      addConstraint: async (constraint) => {
+        // 先更新本地状态
+        set((state) => {
+          const newConstraints = [...state.constraints, constraint];
+          
+          // 同步到 Supabase
+          (async () => {
+            try {
+              const { error } = await supabase
+                .from('user_settings')
+                .upsert({
+                  id: 'default',
+                  constraints: newConstraints,
+                  updated_at: new Date().toISOString(),
+                }, { onConflict: 'id' });
+              
+              if (error) {
+                console.error('Failed to sync constraints to Supabase:', error);
+              }
+            } catch (err) {
+              console.error('Error syncing constraints:', err);
+            }
+          })();
+          
+          return { constraints: newConstraints };
+        });
+      },
+      removeConstraint: async (index) => {
+        // 先更新本地状态
+        set((state) => {
+          const newConstraints = state.constraints.filter((_, i) => i !== index);
+          
+          // 同步到 Supabase
+          (async () => {
+            try {
+              const { error } = await supabase
+                .from('user_settings')
+                .upsert({
+                  id: 'default',
+                  constraints: newConstraints,
+                  updated_at: new Date().toISOString(),
+                }, { onConflict: 'id' });
+              
+              if (error) {
+                console.error('Failed to sync constraints to Supabase:', error);
+              }
+            } catch (err) {
+              console.error('Error syncing constraints:', err);
+            }
+          })();
+          
+          return { constraints: newConstraints };
+        });
+      },
 
       // Agent 方法
       updateAgentConfig: (config) => set((state) => ({
@@ -459,7 +507,27 @@ export const useSupabaseStore = create<NovelState>()(
       setWritingMode: (mode) => set({ writingMode: mode }),
 
       // 世界设定
-      setWorldBible: (worldBible) => set({ worldBible }),
+      setWorldBible: async (worldBible) => {
+        // 先更新本地状态
+        set({ worldBible });
+        
+        // 同步到 Supabase
+        try {
+          const { error } = await supabase
+            .from('world_bibles')
+            .upsert({
+              id: worldBible.id || crypto.randomUUID(),
+              content: worldBible,
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'id' });
+          
+          if (error) {
+            console.error('Failed to sync world bible to Supabase:', error);
+          }
+        } catch (err) {
+          console.error('Error syncing world bible:', err);
+        }
+      },
       setWorldApproved: (approved) => set({ worldApproved: approved }),
 
       // 分类方法
@@ -554,18 +622,57 @@ export const useSupabaseStore = create<NovelState>()(
       },
 
       // 资源方法
-      addStoryAsset: (category, asset) => set((state) => ({
-        storyAssets: {
-          ...state.storyAssets,
-          [category]: [...state.storyAssets[category], asset],
-        },
-      })),
-      removeStoryAsset: (category, id) => set((state) => ({
-        storyAssets: {
-          ...state.storyAssets,
-          [category]: state.storyAssets[category].filter((a) => a.id !== id),
-        },
-      })),
+      addStoryAsset: async (category, asset) => {
+        // 先更新本地状态
+        set((state) => ({
+          storyAssets: {
+            ...state.storyAssets,
+            [category]: [...state.storyAssets[category], asset],
+          },
+        }));
+        
+        // 同步到 Supabase
+        try {
+          const { error } = await supabase.from('story_assets').insert({
+            id: asset.id,
+            novel_id: asset.novelId,
+            category: category,
+            name: asset.name,
+            content: {},
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+          
+          if (error) {
+            console.error('Failed to create story asset in Supabase:', error);
+          }
+        } catch (err) {
+          console.error('Error creating story asset:', err);
+        }
+      },
+      removeStoryAsset: async (category, id) => {
+        // 先更新本地状态
+        set((state) => ({
+          storyAssets: {
+            ...state.storyAssets,
+            [category]: state.storyAssets[category].filter((a) => a.id !== id),
+          },
+        }));
+        
+        // 同步到 Supabase
+        try {
+          const { error } = await supabase
+            .from('story_assets')
+            .delete()
+            .eq('id', id);
+          
+          if (error) {
+            console.error('Failed to delete story asset in Supabase:', error);
+          }
+        } catch (err) {
+          console.error('Error deleting story asset:', err);
+        }
+      },
 
       // 回收站
       checkRecycleBin: () => set((state) => {
