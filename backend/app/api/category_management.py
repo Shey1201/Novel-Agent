@@ -9,6 +9,9 @@ from pydantic import BaseModel
 
 from app.memory.category_memory import category_memory
 
+# 为了兼容性，保留 supabase_memory 别名
+supabase_memory = category_memory
+
 router = APIRouter(prefix="/api/categories", tags=["categories"])
 
 
