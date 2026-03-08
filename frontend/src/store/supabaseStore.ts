@@ -7,6 +7,7 @@ import type {
   SidebarView,
   AssetCategory,
   Novel,
+  DeletedNovel,
   Chapter,
   Agent,
   NovelCategory,
@@ -46,7 +47,7 @@ interface NovelState {
 
   // 数据
   novels: Novel[];
-  deletedNovels: Novel[];
+  deletedNovels: DeletedNovel[];
   currentNovelId: string | null;
   currentChapterId: string | null;
   constraints: string[];

@@ -5,6 +5,7 @@
 
 import React from 'react';
 import { render } from '@testing-library/react';
+import '@testing-library/jest-dom';
 
 // Mock the store before importing the component
 const mockNovels: any[] = [];

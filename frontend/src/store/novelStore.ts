@@ -288,9 +288,10 @@ export const useNovelStore = create<NovelState>()(
       
       // Auto-clear logic for recycle bin (> 30 days)
       checkRecycleBin: () => set((state) => {
+        if (!state || !state.deletedNovels) return state;
         const now = Date.now();
         const thirtyDays = 30 * 24 * 60 * 60 * 1000;
-        const remaining = state.deletedNovels.filter(n => (now - n.deletedAt) < thirtyDays);
+        const remaining = state.deletedNovels.filter(n => n.deletedAt && (now - n.deletedAt) < thirtyDays);
         if (remaining.length === state.deletedNovels.length) return state;
         return { deletedNovels: remaining };
       }),
