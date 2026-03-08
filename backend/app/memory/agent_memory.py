@@ -129,6 +129,8 @@ class AgentMemory:
             print(f"[AgentMemory] ERROR creating config: {e}")
             import traceback
             traceback.print_exc()
+            # 抛出异常让调用者处理
+            raise
         return None
     
     def update_config(self, agent_id: str, **updates) -> Optional[AgentConfig]:
