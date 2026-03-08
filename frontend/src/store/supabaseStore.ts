@@ -834,12 +834,85 @@ export const useSupabaseStore = create<NovelState>()(
       loadFromSupabase: async () => {
         try {
           set({ isLoading: true });
-          
+
+          // 加载小说列表
+          const { data: novelsData, error: novelsError } = await supabase
+            .from('novels')
+            .select('*')
+            .is('deleted_at', null)
+            .order('created_at', { ascending: false });
+
+          if (novelsError) {
+            console.error('Failed to load novels:', novelsError);
+          } else if (novelsData && novelsData.length > 0) {
+            // 加载每个小说的章节
+            const novelsWithChapters = await Promise.all(
+              novelsData.map(async (novel: any) => {
+                const { data: chaptersData, error: chaptersError } = await supabase
+                  .from('chapters')
+                  .select('*')
+                  .eq('novel_id', novel.id)
+                  .order('order', { ascending: true });
+
+                if (chaptersError) {
+                  console.error(`Failed to load chapters for novel ${novel.id}:`, chaptersError);
+                }
+
+                return {
+                  id: novel.id,
+                  title: novel.title,
+                  outline: novel.outline || '',
+                  locked: novel.locked || false,
+                  createdAt: new Date(novel.created_at).getTime(),
+                  updatedAt: new Date(novel.updated_at).getTime(),
+                  chapters: (chaptersData || []).map((ch: any) => ({
+                    id: ch.id,
+                    title: ch.title,
+                    content: ch.content || '',
+                    order: ch.order || 0,
+                    summary: ch.summary || '',
+                    wordCount: ch.word_count || 0,
+                    status: ch.status || 'draft',
+                    createdAt: new Date(ch.created_at).getTime(),
+                    updatedAt: new Date(ch.updated_at).getTime(),
+                  })),
+                };
+              })
+            );
+
+            set({ novels: novelsWithChapters });
+            console.log(`Loaded ${novelsWithChapters.length} novels from Supabase`);
+          }
+
+          // 加载已删除的小说（回收站）
+          const { data: deletedNovelsData, error: deletedError } = await supabase
+            .from('novels')
+            .select('*')
+            .not('deleted_at', 'is', null)
+            .order('deleted_at', { ascending: false });
+
+          if (deletedError) {
+            console.error('Failed to load deleted novels:', deletedError);
+          } else if (deletedNovelsData && deletedNovelsData.length > 0) {
+            const deletedNovels = deletedNovelsData.map((novel: any) => ({
+              id: novel.id,
+              title: novel.title,
+              outline: novel.outline || '',
+              locked: novel.locked || false,
+              createdAt: new Date(novel.created_at).getTime(),
+              updatedAt: new Date(novel.updated_at).getTime(),
+              chapters: [],
+              deletedAt: new Date(novel.deleted_at).getTime(),
+            }));
+            set({ deletedNovels });
+            console.log(`Loaded ${deletedNovels.length} deleted novels from Supabase`);
+          }
+
           // 加载 Agent 配置
           const { data: agentConfigs, error: agentError } = await supabase
             .from('agent_configs')
             .select('*');
-          
+
           if (agentError) {
             console.error('Failed to load agent configs:', agentError);
           } else if (agentConfigs && agentConfigs.length > 0) {
@@ -879,7 +952,7 @@ export const useSupabaseStore = create<NovelState>()(
               }
             }
           }
-          
+
           console.log('Data loaded from Supabase successfully');
         } catch (err) {
           console.error('Error loading from Supabase:', err);

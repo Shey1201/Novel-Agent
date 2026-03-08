@@ -1,13 +1,18 @@
 """
-System Settings - 系统设置管理
+System Settings - 系统设置管理 (Supabase 版本)
 存储和管理系统级别的配置，包括 Token 限制
 """
 
-import json
 import os
-from pathlib import Path
 from typing import Dict, Any, Optional
 from dataclasses import dataclass, asdict
+
+# 尝试导入 supabase
+try:
+    from supabase import create_client, Client
+    SUPABASE_AVAILABLE = True
+except ImportError:
+    SUPABASE_AVAILABLE = False
 
 
 @dataclass
@@ -79,50 +84,166 @@ class SystemSettings:
 
 
 class SystemSettingsManager:
-    """系统设置管理器"""
+    """系统设置管理器 - Supabase 版本"""
     
-    def __init__(self, data_dir: str = "./data"):
-        self.data_dir = Path(data_dir)
-        self.settings_file = self.data_dir / "system_settings.json"
+    def __init__(self):
+        self.supabase: Optional[Client] = None
         self.settings = SystemSettings()
+        self._init_supabase()
         self._load()
     
-    def _load(self):
-        """加载设置"""
-        if self.settings_file.exists():
+    def _init_supabase(self):
+        """初始化 Supabase 客户端"""
+        if not SUPABASE_AVAILABLE:
+            print("Warning: Supabase not available, using default settings")
+            return
+        
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_ANON_KEY")
+        
+        if supabase_url and supabase_key:
             try:
-                with open(self.settings_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    self.settings = self._dict_to_settings(data)
+                self.supabase = create_client(supabase_url, supabase_key)
+                print("SystemSettingsManager: Connected to Supabase")
             except Exception as e:
-                print(f"加载系统设置失败: {e}")
-                self.settings = SystemSettings()
+                print(f"Error connecting to Supabase: {e}")
+        else:
+            print("Warning: Supabase credentials not found, using default settings")
+    
+    def _load(self):
+        """从 Supabase 加载设置"""
+        if not self.supabase:
+            self.settings = SystemSettings()
+            return
+        
+        try:
+            # 获取系统设置（使用默认用户ID或全局设置）
+            response = self.supabase.table("system_settings").select("*").limit(1).execute()
+            
+            if response.data and len(response.data) > 0:
+                data = response.data[0]
+                self.settings = self._dict_to_settings(data)
+                print("System settings loaded from Supabase")
+            else:
+                # 没有设置，创建默认设置
+                print("No system settings found, creating default...")
+                self._create_default_settings()
+        except Exception as e:
+            print(f"Error loading system settings: {e}")
+            self.settings = SystemSettings()
+    
+    def _create_default_settings(self):
+        """创建默认设置"""
+        if not self.supabase:
+            return
+        
+        try:
+            default_data = {
+                "token_enabled": False,
+                "token_daily_limit": 50000,
+                "token_warning_threshold": 0.8,
+                "token_budget_allocation": {
+                    "planner": 0.10,
+                    "discussion": 0.13,
+                    "conflict": 0.07,
+                    "writing": 0.47,
+                    "editor": 0.13,
+                    "reader": 0.07,
+                    "summary": 0.03,
+                },
+                "discussion_max_rounds": 2,
+                "discussion_max_tokens": 80,
+                "discussion_enable_short_mode": True,
+                "discussion_min_interval": 3,
+                "cache_enable_planner": True,
+                "cache_enable_conflict": True,
+                "cache_enable_consistency": True,
+            }
+            
+            self.supabase.table("system_settings").insert(default_data).execute()
+            print("Default system settings created")
+        except Exception as e:
+            print(f"Error creating default settings: {e}")
     
     def _save(self):
-        """保存设置"""
-        self.data_dir.mkdir(parents=True, exist_ok=True)
+        """保存设置到 Supabase"""
+        if not self.supabase:
+            return
+        
         try:
-            with open(self.settings_file, 'w', encoding='utf-8') as f:
-                json.dump(self._settings_to_dict(self.settings), f, ensure_ascii=False, indent=2)
+            data = self._settings_to_dict(self.settings)
+            
+            # 检查是否已有设置
+            response = self.supabase.table("system_settings").select("id").limit(1).execute()
+            
+            if response.data and len(response.data) > 0:
+                # 更新现有设置
+                setting_id = response.data[0]["id"]
+                self.supabase.table("system_settings").update(data).eq("id", setting_id).execute()
+            else:
+                # 创建新设置
+                self.supabase.table("system_settings").insert(data).execute()
+            
+            print("System settings saved to Supabase")
         except Exception as e:
-            print(f"保存系统设置失败: {e}")
+            print(f"Error saving system settings: {e}")
     
     def _dict_to_settings(self, data: Dict) -> SystemSettings:
         """字典转设置对象"""
+        token_budget = data.get('token_budget_allocation', {})
+        
         return SystemSettings(
-            token=TokenSettings(**data.get('token', {})),
-            discussion=DiscussionSettings(**data.get('discussion', {})),
-            cache=CacheSettings(**data.get('cache', {})),
-            generation=GenerationSettings(**data.get('generation', {}))
+            token=TokenSettings(
+                enabled=data.get('token_enabled', False),
+                daily_limit=data.get('token_daily_limit', 50000),
+                warning_threshold=data.get('token_warning_threshold', 0.8),
+                budget_allocation=token_budget if token_budget else {
+                    "planner": 0.10,
+                    "discussion": 0.13,
+                    "conflict": 0.07,
+                    "writing": 0.47,
+                    "editor": 0.13,
+                    "reader": 0.07,
+                    "summary": 0.03,
+                }
+            ),
+            discussion=DiscussionSettings(
+                max_rounds=data.get('discussion_max_rounds', 2),
+                max_tokens_per_response=data.get('discussion_max_tokens', 80),
+                enable_short_mode=data.get('discussion_enable_short_mode', True),
+                min_chapter_interval=data.get('discussion_min_interval', 3)
+            ),
+            cache=CacheSettings(
+                enable_planner_cache=data.get('cache_enable_planner', True),
+                enable_conflict_cache=data.get('cache_enable_conflict', True),
+                enable_consistency_cache=data.get('cache_enable_consistency', True),
+                ttl_hours=data.get('cache_ttl_hours', 24)
+            ),
+            generation=GenerationSettings(
+                paragraph_length=data.get('generation_paragraph_length', 500),
+                reader_interval=data.get('generation_reader_interval', 3),
+                enable_streaming=data.get('generation_enable_streaming', True)
+            )
         )
     
     def _settings_to_dict(self, settings: SystemSettings) -> Dict:
         """设置对象转字典"""
         return {
-            'token': asdict(settings.token),
-            'discussion': asdict(settings.discussion),
-            'cache': asdict(settings.cache),
-            'generation': asdict(settings.generation)
+            'token_enabled': settings.token.enabled,
+            'token_daily_limit': settings.token.daily_limit,
+            'token_warning_threshold': settings.token.warning_threshold,
+            'token_budget_allocation': settings.token.budget_allocation,
+            'discussion_max_rounds': settings.discussion.max_rounds,
+            'discussion_max_tokens': settings.discussion.max_tokens_per_response,
+            'discussion_enable_short_mode': settings.discussion.enable_short_mode,
+            'discussion_min_interval': settings.discussion.min_chapter_interval,
+            'cache_enable_planner': settings.cache.enable_planner_cache,
+            'cache_enable_conflict': settings.cache.enable_conflict_cache,
+            'cache_enable_consistency': settings.cache.enable_consistency_cache,
+            'cache_ttl_hours': settings.cache.ttl_hours,
+            'generation_paragraph_length': settings.generation.paragraph_length,
+            'generation_reader_interval': settings.generation.reader_interval,
+            'generation_enable_streaming': settings.generation.enable_streaming,
         }
     
     def get_settings(self) -> SystemSettings:

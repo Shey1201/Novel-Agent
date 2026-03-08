@@ -1,13 +1,19 @@
 """
-Agent Skill Manager: Agent技能管理模块
+Agent Skill Manager: Agent技能管理模块 (Supabase 版本)
 管理从资产转化的Agent技能和约束
 """
 
-import json
 import os
 from typing import Dict, List, Optional
 from datetime import datetime
 from pydantic import BaseModel, Field
+
+# 尝试导入 supabase
+try:
+    from supabase import create_client, Client
+    SUPABASE_AVAILABLE = True
+except ImportError:
+    SUPABASE_AVAILABLE = False
 
 
 class AgentSkill(BaseModel):
@@ -31,12 +37,7 @@ class NovelSkillMapping(BaseModel):
 
 
 class AgentSkillManager:
-    """Agent技能管理器"""
-    
-    DATA_DIR = "data"
-    SKILLS_DIR = "agent_skills"
-    SKILLS_FILE = "skills.json"
-    NOVEL_SKILL_FILE = "novel_skill_mapping.json"
+    """Agent技能管理器 - Supabase 版本"""
     
     # 支持的Agent类型
     AGENT_TYPES = [
@@ -49,65 +50,26 @@ class AgentSkillManager:
     ]
     
     def __init__(self):
-        self._skills: Dict[str, AgentSkill] = {}
-        self._novel_mappings: Dict[str, NovelSkillMapping] = {}
-        self._ensure_directories()
-        self._load_data()
+        self.supabase: Optional[Client] = None
+        self._init_supabase()
     
-    def _ensure_directories(self):
-        """确保数据目录存在"""
-        os.makedirs(self.DATA_DIR, exist_ok=True)
-        os.makedirs(os.path.join(self.DATA_DIR, self.SKILLS_DIR), exist_ok=True)
-    
-    def _get_skills_file_path(self) -> str:
-        """获取技能文件路径"""
-        return os.path.join(self.DATA_DIR, self.SKILLS_DIR, self.SKILLS_FILE)
-    
-    def _get_mapping_file_path(self) -> str:
-        """获取映射文件路径"""
-        return os.path.join(self.DATA_DIR, self.SKILLS_DIR, self.NOVEL_SKILL_FILE)
-    
-    def _load_data(self):
-        """从磁盘加载数据"""
-        # 加载技能
-        skills_path = self._get_skills_file_path()
-        if os.path.exists(skills_path):
-            with open(skills_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                self._skills = {
-                    k: AgentSkill(**v) for k, v in data.items()
-                }
+    def _init_supabase(self):
+        """初始化 Supabase 客户端"""
+        if not SUPABASE_AVAILABLE:
+            print("Warning: Supabase not available, agent skill management will be limited")
+            return
         
-        # 加载映射
-        mapping_path = self._get_mapping_file_path()
-        if os.path.exists(mapping_path):
-            with open(mapping_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                self._novel_mappings = {
-                    k: NovelSkillMapping(**v) for k, v in data.items()
-                }
-    
-    def _save_skills(self):
-        """保存技能到磁盘"""
-        skills_path = self._get_skills_file_path()
-        with open(skills_path, 'w', encoding='utf-8') as f:
-            json.dump(
-                {k: v.model_dump() for k, v in self._skills.items()},
-                f,
-                ensure_ascii=False,
-                indent=2
-            )
-    
-    def _save_mappings(self):
-        """保存映射到磁盘"""
-        mapping_path = self._get_mapping_file_path()
-        with open(mapping_path, 'w', encoding='utf-8') as f:
-            json.dump(
-                {k: v.model_dump() for k, v in self._novel_mappings.items()},
-                f,
-                ensure_ascii=False,
-                indent=2
-            )
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_ANON_KEY")
+        
+        if supabase_url and supabase_key:
+            try:
+                self.supabase = create_client(supabase_url, supabase_key)
+                print("AgentSkillManager: Connected to Supabase")
+            except Exception as e:
+                print(f"Error connecting to Supabase: {e}")
+        else:
+            print("Warning: Supabase credentials not found")
     
     def create_skill_from_asset(
         self,
@@ -121,6 +83,9 @@ class AgentSkillManager:
         novel_id: Optional[str] = None
     ) -> AgentSkill:
         """从资产创建Agent技能"""
+        if not self.supabase:
+            raise Exception("Supabase not available")
+        
         # 构建技能内容
         content = self._build_skill_content(asset_type, skill_name, asset_content)
         
@@ -135,14 +100,28 @@ class AgentSkillManager:
             is_active=True
         )
         
-        self._skills[skill_id] = skill
-        self._save_skills()
-        
-        # 如果指定了小说，自动关联
-        if novel_id:
-            self.add_skill_to_novel(skill_id, novel_id)
-        
-        return skill
+        try:
+            # 保存技能到数据库
+            skill_data = {
+                "id": skill.id,
+                "name": skill.name,
+                "description": skill.description,
+                "asset_id": skill.asset_id,
+                "asset_type": skill.asset_type,
+                "content": skill.content,
+                "target_agents": skill.target_agents,
+                "is_active": skill.is_active,
+            }
+            self.supabase.table("agent_skills").insert(skill_data).execute()
+            
+            # 如果指定了小说，自动关联
+            if novel_id:
+                self.add_skill_to_novel(skill_id, novel_id)
+            
+            return skill
+        except Exception as e:
+            print(f"Error creating skill from asset: {e}")
+            raise
     
     def _build_skill_content(self, asset_type: str, name: str, content: str) -> str:
         """构建技能内容文本"""
@@ -198,26 +177,67 @@ class AgentSkillManager:
     
     def get_skill(self, skill_id: str) -> Optional[AgentSkill]:
         """获取单个技能"""
-        return self._skills.get(skill_id)
+        if not self.supabase:
+            return None
+        
+        try:
+            response = self.supabase.table("agent_skills").select("*").eq("id", skill_id).single().execute()
+            if response.data:
+                return AgentSkill(**response.data)
+        except Exception as e:
+            print(f"Error getting skill: {e}")
+        return None
     
     def get_all_skills(self) -> List[AgentSkill]:
         """获取所有技能"""
-        return list(self._skills.values())
+        if not self.supabase:
+            return []
+        
+        try:
+            response = self.supabase.table("agent_skills").select("*").execute()
+            if response.data:
+                return [AgentSkill(**skill) for skill in response.data]
+        except Exception as e:
+            print(f"Error getting all skills: {e}")
+        return []
     
     def get_skills_by_asset(self, asset_id: str) -> List[AgentSkill]:
         """获取资产的关联技能"""
-        return [s for s in self._skills.values() if s.asset_id == asset_id]
+        if not self.supabase:
+            return []
+        
+        try:
+            response = self.supabase.table("agent_skills").select("*").eq("asset_id", asset_id).execute()
+            if response.data:
+                return [AgentSkill(**skill) for skill in response.data]
+        except Exception as e:
+            print(f"Error getting skills by asset: {e}")
+        return []
     
     def get_skills_by_novel(self, novel_id: str) -> List[AgentSkill]:
         """获取小说的所有技能"""
-        mapping = self._novel_mappings.get(novel_id)
-        if not mapping:
+        if not self.supabase:
             return []
         
-        return [
-            self._skills[sid] for sid in mapping.skill_ids
-            if sid in self._skills and self._skills[sid].is_active
-        ]
+        try:
+            # 获取小说技能映射
+            response = self.supabase.table("novel_skill_mappings").select("skill_id").eq("novel_id", novel_id).execute()
+            if not response.data:
+                return []
+            
+            skill_ids = [m["skill_id"] for m in response.data]
+            
+            # 获取技能详情
+            skills = []
+            for skill_id in skill_ids:
+                skill = self.get_skill(skill_id)
+                if skill and skill.is_active:
+                    skills.append(skill)
+            
+            return skills
+        except Exception as e:
+            print(f"Error getting skills by novel: {e}")
+        return []
     
     def get_skills_for_agent(self, novel_id: str, agent_type: str) -> List[AgentSkill]:
         """获取指定小说的指定Agent类型的技能"""
@@ -226,72 +246,80 @@ class AgentSkillManager:
     
     def update_skill(self, skill_id: str, updates: Dict) -> Optional[AgentSkill]:
         """更新技能"""
-        if skill_id not in self._skills:
+        if not self.supabase:
             return None
         
-        skill = self._skills[skill_id]
-        for key, value in updates.items():
-            if hasattr(skill, key):
-                setattr(skill, key, value)
-        
-        skill.updated_at = datetime.now().isoformat()
-        self._save_skills()
-        return skill
+        try:
+            updates["updated_at"] = datetime.now().isoformat()
+            response = self.supabase.table("agent_skills").update(updates).eq("id", skill_id).execute()
+            if response.data:
+                return AgentSkill(**response.data[0])
+        except Exception as e:
+            print(f"Error updating skill: {e}")
+        return None
     
     def delete_skill(self, skill_id: str) -> bool:
         """删除技能"""
-        if skill_id not in self._skills:
+        if not self.supabase:
             return False
         
-        del self._skills[skill_id]
-        
-        # 从所有小说映射中移除
-        for mapping in self._novel_mappings.values():
-            if skill_id in mapping.skill_ids:
-                mapping.skill_ids.remove(skill_id)
-        
-        self._save_skills()
-        self._save_mappings()
-        return True
+        try:
+            # 删除技能（级联删除会处理映射）
+            self.supabase.table("agent_skills").delete().eq("id", skill_id).execute()
+            return True
+        except Exception as e:
+            print(f"Error deleting skill: {e}")
+        return False
     
     def add_skill_to_novel(self, skill_id: str, novel_id: str) -> bool:
         """将技能添加到小说"""
-        if skill_id not in self._skills:
+        if not self.supabase:
             return False
         
-        if novel_id not in self._novel_mappings:
-            self._novel_mappings[novel_id] = NovelSkillMapping(novel_id=novel_id)
-        
-        mapping = self._novel_mappings[novel_id]
-        if skill_id not in mapping.skill_ids:
-            mapping.skill_ids.append(skill_id)
-            self._save_mappings()
-        
-        return True
+        try:
+            mapping_data = {
+                "novel_id": novel_id,
+                "skill_id": skill_id,
+            }
+            self.supabase.table("novel_skill_mappings").insert(mapping_data).execute()
+            return True
+        except Exception as e:
+            print(f"Error adding skill to novel: {e}")
+        return False
     
     def remove_skill_from_novel(self, skill_id: str, novel_id: str) -> bool:
         """从小说移除技能"""
-        if novel_id not in self._novel_mappings:
+        if not self.supabase:
             return False
         
-        mapping = self._novel_mappings[novel_id]
-        if skill_id in mapping.skill_ids:
-            mapping.skill_ids.remove(skill_id)
-            self._save_mappings()
+        try:
+            self.supabase.table("novel_skill_mappings").delete().eq("novel_id", novel_id).eq("skill_id", skill_id).execute()
             return True
-        
+        except Exception as e:
+            print(f"Error removing skill from novel: {e}")
         return False
     
     def toggle_skill_active(self, skill_id: str) -> Optional[bool]:
         """切换技能激活状态"""
-        skill = self._skills.get(skill_id)
-        if not skill:
+        if not self.supabase:
             return None
         
-        skill.is_active = not skill.is_active
-        skill.updated_at = datetime.now().isoformat()
-        self._save_skills()
-        return skill.is_active
+        try:
+            # 获取当前状态
+            skill = self.get_skill(skill_id)
+            if not skill:
+                return None
+            
+            new_status = not skill.is_active
+            self.supabase.table("agent_skills").update({
+                "is_active": new_status,
+                "updated_at": datetime.now().isoformat()
+            }).eq("id", skill_id).execute()
+            
+            return new_status
+        except Exception as e:
+            print(f"Error toggling skill active: {e}")
+        return None
     
     def build_agent_prompt(self, novel_id: str, agent_type: str) -> str:
         """构建Agent的prompt，包含所有相关技能约束"""

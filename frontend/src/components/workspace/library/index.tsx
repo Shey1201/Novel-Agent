@@ -51,6 +51,7 @@ export default function Library() {
 
   const handleCreateNovel = () => {
     const id = `novel-${Date.now()}`;
+    const now = Date.now();
     addNovel({
       id,
       title: "新小说",
@@ -64,6 +65,8 @@ export default function Library() {
       },
       locked: false,
       categoryId: selectedCategoryId === 'cat-all' || selectedCategoryId === 'cat-uncategorized' ? null : selectedCategoryId,
+      createdAt: now,
+      updatedAt: now,
     });
   };
 

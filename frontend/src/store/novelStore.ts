@@ -44,6 +44,9 @@ export interface Novel {
   locked?: boolean;
   categoryId?: string | null;
   mountedSkills?: string[];
+  createdAt?: number;
+  updatedAt?: number;
+  outline?: string;
 }
 
 export interface NovelCategory {

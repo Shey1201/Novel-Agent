@@ -1,13 +1,19 @@
 """
-Global Asset Manager: 全局资产管理模块
+Global Asset Manager: 全局资产管理模块 (Supabase 版本)
 管理跨小说的资产存储和映射关系
 """
 
-import json
 import os
 from typing import Dict, List, Optional, Set
 from datetime import datetime
 from pydantic import BaseModel, Field
+
+# 尝试导入 supabase
+try:
+    from supabase import create_client, Client
+    SUPABASE_AVAILABLE = True
+except ImportError:
+    SUPABASE_AVAILABLE = False
 
 
 class AssetVersion(BaseModel):
@@ -48,172 +54,244 @@ class NovelAssetMapping(BaseModel):
 
 
 class GlobalAssetManager:
-    """全局资产管理器"""
-    
-    DATA_DIR = "data"
-    GLOBAL_ASSETS_DIR = "global_assets"
-    MAPPING_FILE = "novel_asset_mapping.json"
+    """全局资产管理器 - Supabase 版本"""
     
     def __init__(self):
-        self._assets: Dict[str, GlobalAsset] = {}
-        self._mappings: Dict[str, NovelAssetMapping] = {}
-        self._ensure_directories()
-        self._load_data()
+        self.supabase: Optional[Client] = None
+        self._init_supabase()
     
-    def _ensure_directories(self):
-        """确保数据目录存在"""
-        os.makedirs(self.DATA_DIR, exist_ok=True)
-        os.makedirs(os.path.join(self.DATA_DIR, self.GLOBAL_ASSETS_DIR), exist_ok=True)
-    
-    def _get_assets_file_path(self) -> str:
-        """获取资产文件路径"""
-        return os.path.join(self.DATA_DIR, self.GLOBAL_ASSETS_DIR, "assets.json")
-    
-    def _get_mapping_file_path(self) -> str:
-        """获取映射文件路径"""
-        return os.path.join(self.DATA_DIR, self.GLOBAL_ASSETS_DIR, self.MAPPING_FILE)
-    
-    def _load_data(self):
-        """从磁盘加载数据"""
-        # 加载资产
-        assets_path = self._get_assets_file_path()
-        if os.path.exists(assets_path):
-            with open(assets_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                self._assets = {
-                    k: GlobalAsset(**v) for k, v in data.items()
-                }
+    def _init_supabase(self):
+        """初始化 Supabase 客户端"""
+        if not SUPABASE_AVAILABLE:
+            print("Warning: Supabase not available, global asset management will be limited")
+            return
         
-        # 加载映射
-        mapping_path = self._get_mapping_file_path()
-        if os.path.exists(mapping_path):
-            with open(mapping_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                self._mappings = {
-                    k: NovelAssetMapping(
-                        novel_id=v['novel_id'],
-                        asset_ids=set(v['asset_ids']),
-                        reference_types=v.get('reference_types', {}),
-                        version_selections=v.get('version_selections', {})
-                    ) for k, v in data.items()
-                }
-    
-    def _save_assets(self):
-        """保存资产到磁盘"""
-        assets_path = self._get_assets_file_path()
-        with open(assets_path, 'w', encoding='utf-8') as f:
-            json.dump(
-                {k: v.model_dump() for k, v in self._assets.items()},
-                f,
-                ensure_ascii=False,
-                indent=2
-            )
-    
-    def _save_mappings(self):
-        """保存映射到磁盘"""
-        mapping_path = self._get_mapping_file_path()
-        with open(mapping_path, 'w', encoding='utf-8') as f:
-            json.dump(
-                {
-                    k: {
-                        'novel_id': v.novel_id,
-                        'asset_ids': list(v.asset_ids),
-                        'reference_types': v.reference_types,
-                        'version_selections': v.version_selections
-                    } for k, v in self._mappings.items()
-                },
-                f,
-                ensure_ascii=False,
-                indent=2
-            )
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_ANON_KEY")
+        
+        if supabase_url and supabase_key:
+            try:
+                self.supabase = create_client(supabase_url, supabase_key)
+                print("GlobalAssetManager: Connected to Supabase")
+            except Exception as e:
+                print(f"Error connecting to Supabase: {e}")
+        else:
+            print("Warning: Supabase credentials not found")
     
     # ==================== 资产CRUD操作 ====================
     
     def create_asset(self, asset: GlobalAsset) -> GlobalAsset:
         """创建新资产"""
-        self._assets[asset.id] = asset
-        self._save_assets()
-        return asset
+        if not self.supabase:
+            raise Exception("Supabase not available")
+        
+        try:
+            # 创建资产
+            asset_data = {
+                "id": asset.id,
+                "name": asset.name,
+                "type": asset.type,
+                "description": asset.description,
+                "source_novel_id": asset.source_novel_id,
+                "source_novel_name": asset.source_novel_name,
+                "color": asset.color,
+                "is_starred": asset.is_starred,
+                "active_version_id": asset.active_version_id,
+            }
+            
+            response = self.supabase.table("global_assets").insert(asset_data).execute()
+            
+            # 创建版本
+            for version in asset.versions:
+                version_data = {
+                    "id": version.id,
+                    "asset_id": asset.id,
+                    "name": version.name,
+                    "description": version.description,
+                    "data": version.data,
+                }
+                self.supabase.table("asset_versions").insert(version_data).execute()
+            
+            return asset
+        except Exception as e:
+            print(f"Error creating asset: {e}")
+            raise
     
     def get_asset(self, asset_id: str) -> Optional[GlobalAsset]:
         """获取单个资产"""
-        return self._assets.get(asset_id)
+        if not self.supabase:
+            return None
+        
+        try:
+            # 获取资产
+            response = self.supabase.table("global_assets").select("*").eq("id", asset_id).single().execute()
+            if not response.data:
+                return None
+            
+            asset_data = response.data
+            
+            # 获取版本
+            versions_response = self.supabase.table("asset_versions").select("*").eq("asset_id", asset_id).execute()
+            versions = []
+            if versions_response.data:
+                for v in versions_response.data:
+                    versions.append(AssetVersion(
+                        id=v["id"],
+                        name=v["name"],
+                        description=v.get("description"),
+                        created_at=v["created_at"],
+                        data=v.get("data", {}),
+                    ))
+            
+            return GlobalAsset(
+                id=asset_data["id"],
+                name=asset_data["name"],
+                type=asset_data["type"],
+                description=asset_data.get("description"),
+                source_novel_id=asset_data["source_novel_id"],
+                source_novel_name=asset_data["source_novel_name"],
+                color=asset_data.get("color"),
+                is_starred=asset_data.get("is_starred", False),
+                versions=versions,
+                created_at=asset_data["created_at"],
+                updated_at=asset_data["updated_at"],
+                active_version_id=asset_data.get("active_version_id"),
+            )
+        except Exception as e:
+            print(f"Error getting asset: {e}")
+        return None
     
     def get_all_assets(self) -> List[GlobalAsset]:
         """获取所有资产"""
-        return list(self._assets.values())
+        if not self.supabase:
+            return []
+        
+        try:
+            response = self.supabase.table("global_assets").select("*").execute()
+            if not response.data:
+                return []
+            
+            assets = []
+            for asset_data in response.data:
+                asset = self.get_asset(asset_data["id"])
+                if asset:
+                    assets.append(asset)
+            
+            return assets
+        except Exception as e:
+            print(f"Error getting all assets: {e}")
+        return []
     
     def get_assets_by_type(self, asset_type: str) -> List[GlobalAsset]:
         """按类型获取资产"""
-        return [a for a in self._assets.values() if a.type == asset_type]
+        if not self.supabase:
+            return []
+        
+        try:
+            response = self.supabase.table("global_assets").select("*").eq("type", asset_type).execute()
+            if not response.data:
+                return []
+            
+            assets = []
+            for asset_data in response.data:
+                asset = self.get_asset(asset_data["id"])
+                if asset:
+                    assets.append(asset)
+            
+            return assets
+        except Exception as e:
+            print(f"Error getting assets by type: {e}")
+        return []
     
     def get_assets_by_novel(self, novel_id: str) -> List[GlobalAsset]:
         """按原生小说获取资产"""
-        return [a for a in self._assets.values() if a.source_novel_id == novel_id]
+        if not self.supabase:
+            return []
+        
+        try:
+            response = self.supabase.table("global_assets").select("*").eq("source_novel_id", novel_id).execute()
+            if not response.data:
+                return []
+            
+            assets = []
+            for asset_data in response.data:
+                asset = self.get_asset(asset_data["id"])
+                if asset:
+                    assets.append(asset)
+            
+            return assets
+        except Exception as e:
+            print(f"Error getting assets by novel: {e}")
+        return []
     
     def update_asset(self, asset_id: str, updates: Dict) -> Optional[GlobalAsset]:
         """更新资产"""
-        if asset_id not in self._assets:
+        if not self.supabase:
             return None
         
-        asset = self._assets[asset_id]
-        for key, value in updates.items():
-            if hasattr(asset, key):
-                setattr(asset, key, value)
-        
-        asset.updated_at = datetime.now().isoformat()
-        self._save_assets()
-        return asset
+        try:
+            # 过滤掉 versions 字段（单独处理）
+            asset_updates = {k: v for k, v in updates.items() if k != "versions"}
+            
+            if asset_updates:
+                response = self.supabase.table("global_assets").update(asset_updates).eq("id", asset_id).execute()
+                if not response.data:
+                    return None
+            
+            return self.get_asset(asset_id)
+        except Exception as e:
+            print(f"Error updating asset: {e}")
+        return None
     
     def delete_asset(self, asset_id: str) -> bool:
         """删除资产"""
-        if asset_id not in self._assets:
+        if not self.supabase:
             return False
         
-        del self._assets[asset_id]
-        
-        # 同时从所有映射中移除
-        for mapping in self._mappings.values():
-            if asset_id in mapping.asset_ids:
-                mapping.asset_ids.discard(asset_id)
-                mapping.reference_types.pop(asset_id, None)
-                mapping.version_selections.pop(asset_id, None)
-        
-        self._save_assets()
-        self._save_mappings()
-        return True
+        try:
+            # 删除资产（级联删除会处理版本和映射）
+            self.supabase.table("global_assets").delete().eq("id", asset_id).execute()
+            return True
+        except Exception as e:
+            print(f"Error deleting asset: {e}")
+        return False
     
     # ==================== 版本管理 ====================
     
     def create_asset_version(self, asset_id: str, version: AssetVersion) -> Optional[AssetVersion]:
         """为资产创建新版本"""
-        asset = self._assets.get(asset_id)
-        if not asset:
+        if not self.supabase:
             return None
         
-        asset.versions.append(version)
-        asset.updated_at = datetime.now().isoformat()
-        self._save_assets()
-        return version
+        try:
+            version_data = {
+                "id": version.id,
+                "asset_id": asset_id,
+                "name": version.name,
+                "description": version.description,
+                "data": version.data,
+            }
+            
+            response = self.supabase.table("asset_versions").insert(version_data).execute()
+            if response.data:
+                return version
+        except Exception as e:
+            print(f"Error creating asset version: {e}")
+        return None
     
     def set_active_version(self, asset_id: str, version_id: Optional[str]) -> bool:
         """设置资产的激活版本"""
-        asset = self._assets.get(asset_id)
-        if not asset:
+        if not self.supabase:
             return False
         
-        if version_id is None:
-            asset.active_version_id = None
-        else:
-            # 验证版本存在
-            version_exists = any(v.id == version_id for v in asset.versions)
-            if not version_exists:
-                return False
-            asset.active_version_id = version_id
-        
-        asset.updated_at = datetime.now().isoformat()
-        self._save_assets()
-        return True
+        try:
+            self.supabase.table("global_assets").update({
+                "active_version_id": version_id
+            }).eq("id", asset_id).execute()
+            return True
+        except Exception as e:
+            print(f"Error setting active version: {e}")
+        return False
     
     # ==================== 挂载/引用管理 ====================
     
@@ -225,113 +303,161 @@ class GlobalAssetManager:
         version_id: Optional[str] = None
     ) -> bool:
         """将资产挂载到小说"""
-        if asset_id not in self._assets:
+        if not self.supabase:
             return False
         
-        # 获取或创建映射
-        if novel_id not in self._mappings:
-            self._mappings[novel_id] = NovelAssetMapping(novel_id=novel_id)
-        
-        mapping = self._mappings[novel_id]
-        mapping.asset_ids.add(asset_id)
-        mapping.reference_types[asset_id] = reference_type
-        mapping.version_selections[asset_id] = version_id
-        
-        self._save_mappings()
-        return True
+        try:
+            mapping_data = {
+                "novel_id": novel_id,
+                "asset_id": asset_id,
+                "reference_type": reference_type,
+                "version_id": version_id,
+            }
+            
+            self.supabase.table("novel_asset_mappings").insert(mapping_data).execute()
+            return True
+        except Exception as e:
+            print(f"Error mounting asset: {e}")
+        return False
     
     def unmount_asset_from_novel(self, asset_id: str, novel_id: str) -> bool:
         """从小说卸载资产"""
-        if novel_id not in self._mappings:
+        if not self.supabase:
             return False
         
-        mapping = self._mappings[novel_id]
-        if asset_id not in mapping.asset_ids:
-            return False
-        
-        mapping.asset_ids.discard(asset_id)
-        mapping.reference_types.pop(asset_id, None)
-        mapping.version_selections.pop(asset_id, None)
-        
-        self._save_mappings()
-        return True
+        try:
+            self.supabase.table("novel_asset_mappings").delete().eq("novel_id", novel_id).eq("asset_id", asset_id).execute()
+            return True
+        except Exception as e:
+            print(f"Error unmounting asset: {e}")
+        return False
     
     def get_novel_assets(self, novel_id: str) -> List[GlobalAsset]:
         """获取小说挂载的所有资产"""
-        mapping = self._mappings.get(novel_id)
-        if not mapping:
+        if not self.supabase:
             return []
         
-        return [
-            self._assets[aid] for aid in mapping.asset_ids 
-            if aid in self._assets
-        ]
+        try:
+            response = self.supabase.table("novel_asset_mappings").select("asset_id").eq("novel_id", novel_id).execute()
+            if not response.data:
+                return []
+            
+            assets = []
+            for mapping in response.data:
+                asset = self.get_asset(mapping["asset_id"])
+                if asset:
+                    assets.append(asset)
+            
+            return assets
+        except Exception as e:
+            print(f"Error getting novel assets: {e}")
+        return []
     
     def get_asset_mount_count(self, asset_id: str) -> int:
         """获取资产的挂载次数（被多少小说引用）"""
-        count = 0
-        for mapping in self._mappings.values():
-            if asset_id in mapping.asset_ids:
-                count += 1
-        return count
+        if not self.supabase:
+            return 0
+        
+        try:
+            response = self.supabase.table("novel_asset_mappings").select("*", count="exact").eq("asset_id", asset_id).execute()
+            return len(response.data) if response.data else 0
+        except Exception as e:
+            print(f"Error getting mount count: {e}")
+        return 0
     
     def is_asset_mounted_to_novel(self, asset_id: str, novel_id: str) -> bool:
         """检查资产是否已挂载到指定小说"""
-        mapping = self._mappings.get(novel_id)
-        if not mapping:
+        if not self.supabase:
             return False
-        return asset_id in mapping.asset_ids
+        
+        try:
+            response = self.supabase.table("novel_asset_mappings").select("*").eq("novel_id", novel_id).eq("asset_id", asset_id).execute()
+            return len(response.data) > 0 if response.data else False
+        except Exception as e:
+            print(f"Error checking mount status: {e}")
+        return False
     
     def get_mount_info(self, asset_id: str, novel_id: str) -> Optional[Dict]:
         """获取资产在小说中的挂载信息"""
-        mapping = self._mappings.get(novel_id)
-        if not mapping or asset_id not in mapping.asset_ids:
+        if not self.supabase:
             return None
         
-        return {
-            'reference_type': mapping.reference_types.get(asset_id, 'linked'),
-            'version_id': mapping.version_selections.get(asset_id)
-        }
+        try:
+            response = self.supabase.table("novel_asset_mappings").select("*").eq("novel_id", novel_id).eq("asset_id", asset_id).single().execute()
+            if response.data:
+                return {
+                    "reference_type": response.data.get("reference_type", "linked"),
+                    "version_id": response.data.get("version_id"),
+                }
+        except Exception as e:
+            print(f"Error getting mount info: {e}")
+        return None
     
     # ==================== 搜索功能 ====================
     
     def search_assets(self, query: str) -> List[GlobalAsset]:
         """搜索资产"""
-        query = query.lower()
-        results = []
+        if not self.supabase:
+            return []
         
-        for asset in self._assets.values():
-            # 搜索名称
-            if query in asset.name.lower():
-                results.append(asset)
-                continue
+        try:
+            # 使用 ilike 进行模糊搜索
+            response = self.supabase.table("global_assets").select("*").or_(
+                f"name.ilike.%{query}%,description.ilike.%{query}%,source_novel_name.ilike.%{query}%"
+            ).execute()
             
-            # 搜索描述
-            if asset.description and query in asset.description.lower():
-                results.append(asset)
-                continue
+            if not response.data:
+                return []
             
-            # 搜索原生小说名称
-            if query in asset.source_novel_name.lower():
-                results.append(asset)
-                continue
-        
-        return results
+            assets = []
+            for asset_data in response.data:
+                asset = self.get_asset(asset_data["id"])
+                if asset:
+                    assets.append(asset)
+            
+            return assets
+        except Exception as e:
+            print(f"Error searching assets: {e}")
+        return []
     
     def get_starred_assets(self) -> List[GlobalAsset]:
         """获取收藏的资产"""
-        return [a for a in self._assets.values() if a.is_starred]
+        if not self.supabase:
+            return []
+        
+        try:
+            response = self.supabase.table("global_assets").select("*").eq("is_starred", True).execute()
+            if not response.data:
+                return []
+            
+            assets = []
+            for asset_data in response.data:
+                asset = self.get_asset(asset_data["id"])
+                if asset:
+                    assets.append(asset)
+            
+            return assets
+        except Exception as e:
+            print(f"Error getting starred assets: {e}")
+        return []
     
     def toggle_star_asset(self, asset_id: str) -> Optional[bool]:
         """切换资产的收藏状态"""
-        asset = self._assets.get(asset_id)
-        if not asset:
+        if not self.supabase:
             return None
         
-        asset.is_starred = not asset.is_starred
-        asset.updated_at = datetime.now().isoformat()
-        self._save_assets()
-        return asset.is_starred
+        try:
+            # 获取当前状态
+            asset = self.get_asset(asset_id)
+            if not asset:
+                return None
+            
+            new_status = not asset.is_starred
+            self.supabase.table("global_assets").update({"is_starred": new_status}).eq("id", asset_id).execute()
+            return new_status
+        except Exception as e:
+            print(f"Error toggling star: {e}")
+        return None
 
 
 # 全局实例
