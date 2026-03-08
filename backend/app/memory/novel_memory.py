@@ -49,6 +49,8 @@ class Chapter:
     content: str = ""
     order_index: int = 0
     status: str = "draft"  # draft, writing, review, completed
+    volume_name: str = "未分卷"  # 卷名称
+    volume_order: int = 0  # 卷顺序
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
@@ -218,9 +220,12 @@ class NovelMemory:
             print(f"NovelMemory: Error fetching chapter: {e}")
         return None
     
-    def create_chapter(self, novel_id: str, title: str, content: str = "", order_index: int = 0, status: str = "draft") -> Optional[Chapter]:
+    def create_chapter(self, novel_id: str, title: str, content: str = "", order_index: int = 0, status: str = "draft", volume_name: str = "未分卷", volume_order: int = 0) -> Optional[Chapter]:
         """创建新章节"""
-        if not self.supabase:
+        print(f"[NovelMemory] Creating chapter '{title}' in volume '{volume_name}' for novel: {novel_id}")
+        
+        if not self._ensure_connected():
+            print("[NovelMemory] Error: Supabase not connected")
             return None
         
         try:
@@ -234,15 +239,20 @@ class NovelMemory:
                 "content": content,
                 "order_index": order_index,
                 "status": status,
+                "volume_name": volume_name or "未分卷",
+                "volume_order": volume_order or 0,
                 "created_at": now,
                 "updated_at": now,
             }
             
             response = self.supabase.table("chapters").insert(data).execute()
             if response.data:
+                print(f"[NovelMemory] Chapter created: {chapter_id}")
                 return Chapter(**response.data[0])
         except Exception as e:
-            print(f"NovelMemory: Error creating chapter: {e}")
+            print(f"[NovelMemory] Error creating chapter: {e}")
+            import traceback
+            traceback.print_exc()
         return None
     
     def update_chapter(self, chapter_id: str, **updates) -> Optional[Chapter]:
@@ -270,6 +280,130 @@ class NovelMemory:
             return len(response.data) > 0
         except Exception as e:
             print(f"NovelMemory: Error deleting chapter: {e}")
+        return False
+
+    # ========== 卷操作 ==========
+
+    def get_volumes_by_novel(self, novel_id: str) -> List[Dict[str, Any]]:
+        """获取小说的所有卷（从章节中聚合）"""
+        print(f"[NovelMemory] get_volumes_by_novel called for novel: {novel_id}")
+        
+        if not self._ensure_connected():
+            print("[NovelMemory] Error: Supabase not connected")
+            return []
+
+        try:
+            # 从章节中聚合卷信息
+            response = self.supabase.table("chapters") \
+                .select("volume_name, volume_order") \
+                .eq("novel_id", novel_id) \
+                .order("volume_order") \
+                .execute()
+            
+            if not response.data:
+                # 如果没有章节，返回默认卷
+                return [{"name": "未分卷", "order": 0, "chapter_count": 0}]
+            
+            # 聚合卷信息
+            volumes_map = {}
+            for chapter in response.data:
+                vol_name = chapter.get("volume_name", "未分卷") or "未分卷"
+                vol_order = chapter.get("volume_order", 0) or 0
+                key = f"{vol_order}:{vol_name}"
+                
+                if key not in volumes_map:
+                    volumes_map[key] = {
+                        "name": vol_name,
+                        "order": vol_order,
+                        "chapter_count": 0
+                    }
+                volumes_map[key]["chapter_count"] += 1
+            
+            # 转换为列表并排序
+            volumes = list(volumes_map.values())
+            volumes.sort(key=lambda x: x["order"])
+            
+            print(f"[NovelMemory] Fetched {len(volumes)} volumes")
+            return volumes
+        except Exception as e:
+            print(f"[NovelMemory] Error fetching volumes: {e}")
+            import traceback
+            traceback.print_exc()
+        return [{"name": "未分卷", "order": 0, "chapter_count": 0}]
+
+    def create_volume(self, novel_id: str, volume_name: str, volume_order: int) -> bool:
+        """创建卷（实际上卷是通过章节隐式创建的）"""
+        # 卷不需要单独创建，当章节指定卷名时就自动创建了
+        print(f"[NovelMemory] Volume will be created implicitly when chapters are added: {volume_name}")
+        return True
+
+    def update_volume_name(self, novel_id: str, old_name: str, new_name: str) -> bool:
+        """更新卷名称（更新所有属于该卷的章节）"""
+        print(f"[NovelMemory] Updating volume name from '{old_name}' to '{new_name}' for novel: {novel_id}")
+        
+        if not self._ensure_connected():
+            return False
+
+        try:
+            response = self.supabase.table("chapters") \
+                .update({"volume_name": new_name}) \
+                .eq("novel_id", novel_id) \
+                .eq("volume_name", old_name) \
+                .execute()
+            print(f"[NovelMemory] Updated {len(response.data) if response.data else 0} chapters")
+            return True
+        except Exception as e:
+            print(f"[NovelMemory] Error updating volume name: {e}")
+            import traceback
+            traceback.print_exc()
+        return False
+
+    def move_chapter_to_volume(self, chapter_id: str, volume_name: str, volume_order: int) -> bool:
+        """移动章节到指定卷"""
+        print(f"[NovelMemory] Moving chapter {chapter_id} to volume: {volume_name} (order: {volume_order})")
+        
+        if not self._ensure_connected():
+            return False
+
+        try:
+            response = self.supabase.table("chapters") \
+                .update({
+                    "volume_name": volume_name,
+                    "volume_order": volume_order
+                }) \
+                .eq("id", chapter_id) \
+                .execute()
+            print(f"[NovelMemory] Chapter moved successfully")
+            return True
+        except Exception as e:
+            print(f"[NovelMemory] Error moving chapter: {e}")
+            import traceback
+            traceback.print_exc()
+        return False
+
+    def delete_volume(self, novel_id: str, volume_name: str) -> bool:
+        """删除卷（将该卷下的所有章节移动到未分卷）"""
+        print(f"[NovelMemory] Deleting volume '{volume_name}' for novel: {novel_id}")
+        
+        if not self._ensure_connected():
+            return False
+
+        try:
+            # 将该卷下的章节移动到未分卷
+            response = self.supabase.table("chapters") \
+                .update({
+                    "volume_name": "未分卷",
+                    "volume_order": 0
+                }) \
+                .eq("novel_id", novel_id) \
+                .eq("volume_name", volume_name) \
+                .execute()
+            print(f"[NovelMemory] Moved {len(response.data) if response.data else 0} chapters to default volume")
+            return True
+        except Exception as e:
+            print(f"[NovelMemory] Error deleting volume: {e}")
+            import traceback
+            traceback.print_exc()
         return False
 
 

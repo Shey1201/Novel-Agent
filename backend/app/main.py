@@ -11,7 +11,7 @@ if env_path.exists():
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import novel_routes, generate_chapter, world_routes, agent_routes, asset_routes, skills, system_settings_api, novel_management, agent_management, category_management, volumes
+from app.api import novel_routes, generate_chapter, world_routes, agent_routes, asset_routes, skills, system_settings_api, novel_management, agent_management, category_management
 from app.api import writers_room_api, stream_api, collaboration_api, cache_api, analysis_api, analytics_api, advanced_features_api, agent_room_api, download_api
 
 app = FastAPI(title="Novel Agent Studio v3")
@@ -61,7 +61,6 @@ app.include_router(world_routes.router)
 app.include_router(agent_routes.router)
 app.include_router(asset_routes.router)
 app.include_router(skills.router)
-app.include_router(volumes.router)
 app.include_router(system_settings_api.router)
 app.include_router(novel_management.router)
 app.include_router(agent_management.router)
