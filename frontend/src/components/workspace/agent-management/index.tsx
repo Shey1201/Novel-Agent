@@ -36,10 +36,10 @@ const AgentConfigForm: React.FC<{ agent: Agent }> = ({ agent }) => {
           />
         </div>
         <div>
-          <label className="block text-xs font-medium text-zinc-600 mb-1">Temperature: {agent.temperature}</label>
+          <label className="block text-xs font-medium text-zinc-600 mb-1">Temperature: {agent.temperature.toFixed(2)}</label>
           <input
             type="range"
-            min="0" max="1" step="0.1"
+            min="0" max="1" step="0.05"
             value={agent.temperature}
             onChange={(e) => updateAgent(agent.id, { temperature: parseFloat(e.target.value) })}
             className="w-full accent-indigo-600 h-1.5 bg-zinc-200 rounded-lg appearance-none cursor-pointer"
