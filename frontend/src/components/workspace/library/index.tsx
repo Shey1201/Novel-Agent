@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useSupabaseStore, type Novel, type NovelCategory } from "@/store/supabaseStore";
 
 export default function Library() {
@@ -18,7 +18,13 @@ export default function Library() {
     updateCategory,
     deleteCategory,
     setNovelCategory,
+    loadFromSupabase,
   } = useSupabaseStore();
+
+  // 组件挂载时加载数据
+  useEffect(() => {
+    loadFromSupabase();
+  }, [loadFromSupabase]);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
