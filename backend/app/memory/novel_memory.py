@@ -92,7 +92,7 @@ class NovelMemory:
     # ========== 小说操作 ==========
     
     def get_all_novels(self) -> List[Novel]:
-        """获取所有小说"""
+        """获取所有小说（排除已删除的）"""
         print(f"[NovelMemory] get_all_novels called, supabase connected: {self.supabase is not None}")
         
         if not self.supabase:
@@ -101,12 +101,23 @@ class NovelMemory:
         
         try:
             print("[NovelMemory] Querying novels from Supabase...")
-            response = self.supabase.table("novels").select("*").order("created_at", desc=True).execute()
+            # 只查询未删除的小说
+            response = self.supabase.table("novels").select("*").is_("deleted_at", "null").order("created_at", desc=True).execute()
             print(f"[NovelMemory] Fetched {len(response.data) if response.data else 0} novels")
             if response.data:
-                return [Novel(**novel) for novel in response.data]
+                novels = []
+                for novel_data in response.data:
+                    try:
+                        novel = Novel(**novel_data)
+                        novels.append(novel)
+                    except Exception as e:
+                        print(f"[NovelMemory] Error parsing novel {novel_data.get('id')}: {e}")
+                        print(f"[NovelMemory] Novel data: {novel_data}")
+                return novels
         except Exception as e:
             print(f"[NovelMemory] Error fetching novels: {e}")
+            import traceback
+            traceback.print_exc()
         return []
     
     def get_novel(self, novel_id: str) -> Optional[Novel]:
