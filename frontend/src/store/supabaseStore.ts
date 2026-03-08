@@ -940,50 +940,58 @@ export const useSupabaseStore = create<NovelState>()(
             console.log(`Loaded ${deletedNovels.length} deleted novels from Supabase`);
           }
 
-          // 加载 Agent 配置 - 暂时仍使用Supabase直连
-          // TODO: 添加后端API支持
-          const { data: agentConfigs, error: agentError } = await supabase
-            .from('agent_configs')
-            .select('*');
-
-          if (agentError) {
-            console.error('Failed to load agent configs:', agentError);
-          } else if (agentConfigs && agentConfigs.length > 0) {
-            // 将数据库中的配置合并到本地 agents
-            set((state) => ({
-              agents: state.agents.map((agent) => {
-                const dbConfig = agentConfigs.find((c: any) => c.agent_id === agent.id);
-                if (dbConfig) {
-                  return {
-                    ...agent,
-                    role: dbConfig.role || agent.role,
-                    personality: dbConfig.personality || agent.personality,
-                    temperature: dbConfig.temperature ?? agent.temperature,
-                    prompt: dbConfig.prompt || agent.prompt,
-                  };
+          // 加载 Agent 配置 - 使用后端API
+          try {
+            const agentResponse = await fetch(`${API_BASE}/api/agents/configs`);
+            if (agentResponse.ok) {
+              const agentConfigs = await agentResponse.json();
+              if (agentConfigs && agentConfigs.length > 0) {
+                // 将数据库中的配置合并到本地 agents
+                set((state) => ({
+                  agents: state.agents.map((agent) => {
+                    const dbConfig = agentConfigs.find((c: any) => c.agent_id === agent.id);
+                    if (dbConfig) {
+                      return {
+                        ...agent,
+                        role: dbConfig.role || agent.role,
+                        personality: dbConfig.personality || agent.personality,
+                        temperature: dbConfig.temperature ?? agent.temperature,
+                        prompt: dbConfig.prompt || agent.prompt,
+                      };
+                    }
+                    return agent;
+                  }),
+                }));
+                console.log(`Loaded ${agentConfigs.length} agent configs from API`);
+              } else {
+                // 数据库中没有配置，将本地默认配置同步到数据库
+                console.log('No agent configs in database, syncing local defaults...');
+                const { agents } = get();
+                for (const agent of agents) {
+                  try {
+                    await fetch(`${API_BASE}/api/agents/configs`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        agent_id: agent.id,
+                        name: agent.name,
+                        role: agent.role,
+                        personality: agent.personality,
+                        temperature: agent.temperature,
+                        prompt: agent.prompt,
+                        enabled: true,
+                      }),
+                    });
+                  } catch (err) {
+                    console.error(`Failed to sync agent ${agent.id}:`, err);
+                  }
                 }
-                return agent;
-              }),
-            }));
-          } else {
-            // 数据库中没有配置，将本地默认配置同步到数据库
-            console.log('No agent configs in database, syncing local defaults...');
-            const { agents } = get();
-            for (const agent of agents) {
-              try {
-                await supabase.from('agent_configs').insert({
-                  agent_id: agent.id,
-                  name: agent.name,
-                  role: agent.role,
-                  personality: agent.personality,
-                  temperature: agent.temperature,
-                  prompt: agent.prompt,
-                  enabled: true,
-                });
-              } catch (err) {
-                console.error(`Failed to sync agent ${agent.id}:`, err);
               }
+            } else {
+              console.error('Failed to load agent configs from API:', await agentResponse.text());
             }
+          } catch (agentError) {
+            console.error('Error loading agent configs from API:', agentError);
           }
 
           console.log('Data loaded successfully');
