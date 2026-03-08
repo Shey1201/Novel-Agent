@@ -96,7 +96,7 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle>((_, ref) => {
 
   useImperativeHandle(ref, () => ({
     handleRunAgents: async () => {
-      const { agentConfigs, constraints } = useNovelStore.getState();
+      const { agentConfigs, constraints } = useSupabaseStore.getState();
       if (!editor) return;
 
       const outline = editor.getText();

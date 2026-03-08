@@ -84,6 +84,7 @@ interface NovelState {
   addChapter: (novelId: string, chapter: Chapter) => void;
   updateChapter: (novelId: string, chapterId: string, updates: Partial<Chapter>) => void;
   deleteChapter: (novelId: string, chapterId: string) => void;
+  updateChapterContent: (novelId: string, chapterId: string, content: string, trace_data?: TraceItem[]) => void;
 
   // 约束方法
   addConstraint: (constraint: string) => void;
@@ -408,6 +409,39 @@ export const useSupabaseStore = create<NovelState>()(
           }
         } catch (err) {
           console.error('Error deleting chapter:', err);
+        }
+      },
+      updateChapterContent: async (novelId, chapterId, content, trace_data) => {
+        // 先更新本地状态
+        set((state) => ({
+          novels: state.novels.map((n) =>
+            n.id === novelId
+              ? {
+                  ...n,
+                  chapters: n.chapters.map((c) =>
+                    c.id === chapterId ? { ...c, content, trace_data: trace_data || c.trace_data } : c
+                  ),
+                }
+              : n
+          ),
+        }));
+        
+        // 同步到 Supabase
+        try {
+          const { error } = await supabase
+            .from('chapters')
+            .update({
+              content,
+              trace_data: trace_data || [],
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', chapterId);
+          
+          if (error) {
+            console.error('Failed to update chapter content in Supabase:', error);
+          }
+        } catch (err) {
+          console.error('Error updating chapter content:', err);
         }
       },
 
