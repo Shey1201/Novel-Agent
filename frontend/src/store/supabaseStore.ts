@@ -209,27 +209,79 @@ export const useSupabaseStore = create<NovelState>()(
       updateNovel: (id, updates) => set((state) => ({
         novels: state.novels.map((n) => (n.id === id ? { ...n, ...updates } : n)),
       })),
-      deleteNovel: (id) => set((state) => {
-        const novel = state.novels.find((n) => n.id === id);
-        if (!novel) return state;
-        return {
+      deleteNovel: async (id) => {
+        const novel = get().novels.find((n) => n.id === id);
+        if (!novel) return;
+        
+        // 更新本地状态
+        set((state) => ({
           novels: state.novels.filter((n) => n.id !== id),
           deletedNovels: [...state.deletedNovels, { ...novel, deletedAt: Date.now() }],
           currentNovelId: state.currentNovelId === id ? null : state.currentNovelId,
-        };
-      }),
-      restoreNovel: (id) => set((state) => {
-        const novel = state.deletedNovels.find((n) => n.id === id);
-        if (!novel) return state;
+        }));
+        
+        // 同步到 Supabase：标记为已删除
+        try {
+          const { error } = await supabase
+            .from('novels')
+            .update({ deleted_at: new Date().toISOString() })
+            .eq('id', id);
+          
+          if (error) {
+            console.error('Failed to mark novel as deleted:', error);
+          }
+        } catch (err) {
+          console.error('Error marking novel as deleted:', err);
+        }
+      },
+      restoreNovel: async (id) => {
+        const novel = get().deletedNovels.find((n) => n.id === id);
+        if (!novel) return;
+        
         const { deletedAt, ...rest } = novel;
-        return {
+        
+        // 更新本地状态
+        set((state) => ({
           deletedNovels: state.deletedNovels.filter((n) => n.id !== id),
           novels: [...state.novels, rest],
-        };
-      }),
-      permanentlyDeleteNovel: (id) => set((state) => ({
-        deletedNovels: state.deletedNovels.filter((n) => n.id !== id),
-      })),
+        }));
+        
+        // 同步到 Supabase：恢复小说
+        try {
+          const { error } = await supabase
+            .from('novels')
+            .update({ deleted_at: null })
+            .eq('id', id);
+          
+          if (error) {
+            console.error('Failed to restore novel:', error);
+          }
+        } catch (err) {
+          console.error('Error restoring novel:', err);
+        }
+      },
+      permanentlyDeleteNovel: async (id) => {
+        // 更新本地状态
+        set((state) => ({
+          deletedNovels: state.deletedNovels.filter((n) => n.id !== id),
+        }));
+        
+        // 同步到 Supabase：真正删除
+        try {
+          const { error } = await supabase
+            .from('novels')
+            .delete()
+            .eq('id', id);
+          
+          if (error) {
+            console.error('Failed to permanently delete novel:', error);
+          } else {
+            console.log(`Novel ${id} permanently deleted`);
+          }
+        } catch (err) {
+          console.error('Error permanently deleting novel:', err);
+        }
+      },
       setCurrentNovelId: (id) => set({ currentNovelId: id }),
       setCurrentChapterId: (id) => set({ currentChapterId: id }),
 

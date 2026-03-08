@@ -1,10 +1,10 @@
 "use client";
 
 import React from "react";
-import { useNovelStore } from "@/store/novelStore";
+import { useSupabaseStore } from "@/store/supabaseStore";
 
 export default function RecycleBin() {
-  const { deletedNovels, restoreNovel, permanentlyDeleteNovel, clearRecycleBin } = useNovelStore();
+  const { deletedNovels, restoreNovel, permanentlyDeleteNovel, clearRecycleBin } = useSupabaseStore();
 
   const getDaysRemaining = (deletedAt: number) => {
     const now = Date.now();
