@@ -436,7 +436,7 @@ const SkillsManagement: React.FC = () => {
               key={skill.id}
               onClick={() => {
                 setSelectedSkillId(skill.id);
-                setIsAddingConstraint(false);
+                setIsEditingConstraint(false);
               }}
               className={`p-3 border rounded-xl cursor-pointer transition-all ${
                 selectedSkillId === skill.id
