@@ -75,6 +75,7 @@ const SkillsManagement: React.FC = () => {
 
   const [isAddingSkill, setIsAddingSkill] = useState(false);
   const [newSkillName, setNewSkillName] = useState('');
+  const [newSkillDescription, setNewSkillDescription] = useState('');
 
   const [activeTab, setActiveTab] = useState<'constraints' | 'assets'>('constraints');
 
@@ -188,7 +189,7 @@ const SkillsManagement: React.FC = () => {
     
     await createSkill({
       name: newSkillName.trim(),
-      description: '',
+      description: newSkillDescription.trim(),
       category_id: categoryId,
       constraints: [],
       target_agents: targetAgents,
@@ -198,6 +199,7 @@ const SkillsManagement: React.FC = () => {
       applicable_novels: [],
     });
     setNewSkillName('');
+    setNewSkillDescription('');
     setIsAddingSkill(false);
   };
 
@@ -608,12 +610,16 @@ const SkillsManagement: React.FC = () => {
                     placeholder="技能名称"
                   />
                   
-                  {/* 技能描述 - 富文本编辑器 */}
-                  <SkillDescriptionEditor
-                    content={selectedSkill.description}
-                    onChange={(content) => !selectedSkill.is_system && updateSkill(selectedSkill.id, { description: content })}
+                  {/* 技能描述 - 无边框多行输入 */}
+                  <textarea
+                    value={selectedSkill.description}
+                    onChange={(e) => !selectedSkill.is_system && updateSkill(selectedSkill.id, { description: e.target.value })}
                     readOnly={selectedSkill.is_system}
-                    maxLength={5000}
+                    rows={2}
+                    className={`w-full text-sm mt-2 bg-transparent border-0 p-0 resize-none focus:ring-0 focus:outline-none ${
+                      selectedSkill.is_system ? 'text-zinc-600' : 'text-zinc-600 hover:bg-zinc-50'
+                    }`}
+                    placeholder="技能描述"
                   />
                   
                   {/* 适用 Agent */}
@@ -695,12 +701,11 @@ const SkillsManagement: React.FC = () => {
                   {/* 新增约束表单 */}
                   {isAddingConstraint && (
                     <div className="p-4 bg-zinc-50 border border-zinc-200 rounded-lg">
-                      <textarea
-                        value={newConstraintContent}
-                        onChange={(e) => setNewConstraintContent(e.target.value)}
+                      <RichTextEditor
+                        content={newConstraintContent}
+                        onChange={setNewConstraintContent}
+                        maxLength={5000}
                         placeholder="输入约束条件内容..."
-                        className="w-full p-3 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:border-indigo-500 resize-none"
-                        rows={3}
                       />
                       <div className="flex items-center gap-4 mt-3">
                         <select
@@ -741,13 +746,13 @@ const SkillsManagement: React.FC = () => {
                       >
                         {editingConstraintId === constraint.id ? (
                           <div className="flex-1">
-                            <textarea
-                              value={editConstraintContent}
-                              onChange={(e) => setEditConstraintContent(e.target.value)}
-                              className="w-full p-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:border-indigo-500 resize-none"
-                              rows={2}
+                            <RichTextEditor
+                              content={editConstraintContent}
+                              onChange={setEditConstraintContent}
+                              maxLength={5000}
+                              placeholder="输入约束条件内容..."
                             />
-                            <div className="flex items-center gap-4 mt-2">
+                            <div className="flex items-center gap-4 mt-3">
                               <select
                                 value={editConstraintPriority}
                                 onChange={(e) => setEditConstraintPriority(e.target.value as 'high' | 'medium' | 'low')}
@@ -778,23 +783,16 @@ const SkillsManagement: React.FC = () => {
                             <div className="flex-1">
                               {selectedSkill.is_system ? (
                                 // 系统技能约束只读显示
-                                <div className="w-full text-sm px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-zinc-700">
-                                  {constraint.content}
-                                </div>
+                                <div 
+                                  className="w-full text-sm px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-zinc-700 prose prose-sm max-w-none"
+                                  dangerouslySetInnerHTML={{ __html: constraint.content }}
+                                />
                               ) : (
-                                // 非系统技能可编辑
-                                <textarea
-                                  value={constraint.content}
-                                  onChange={(e) => {
-                                    updateSkill(selectedSkill.id, {
-                                      constraints: selectedSkill.constraints.map((c) =>
-                                        c.id === constraint.id ? { ...c, content: e.target.value } : c
-                                      ),
-                                    });
-                                  }}
-                                  className="w-full text-sm px-3 py-2 border border-zinc-200 rounded-lg focus:outline-none focus:border-indigo-500 resize-none"
-                                  rows={2}
-                                  placeholder="输入约束条件..."
+                                // 非系统技能可编辑 - 点击编辑
+                                <div
+                                  onClick={() => startEditingConstraint(constraint)}
+                                  className="w-full text-sm px-3 py-2 border border-zinc-200 rounded-lg hover:border-indigo-300 cursor-pointer prose prose-sm max-w-none min-h-[40px]"
+                                  dangerouslySetInnerHTML={{ __html: constraint.content || '<span class="text-zinc-400">点击编辑约束条件...</span>' }}
                                 />
                               )}
                             </div>
@@ -976,6 +974,7 @@ const SkillsManagement: React.FC = () => {
                     if (e.key === 'Enter') handleAddSkill();
                     if (e.key === 'Escape') {
                       setNewSkillName('');
+                      setNewSkillDescription('');
                       setIsAddingSkill(false);
                     }
                   }}
@@ -983,10 +982,21 @@ const SkillsManagement: React.FC = () => {
                   className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-zinc-700 mb-1">技能描述</label>
+                <textarea
+                  value={newSkillDescription}
+                  onChange={(e) => setNewSkillDescription(e.target.value)}
+                  placeholder="输入技能描述（可选）"
+                  rows={3}
+                  className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 resize-none"
+                />
+              </div>
               <div className="flex justify-end gap-3">
                 <button
                   onClick={() => {
                     setNewSkillName('');
+                    setNewSkillDescription('');
                     setIsAddingSkill(false);
                   }}
                   className="px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900"
@@ -1151,19 +1161,21 @@ const SkillsManagement: React.FC = () => {
   );
 };
 
-// 技能描述富文本编辑器组件
-interface SkillDescriptionEditorProps {
+// 富文本编辑器组件（用于约束条目）
+interface RichTextEditorProps {
   content: string;
   onChange: (content: string) => void;
   readOnly?: boolean;
   maxLength?: number;
+  placeholder?: string;
 }
 
-const SkillDescriptionEditor: React.FC<SkillDescriptionEditorProps> = ({
+const RichTextEditor: React.FC<RichTextEditorProps> = ({
   content,
   onChange,
   readOnly = false,
   maxLength = 5000,
+  placeholder = '输入内容...',
 }) => {
   const [charCount, setCharCount] = useState(0);
 
