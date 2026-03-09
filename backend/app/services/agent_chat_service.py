@@ -271,6 +271,7 @@ class AgentChatService:
         """
         生成 Agent 自主工作流程
         Agent 自主讨论、决策，只在关键点询问用户
+        所有讨论内容通过 LLM 生成
         """
         logs: List[Dict[str, Any]] = []
         workflow_type = intent["type"]
@@ -282,12 +283,26 @@ class AgentChatService:
             "content": f"收到任务：{topic}\n类型识别：{workflow_type}\nAgent 团队开始自主分析..."
         })
         
-        # Step 1: 策划师分析需求
+        # Step 1: 策划师分析需求（使用 LLM）
+        strategist_prompt = f"""作为策划师，分析以下创作任务：
+
+任务：{topic}
+类型：{workflow_type}
+
+请分析：
+1. 任务的核心需求是什么
+2. 关键约束条件
+3. 执行策略建议
+
+用第一人称回答，简洁专业。"""
+        
+        strategist_analysis = self._call_llm(strategist_prompt, "你是一位专业的策划师，擅长分析创作需求并制定策略。")
+        
         logs.append({
             "agent": "strategist",
             "agent_name": "策划师",
             "message": "📋 任务分析",
-            "content": f"我理解用户的需求是：{topic}\n\n让我分析一下关键点：\n1. 这是一个{workflow_type}类型的任务\n2. 需要先明确目标和约束条件\n3. 制定执行策略"
+            "content": strategist_analysis
         })
         
         # Step 2: 检查 Story Bible 完整性并自动补充
@@ -308,7 +323,7 @@ class AgentChatService:
                 "content": f"检测到 Story Bible 有 {missing_count} 个部分需要补充。Agent 团队将自主完善这些内容。"
             })
             
-            # 自动生成缺失内容
+            # 自动生成缺失内容（通过 LLM）
             auto_fill_logs = self._generate_story_bible_content(topic, completeness)
             logs.extend(auto_fill_logs)
             
@@ -325,83 +340,139 @@ class AgentChatService:
                 "content": "Story Bible 内容完整，可以直接开始创作。"
             })
         
-        # Step 3: 评论家提出潜在问题
+        # Step 3: 评论家提出潜在问题（使用 LLM）
+        critic_prompt = f"""作为评论家，评估以下创作任务可能存在的风险：
+
+任务：{topic}
+类型：{workflow_type}
+
+请分析：
+1. 潜在的创作风险
+2. 需要注意的问题
+3. 对用户的建议
+
+用第一人称回答，简洁专业。"""
+        
+        critic_analysis = self._call_llm(critic_prompt, "你是一位专业的评论家，擅长发现创作中的潜在问题。")
+        
         logs.append({
             "agent": "critic",
             "agent_name": "评论家",
             "message": "⚠️ 风险评估",
-            "content": "在开始前，我需要考虑几个潜在问题：\n- 用户是否有明确的风格偏好？\n- 是否有特定的字数或篇幅要求？\n- 目标读者群体是谁？\n\n如果这些信息不明确，可能会偏离用户预期。"
+            "content": critic_analysis
         })
         
-        # Step 4: 编辑建议流程
+        # Step 4: 编辑建议流程（使用 LLM）
+        editor_prompt = f"""作为编辑，为以下创作任务建议执行流程：
+
+任务：{topic}
+类型：{workflow_type}
+
+请建议：
+1. 推荐的执行步骤
+2. 关键检查点
+3. 质量把控要点
+
+用第一人称回答，简洁专业。"""
+        
+        editor_suggestion = self._call_llm(editor_prompt, "你是一位专业的编辑，擅长规划创作流程。")
+        
         logs.append({
             "agent": "editor",
             "agent_name": "编辑",
             "message": "📝 流程建议",
-            "content": "建议按以下流程执行：\n1. 先进行内部讨论，明确方案\n2. 在关键决策点向用户确认\n3. 根据反馈调整\n4. 最终输出成果"
+            "content": editor_suggestion
         })
         
-        # Step 5: 团队内部讨论（模拟自主决策）
+        # Step 5: 团队内部讨论（使用 LLM 生成专业讨论）
         logs.append({
             "agent": "system",
             "message": "💬 团队内部讨论",
             "content": "Agent 们正在讨论最佳方案..."
         })
         
-        # 根据任务类型进行专业讨论
+        # 根据任务类型进行专业讨论（使用 LLM）
         if workflow_type == "write":
+            discussion_prompt = f"""模拟一个专业的小说创作团队讨论如何写作以下内容：
+
+写作任务：{topic}
+
+团队成员：
+- 策划师：负责整体规划
+- 作家：负责具体写作
+- 评论家：负责质量把控
+
+请生成一段团队讨论，每个人从自己的专业角度提出建议，最后达成共识。
+用对话形式呈现，每个人说2-3句话。"""
+            
+            discussion_content = self._call_llm(discussion_prompt, "你是一位专业的小说创作团队成员，正在进行团队讨论。")
+            
+            # 解析讨论内容并分配给不同 Agent
+            # 简单处理：将 LLM 生成的内容作为策划师的总结
             logs.append({
                 "agent": "strategist",
                 "agent_name": "策划师",
                 "message": "💡 方案提议",
-                "content": "我建议这样安排：先确定本章的核心冲突和情感走向，然后由作家负责具体写作，编辑润色，最后评论家审核。"
-            })
-            
-            logs.append({
-                "agent": "writer",
-                "agent_name": "作家",
-                "message": "✍️ 执行思路",
-                "content": "我同意策划师的方案。在具体写作时，我会注意场景切换的自然性，对话要符合人物性格，同时保持节奏紧凑。"
-            })
-            
-            logs.append({
-                "agent": "critic",
-                "agent_name": "评论家",
-                "message": "👁️ 质量把控",
-                "content": "我会重点关注：情节逻辑是否通顺、人物动机是否合理、是否存在让读者出戏的描写。"
+                "content": discussion_content
             })
             
         elif workflow_type == "outline":
+            outline_prompt = f"""作为策划师，为以下主题设计故事大纲结构：
+
+主题：{topic}
+
+请提供：
+1. 推荐的故事结构
+2. 关键情节点规划
+3. 节奏控制建议
+
+用第一人称回答，简洁专业。"""
+            
+            outline_analysis = self._call_llm(outline_prompt, "你是一位专业的故事结构设计师。")
+            
             logs.append({
                 "agent": "strategist",
                 "agent_name": "策划师",
                 "message": "📊 结构规划",
-                "content": "我建议采用三幕式结构：铺垫-冲突-高潮-结局。先确定关键情节点，再细化每章内容。"
-            })
-            
-            logs.append({
-                "agent": "critic",
-                "agent_name": "评论家",
-                "message": "📈 节奏建议",
-                "content": "要注意节奏把控，避免前期铺垫过长导致读者流失。建议在每章结尾设置小悬念。"
+                "content": outline_analysis
             })
             
         elif workflow_type == "world_building":
+            world_prompt = f"""作为世界观设计师，为以下主题设计世界观框架：
+
+主题：{topic}
+
+请提供：
+1. 世界观核心要素
+2. 与故事的关联
+3. 呈现方式建议
+
+用第一人称回答，简洁专业。"""
+            
+            world_analysis = self._call_llm(world_prompt, "你是一位专业的世界观设计师。")
+            
             logs.append({
                 "agent": "strategist",
                 "agent_name": "策划师",
                 "message": "🌍 世界观框架",
-                "content": "我们需要确定：世界的基本规则、力量体系（如果有）、社会结构、历史背景。这些要服务于故事主题。"
-            })
-            
-            logs.append({
-                "agent": "writer",
-                "agent_name": "作家",
-                "message": "🎨 呈现方式",
-                "content": "世界观要通过故事自然展现，避免大段说明。建议设计几个典型场景来体现世界特点。"
+                "content": world_analysis
             })
         
-        # Step 5: 达成共识
+        # Step 6: 达成共识（使用 LLM 生成总结）
+        summary_prompt = f"""作为策划师，总结团队对以下任务的执行计划：
+
+任务：{topic}
+类型：{workflow_type}
+
+请总结：
+1. 确定的执行方案
+2. 各 Agent 的分工
+3. 下一步行动
+
+用第一人称回答，简洁专业。"""
+        
+        summary_content = self._call_llm(summary_prompt, "你是一位专业的策划师，正在总结团队共识。")
+        
         logs.append({
             "agent": "system",
             "message": "✅ 方案确定",
@@ -412,59 +483,113 @@ class AgentChatService:
             "agent": "strategist",
             "agent_name": "策划师",
             "message": "📋 执行计划",
-            "content": f"我们确定的方案是：\n1. 针对'{topic}'进行创作\n2. 按照专业流程执行\n3. 在关键节点向用户汇报进展\n\n现在开始执行第一阶段..."
+            "content": summary_content
         })
         
         return logs
 
-    def _generate_decision_point(self, workflow_type: str, stage: str) -> Dict[str, Any]:
+    def _generate_decision_point(self, workflow_type: str, stage: str, topic: str = "") -> Dict[str, Any]:
         """
         生成决策点，向用户询问
+        使用 LLM 生成询问内容
         """
-        decision_points = {
-            "write": {
-                "after_outline": {
-                    "agent": "strategist",
-                    "agent_name": "策划师", 
-                    "message": "🤔 需要您的确认",
-                    "content": "大纲已经规划完成。在开始正式写作前，想确认一下：\n\n1. 这个情节走向是否符合您的预期？\n2. 您希望这一章的字数大概在什么范围？\n3. 有没有特别想要强调的情感或主题？\n\n请告诉我，我们会据此调整。",
-                    "requires_user_input": True
-                },
-                "after_first_draft": {
-                    "agent": "editor",
-                    "agent_name": "编辑",
-                    "message": "📝 初稿完成，请审阅",
-                    "content": "初稿已经完成。在继续润色前，想听听您的意见：\n\n- 整体风格是否符合您的要求？\n- 有没有需要调整的情节或描写？\n- 人物表现是否自然？\n\n您可以直接回复修改意见，或者回复'继续'让编辑进行润色。",
-                    "requires_user_input": True
-                }
-            },
-            "outline": {
-                "after_proposal": {
-                    "agent": "strategist",
-                    "agent_name": "策划师",
-                    "message": "📋 大纲方案",
-                    "content": "我们讨论出了一个大纲框架。在细化前，想确认几个关键点：\n\n1. 总章节数您有预期吗？（建议15-30章）\n2. 希望故事节奏偏快还是偏慢？\n3. 结局倾向于圆满、开放式还是悲剧？\n\n请给出您的偏好，我们会据此优化大纲。",
-                    "requires_user_input": True
-                }
-            },
-            "world_building": {
-                "after_framework": {
-                    "agent": "strategist", 
-                    "agent_name": "策划师",
-                    "message": "🌍 世界观框架确认",
-                    "content": "世界观的基本框架已经确定。在详细展开前，想确认：\n\n1. 这个世界观类型是否符合您的设想？\n2. 有没有特别想要避免或一定要包含的元素？\n3. 力量体系（如果有）的复杂度您希望如何？\n\n请告诉我们，避免偏离您的预期。",
-                    "requires_user_input": True
-                }
+        # 根据 workflow_type 和 stage 生成询问内容
+        if workflow_type == "write" and stage == "after_outline":
+            prompt = f"""作为策划师，向用户确认写作任务的细节：
+
+任务：{topic}
+
+请生成询问内容，包括：
+1. 确认情节走向
+2. 询问字数要求
+3. 询问风格偏好
+
+用第一人称，简洁友好。"""
+            
+            content = self._call_llm(prompt, "你是一位专业的策划师，正在向用户确认写作细节。")
+            
+            return {
+                "agent": "strategist",
+                "agent_name": "策划师", 
+                "message": "🤔 需要您的确认",
+                "content": content,
+                "requires_user_input": True
             }
-        }
+            
+        elif workflow_type == "write" and stage == "after_first_draft":
+            prompt = f"""作为编辑，向用户征求对初稿的反馈：
+
+任务：{topic}
+
+请生成询问内容，包括：
+1. 询问整体评价
+2. 询问需要调整的地方
+3. 提供下一步选项
+
+用第一人称，简洁友好。"""
+            
+            content = self._call_llm(prompt, "你是一位专业的编辑，正在征求用户反馈。")
+            
+            return {
+                "agent": "editor",
+                "agent_name": "编辑",
+                "message": "📝 初稿完成，请审阅",
+                "content": content,
+                "requires_user_input": True
+            }
+            
+        elif workflow_type == "outline" and stage == "after_proposal":
+            prompt = f"""作为策划师，向用户确认大纲方案：
+
+主题：{topic}
+
+请生成询问内容，包括：
+1. 确认章节数偏好
+2. 询问节奏偏好
+3. 询问结局倾向
+
+用第一人称，简洁友好。"""
+            
+            content = self._call_llm(prompt, "你是一位专业的策划师，正在向用户确认大纲细节。")
+            
+            return {
+                "agent": "strategist",
+                "agent_name": "策划师",
+                "message": "📋 大纲方案",
+                "content": content,
+                "requires_user_input": True
+            }
+            
+        elif workflow_type == "world_building" and stage == "after_framework":
+            prompt = f"""作为世界观设计师，向用户确认世界观框架：
+
+主题：{topic}
+
+请生成询问内容，包括：
+1. 确认世界观类型
+2. 询问需要避免或包含的元素
+3. 询问复杂度偏好
+
+用第一人称，简洁友好。"""
+            
+            content = self._call_llm(prompt, "你是一位专业的世界观设计师，正在向用户确认世界观细节。")
+            
+            return {
+                "agent": "strategist", 
+                "agent_name": "策划师",
+                "message": "🌍 世界观框架确认",
+                "content": content,
+                "requires_user_input": True
+            }
         
-        return decision_points.get(workflow_type, {}).get(stage, {
+        # 默认决策点
+        return {
             "agent": "system",
             "agent_name": "系统",
             "message": "⏸️ 等待用户反馈",
             "content": "执行到关键节点，需要您的确认或反馈后才能继续。",
             "requires_user_input": True
-        })
+        }
 
     def chat(self, message: str, story_id: str = "demo-story", word_count_range: Dict[str, int] = None, conversation_state: Dict[str, Any] = None) -> Dict[str, Any]:
         """
@@ -532,7 +657,7 @@ class AgentChatService:
         if workflow_type == "write":
             # 写作任务：先询问关键信息，再生成
             if conversation_state["stage"] == "initial":
-                decision = self._generate_decision_point("write", "after_outline")
+                decision = self._generate_decision_point("write", "after_outline", msg)
                 logs.append(decision)
                 conversation_state["waiting_for_user"] = True
                 conversation_state["stage"] = "waiting_for_details"
@@ -564,7 +689,7 @@ class AgentChatService:
         elif workflow_type == "outline":
             # 大纲任务
             if conversation_state["stage"] == "initial":
-                decision = self._generate_decision_point("outline", "after_proposal")
+                decision = self._generate_decision_point("outline", "after_proposal", msg)
                 logs.append(decision)
                 conversation_state["waiting_for_user"] = True
                 conversation_state["stage"] = "waiting_for_details"
@@ -585,7 +710,7 @@ class AgentChatService:
         elif workflow_type == "world_building":
             # 世界观任务
             if conversation_state["stage"] == "initial":
-                decision = self._generate_decision_point("world_building", "after_framework")
+                decision = self._generate_decision_point("world_building", "after_framework", msg)
                 logs.append(decision)
                 conversation_state["waiting_for_user"] = True
                 conversation_state["stage"] = "waiting_for_details"
