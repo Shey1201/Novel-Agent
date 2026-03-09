@@ -241,17 +241,45 @@ class AgentChatService:
             logs.append(c)
             return {"agent_logs": logs, "final_text": "\n".join(c.get("reader_feedback", []))}
 
-        if msg.startswith("/discuss"):
-            # 专门的多 Agent 讨论命令
-            topic = msg.replace("/discuss", "").strip() or "故事创作"
-            context = self._build_room_context(story_id)
-            logs.extend(self._generate_discussion(topic, context, max_rounds=3))
-            return {"agent_logs": logs, "final_text": f"讨论完成。各 Agent 已就'{topic}'达成共识。"}
-
-        # 默认：普通对话也使用多 Agent 讨论模式
+        # 默认：任何输入都触发多 Agent 讨论流程
+        # 不需要命令前缀，直接根据内容开始讨论
         context = self._build_room_context(story_id)
-        logs.extend(self._generate_discussion(msg, context, max_rounds=2))
+        logs.extend(self._generate_discussion(msg, context, max_rounds=3))
         
-        r = self.strategist.run({"text": msg})
-        logs.append(r)
-        return {"agent_logs": logs, "final_text": r.get("plan_text", "")}
+        # 根据内容类型决定由哪个 Agent 输出最终结果
+        if any(keyword in msg for keyword in ["写", "创作", "章节", "内容", "draft", "write"]):
+            # 写作类请求由作家输出
+            final_agent = self.writer
+            final_key = "draft_text"
+            agent_name = "作家"
+        elif any(keyword in msg for keyword in ["规划", "大纲", "结构", "plan", "outline", "框架"]):
+            # 规划类请求由策划师输出
+            final_agent = self.strategist
+            final_key = "plan_text"
+            agent_name = "策划师"
+        elif any(keyword in msg for keyword in ["修改", "润色", "优化", "edit", "rewrite", "改进"]):
+            # 修改类请求由编辑输出
+            final_agent = self.editor
+            final_key = "edited_text"
+            agent_name = "编辑"
+        elif any(keyword in msg for keyword in ["评价", "分析", "review", "批评", "feedback"]):
+            # 评价类请求由评论家输出
+            final_agent = self.critic
+            final_key = "reader_feedback"
+            agent_name = "评论家"
+        else:
+            # 默认由策划师输出
+            final_agent = self.strategist
+            final_key = "plan_text"
+            agent_name = "策划师"
+        
+        # 执行最终 Agent 输出
+        result = final_agent.run({"text": msg})
+        logs.append({
+            "agent": final_agent.__class__.__name__.lower().replace("agent", ""),
+            "agent_name": agent_name,
+            "message": f"📄 最终输出",
+            "content": result.get(final_key, "已根据讨论生成内容")
+        })
+        
+        return {"agent_logs": logs, "final_text": result.get(final_key, "")}
