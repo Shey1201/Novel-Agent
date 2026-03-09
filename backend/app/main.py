@@ -21,6 +21,7 @@ origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "https://novel-agent-eta.vercel.app",
+    "https://novel-agent-ten.vercel.app",
 ]
 
 # 从环境变量读取额外的 CORS 域名
