@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { API_BASE } from "@/lib/api";
 
 interface AgentExecution {
   id: string;
@@ -50,7 +51,7 @@ export const AgentTimeline: React.FC<{
   }, [workflowId]);
 
   const connectToExecutionStream = (id: string) => {
-    const eventSource = new EventSource(`http://localhost:8000/api/stream/execution/${id}`);
+    const eventSource = new EventSource(`${API_BASE}/api/stream/execution/${id}`);
     
     eventSource.onopen = () => setIsConnected(true);
     

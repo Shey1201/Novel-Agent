@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useSupabaseStore } from "@/store/supabaseStore";
+import { API_BASE } from "@/lib/api";
 
 interface Character {
   id: string;
@@ -55,7 +56,7 @@ export const StoryBibleManager: React.FC = () => {
   const loadStoryBible = async () => {
     setIsLoading(true);
     try {
-      const response = await fetch(`http://localhost:8000/api/world/${currentNovelId}`);
+      const response = await fetch(`${API_BASE}/api/world/${currentNovelId}`);
       if (response.ok) {
         const data = await response.json();
         setBible({
@@ -80,7 +81,7 @@ export const StoryBibleManager: React.FC = () => {
 
     setSaveStatus("saving");
     try {
-      const response = await fetch(`http://localhost:8000/api/world/${currentNovelId}`, {
+      const response = await fetch(`${API_BASE}/api/world/${currentNovelId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

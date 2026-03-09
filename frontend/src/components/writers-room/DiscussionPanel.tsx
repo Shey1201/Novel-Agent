@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { useSupabaseStore } from "@/store/supabaseStore";
+import { API_BASE, wsUrl } from "@/lib/api";
 
 interface Message {
   id: string;
@@ -49,7 +50,7 @@ export const WritersRoomPanel: React.FC = () => {
     if (!currentNovelId || !proposalTitle) return;
 
     try {
-      const response = await fetch("http://localhost:8000/api/writers-room/discussions", {
+      const response = await fetch(`${API_BASE}/api/writers-room/discussions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -73,7 +74,7 @@ export const WritersRoomPanel: React.FC = () => {
   // 连接 WebSocket
   const connectWebSocket = (discussionId: string) => {
     try {
-      const websocket = new WebSocket(`ws://localhost:8000/api/writers-room/ws/${discussionId}`);
+      const websocket = new WebSocket(wsUrl(`/api/writers-room/ws/${discussionId}`));
       
       websocket.onopen = () => {
         console.log("WebSocket connected");

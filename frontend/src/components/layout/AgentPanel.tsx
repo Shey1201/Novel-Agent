@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { useSupabaseStore } from "@/store/supabaseStore";
+import { API_BASE } from "@/lib/api";
 
 interface ChatResponse {
   final_text?: string;
@@ -58,7 +59,7 @@ export const AgentPanel: React.FC = () => {
     setEditValue("");
 
     try {
-      const res = await fetch("http://localhost:8000/api/agent/chat", {
+      const res = await fetch(`${API_BASE}/api/agent/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 

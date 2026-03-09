@@ -3,6 +3,7 @@
 import React, { useState, useRef, useCallback } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
+import { API_BASE } from "@/lib/api";
 
 interface StreamWriteProps {
   novelId: string;
@@ -42,7 +43,7 @@ export const StreamingEditor: React.FC<StreamWriteProps> = ({
     abortControllerRef.current = new AbortController();
 
     try {
-      const response = await fetch("http://localhost:8000/api/stream/write", {
+      const response = await fetch(`${API_BASE}/api/stream/write`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

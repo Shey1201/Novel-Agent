@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { useSupabaseStore } from "@/store/supabaseStore";
+import { API_BASE } from "@/lib/api";
 
 interface DownloadDialogProps {
   isOpen: boolean;
@@ -173,7 +174,7 @@ export const DownloadDialog: React.FC<DownloadDialogProps> = ({
       }
 
       // 调用后端API生成Word文档
-      const response = await fetch("http://localhost:8000/download/novel", {
+      const response = await fetch(`${API_BASE}/download/novel`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
