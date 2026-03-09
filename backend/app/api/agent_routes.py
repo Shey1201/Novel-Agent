@@ -1,4 +1,5 @@
 from typing import Any, Dict, Optional
+import traceback
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
@@ -30,27 +31,45 @@ class AgentChatRequest(BaseModel):
 
 @router.post("/chat")
 async def agent_chat(payload: AgentChatRequest) -> Dict[str, Any]:
-    # 转换 conversation_state 为字典格式
-    state_dict = None
-    if payload.conversation_state:
-        state_dict = {
-            "stage": payload.conversation_state.stage,
-            "workflow_type": payload.conversation_state.workflow_type,
-            "waiting_for_user": payload.conversation_state.waiting_for_user,
-            "accumulated_content": payload.conversation_state.accumulated_content or []
+    try:
+        # 转换 conversation_state 为字典格式
+        state_dict = None
+        if payload.conversation_state:
+            state_dict = {
+                "stage": payload.conversation_state.stage,
+                "workflow_type": payload.conversation_state.workflow_type,
+                "waiting_for_user": payload.conversation_state.waiting_for_user,
+                "accumulated_content": payload.conversation_state.accumulated_content or []
+            }
+        
+        # 转换 word_count_range 为字典格式
+        word_count_dict = None
+        if payload.word_count_range:
+            word_count_dict = {
+                "min": payload.word_count_range.min,
+                "max": payload.word_count_range.max
+            }
+        
+        result = chat_service.chat(
+            payload.message, 
+            payload.story_id or "demo-story",
+            word_count_range=word_count_dict,
+            conversation_state=state_dict
+        )
+        return result
+    except Exception as e:
+        error_msg = f"Error in agent_chat: {str(e)}\n{traceback.format_exc()}"
+        print(error_msg)
+        return {
+            "error": str(e),
+            "agent_logs": [
+                {
+                    "agent": "system",
+                    "agent_name": "系统",
+                    "message": "❌ 服务器错误",
+                    "content": f"处理请求时发生错误: {str(e)}"
+                }
+            ],
+            "final_text": "",
+            "final_agent": "system"
         }
-    
-    # 转换 word_count_range 为字典格式
-    word_count_dict = None
-    if payload.word_count_range:
-        word_count_dict = {
-            "min": payload.word_count_range.min,
-            "max": payload.word_count_range.max
-        }
-    
-    return chat_service.chat(
-        payload.message, 
-        payload.story_id or "demo-story",
-        word_count_range=word_count_dict,
-        conversation_state=state_dict
-    )
