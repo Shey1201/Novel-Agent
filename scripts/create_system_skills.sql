@@ -12,7 +12,7 @@ VALUES (
     'shield',
     true,
     '系统安全审查和合规检测，确保生成内容符合规范',
-    ARRAY['consistency', 'critic'],
+    ARRAY['critic', 'editor'],
     0
 )
 ON CONFLICT (id) DO UPDATE SET
@@ -46,6 +46,7 @@ ON CONFLICT (id) DO UPDATE SET
     "order" = EXCLUDED."order";
 
 -- Skill 1: 内容安全审查 (属于 系统内置-安全与合规)
+-- 使用Agent：critic（主）、editor（辅）
 INSERT INTO skills (
     id, name, description, category_id, constraints, target_agents, 
     version, is_active, is_system, linked_assets, applicable_novels, 
@@ -53,17 +54,17 @@ INSERT INTO skills (
 ) VALUES (
     'skill-content-safety',
     '内容安全审查',
-    '保证生成内容不含违法、敏感或低俗信息。',
+    '在小说生成或修改过程中，检测文本是否包含违规、敏感或不适宜内容，保证生成文本安全合规。',
     'cat-system-safety',
-    '[{"id":"constraint-content-safety","content":"在生成文本前，请严格检查内容：<br>1. 避免政治敏感、仇恨、歧视性或暴力语言<br>2. 禁止色情、低俗、血腥描写<br>3. 避免侵犯版权、隐私或使用未授权信息<br>如果发现违规内容，立即停止生成，并输出：<br>- 检测结果：违规类型<br>- 建议处理：阻止/替换内容<br>请保持输出格式整洁。","priority":"high","enabled":true}]'::jsonb,
-    ARRAY['writer', 'critic'],
+    '[{"id":"constraint-content-safety","content":"你的任务是进行内容安全审查。<br><br>请检查以下文本是否包含：<br>1. 政治敏感内容<br>2. 仇恨、歧视或攻击性言论<br>3. 色情或低俗描写<br>4. 过度血腥或极端暴力<br>5. 侵犯版权或隐私内容<br><br>审查要求：<br>- 不改变文本内容<br>- 仅进行检测与标注<br>- 如果存在问题，请指出具体段落<br><br>输出格式：<br>安全检测结果：<br>是否存在问题：是 / 否<br><br>若存在问题：<br>问题类型：<br>问题段落：<br>建议处理方式：","priority":"high","enabled":true}]'::jsonb,
+    ARRAY['critic', 'editor'],
     '1.0.0',
     true,
     true,
     ARRAY[]::text[],
     ARRAY[]::text[],
     'system',
-    '检测结果：政治敏感内容<br>建议处理：阻止生成，建议修改涉及敏感政治的段落',
+    '安全检测结果：<br>是否存在问题：是<br><br>若存在问题：<br>问题类型：政治敏感内容<br>问题段落：第三章涉及敏感政治话题<br>建议处理方式：建议修改或删除该段落',
     NOW(),
     NOW()
 )
@@ -79,6 +80,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = NOW();
 
 -- Skill 2: 连贯性检测 (属于 系统内置-基础逻辑)
+-- 使用Agent：consistency（主）、critic（辅）
 INSERT INTO skills (
     id, name, description, category_id, constraints, target_agents, 
     version, is_active, is_system, linked_assets, applicable_novels, 
@@ -86,17 +88,17 @@ INSERT INTO skills (
 ) VALUES (
     'skill-consistency-check',
     '连贯性检测',
-    '确保故事事件顺序合理、前后逻辑一致。',
+    '检测小说剧情中的时间线、事件因果关系和叙事逻辑是否一致。',
     'cat-system-logic',
-    '[{"id":"constraint-consistency-check","content":"分析以下文本的事件逻辑：<br>1. 检查事件时间顺序是否合理<br>2. 检查因果关系是否清晰<br>3. 标记逻辑冲突段落并提供修改建议<br><br>输出格式：<br>- 冲突段落：<br>- 问题描述：<br>- 建议修改：<br>确保输出简明，便于直接修正文稿。","priority":"high","enabled":true}]'::jsonb,
-    ARRAY['critic', 'consistency'],
+    '[{"id":"constraint-consistency-check","content":"你的任务是进行剧情连贯性检测。<br><br>请检查文本中的：<br>1. 时间顺序是否合理<br>2. 事件是否存在因果关系<br>3. 剧情是否出现逻辑跳跃<br>4. 角色行为是否突然改变<br><br>不要修改文本，只进行分析。<br><br>输出格式：<br>连贯性检查结果：<br><br>问题段落：<br>问题类型：（时间线/因果逻辑/剧情跳跃）<br><br>问题说明：<br><br>修改建议：","priority":"high","enabled":true}]'::jsonb,
+    ARRAY['consistency', 'critic'],
     '1.0.0',
     true,
     true,
     ARRAY[]::text[],
     ARRAY[]::text[],
     'system',
-    '- 冲突段落：第3章主角先与敌人和解，第5章又在未知原因下攻击敌人<br>- 问题描述：行为前后矛盾，缺少动机说明<br>- 建议修改：在第5章开头加入主角发现敌人背叛的情节',
+    '连贯性检查结果：<br><br>问题段落：第5章主角突然出现在另一个城市<br>问题类型：时间线<br><br>问题说明：第4章结尾主角还在家中，第5章开头已到达千里之外的城市，缺少行程交代<br><br>修改建议：在第5章开头加入主角赶路的情节，或说明时间跨度',
     NOW(),
     NOW()
 )
@@ -112,6 +114,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = NOW();
 
 -- Skill 3: 角色一致性 (属于 系统内置-基础逻辑)
+-- 使用Agent：consistency（主）
 INSERT INTO skills (
     id, name, description, category_id, constraints, target_agents, 
     version, is_active, is_system, linked_assets, applicable_novels, 
@@ -119,17 +122,17 @@ INSERT INTO skills (
 ) VALUES (
     'skill-character-consistency',
     '角色一致性',
-    '保证人物性格、背景和行为在全篇故事中一致。',
+    '检查人物设定、性格、行为是否在故事中保持一致。',
     'cat-system-logic',
-    '[{"id":"constraint-character-consistency","content":"对文本中的每个角色进行一致性检查：<br>1. 性格特征是否前后一致<br>2. 背景经历是否与设定匹配<br>3. 行为是否符合角色逻辑<br><br>输出格式：<br>- 冲突段落：<br>- 冲突类型（性格/背景/行为）：<br>- 修改建议：<br>确保输出详细且可直接应用修改。","priority":"high","enabled":true}]'::jsonb,
-    ARRAY['consistency', 'critic'],
+    '[{"id":"constraint-character-consistency","content":"你的任务是检查角色一致性。<br><br>请分析以下内容：<br>1. 角色性格是否前后一致<br>2. 角色行为是否符合设定<br>3. 角色背景是否发生冲突<br><br>若发现问题，请指出：<br><br>角色名称：<br>问题段落：<br>问题类型（性格 / 背景 / 行为）：<br><br>建议修改方式：","priority":"high","enabled":true}]'::jsonb,
+    ARRAY['consistency'],
     '1.0.0',
     true,
     true,
     ARRAY[]::text[],
     ARRAY[]::text[],
     'system',
-    '- 冲突段落：第2章主角性格内向害羞，第4章却在陌生人面前侃侃而谈<br>- 冲突类型（性格/背景/行为）：性格<br>- 修改建议：在第4章加入主角内心挣扎的描写，或修改为在熟悉环境下才主动交流',
+    '角色名称：李明<br>问题段落：第3章<br>问题类型（性格 / 背景 / 行为）：性格<br><br>建议修改方式：前文设定李明性格内向不善言辞，此处却突然主动发表长篇演讲，建议增加内心挣扎描写或改为简短回应',
     NOW(),
     NOW()
 )
@@ -147,4 +150,4 @@ ON CONFLICT (id) DO UPDATE SET
 -- 输出结果
 SELECT '系统 Skill 和分类创建完成' as result;
 SELECT id, name, is_system FROM skill_categories WHERE is_system = true ORDER BY "order";
-SELECT id, name, category_id, is_system FROM skills WHERE is_system = true ORDER BY name;
+SELECT id, name, category_id, target_agents, is_system FROM skills WHERE is_system = true ORDER BY name;

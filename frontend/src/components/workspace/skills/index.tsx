@@ -702,7 +702,7 @@ const SkillsManagement: React.FC = () => {
                       </div>
                     ) : (
                       <div 
-                        className="prose prose-sm max-w-none text-zinc-700 min-h-[100px] p-3 bg-zinc-50 rounded-lg"
+                        className="text-xs text-zinc-700 min-h-[100px] p-3 bg-zinc-50 rounded-lg leading-relaxed"
                         dangerouslySetInnerHTML={{ 
                           __html: selectedSkill.constraints[0]?.content || '<span class="text-zinc-400">暂无约束内容，点击编辑添加...</span>' 
                         }}
