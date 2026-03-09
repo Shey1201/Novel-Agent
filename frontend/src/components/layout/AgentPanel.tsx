@@ -22,7 +22,7 @@ const WORD_COUNT_OPTIONS = [
 ];
 
 export const AgentPanel: React.FC = () => {
-  const { messages, addMessage, currentNovelId, currentChapterId, updateChapterContent, setWorldBible, setWorldApproved } =
+  const { messages, addMessage, currentNovelId, currentChapterId, updateChapterContent, setWorldBible, setWorldApproved, updateNovel, updateChapter, novels } =
     useSupabaseStore();
   const [inputValue, setEditValue] = useState("");
   const [selectedWordCount, setSelectedWordCount] = useState(WORD_COUNT_OPTIONS[2]); // 默认标准
@@ -93,13 +93,81 @@ export const AgentPanel: React.FC = () => {
         setWorldApproved(data.approved);
       }
 
-      if (
-        data.final_text &&
-        currentNovelId &&
-        currentChapterId &&
-        (message.startsWith("/write") || message.startsWith("/continue") || message.startsWith("/rewrite") || message.startsWith("/generate"))
-      ) {
-        updateChapterContent(currentNovelId, currentChapterId, data.final_text);
+      // 智能识别并自动填充内容
+      if (data.final_text && currentNovelId) {
+        const lowerMsg = message.toLowerCase();
+        
+        // 1. 填充章节内容 - 包含写作相关关键词
+        if (currentChapterId && 
+            (lowerMsg.includes('写') || lowerMsg.includes('创作') || lowerMsg.includes('章节') || 
+             lowerMsg.includes('内容') || lowerMsg.includes('draft') || lowerMsg.includes('write') ||
+             lowerMsg.includes('正文') || lowerMsg.includes('段落'))) {
+          updateChapterContent(currentNovelId, currentChapterId, data.final_text);
+          push("system", "agent", "✅ 已自动填充到当前章节内容");
+        }
+        
+        // 2. 更新章节标题/名称
+        else if ((lowerMsg.includes('章节') || lowerMsg.includes('标题') || lowerMsg.includes('chapter')) &&
+                 (lowerMsg.includes('名') || lowerMsg.includes('标题') || lowerMsg.includes('title') || lowerMsg.includes('叫'))) {
+          // 尝试提取标题（取第一行或前20字）
+          const title = data.final_text.split('\n')[0].slice(0, 30) || data.final_text.slice(0, 30);
+          if (currentChapterId && title) {
+            updateChapter(currentNovelId, currentChapterId, { title });
+            push("system", "agent", `✅ 已自动更新章节标题为：${title}`);
+          }
+        }
+        
+        // 3. 更新小说名称
+        else if ((lowerMsg.includes('小说') || lowerMsg.includes('书名') || lowerMsg.includes('故事')) &&
+                 (lowerMsg.includes('名') || lowerMsg.includes('标题') || lowerMsg.includes('title') || lowerMsg.includes('叫'))) {
+          const title = data.final_text.split('\n')[0].slice(0, 50) || data.final_text.slice(0, 50);
+          if (title) {
+            updateNovel(currentNovelId, { title });
+            push("system", "agent", `✅ 已自动更新小说名称为：${title}`);
+          }
+        }
+        
+        // 4. 更新大纲 - 包含大纲相关关键词
+        else if (lowerMsg.includes('大纲') || lowerMsg.includes('outline') || lowerMsg.includes('结构') || 
+                 lowerMsg.includes('框架') || lowerMsg.includes('plot')) {
+          updateNovel(currentNovelId, { outline: data.final_text });
+          push("system", "agent", "✅ 已自动保存到小说大纲");
+        }
+        
+        // 5. 更新设定/世界观
+        else if (lowerMsg.includes('设定') || lowerMsg.includes('世界观') || lowerMsg.includes('背景') ||
+                 lowerMsg.includes('world') || lowerMsg.includes('setting') || lowerMsg.includes('规则')) {
+          const currentNovel = novels.find(n => n.id === currentNovelId);
+          const existingSettings = currentNovel?.settings || {};
+          updateNovel(currentNovelId, { 
+            settings: { 
+              ...existingSettings, 
+              worldBuilding: data.final_text 
+            } 
+          });
+          push("system", "agent", "✅ 已自动保存到小说设定");
+        }
+        
+        // 6. 更新角色设定
+        else if (lowerMsg.includes('角色') || lowerMsg.includes('人物') || lowerMsg.includes('character') ||
+                 lowerMsg.includes('主角') || lowerMsg.includes('配角')) {
+          const currentNovel = novels.find(n => n.id === currentNovelId);
+          const existingSettings = currentNovel?.settings || {};
+          updateNovel(currentNovelId, { 
+            settings: { 
+              ...existingSettings, 
+              characters: data.final_text 
+            } 
+          });
+          push("system", "agent", "✅ 已自动保存到角色设定");
+        }
+        
+        // 7. 更新简介/描述
+        else if (lowerMsg.includes('简介') || lowerMsg.includes('描述') || lowerMsg.includes('description') ||
+                 lowerMsg.includes('summary') || lowerMsg.includes('介绍')) {
+          updateNovel(currentNovelId, { description: data.final_text });
+          push("system", "agent", "✅ 已自动保存到小说简介");
+        }
       }
     } catch (error) {
       push("system", "agent", `Agent Room 请求失败: ${String(error)}`);
