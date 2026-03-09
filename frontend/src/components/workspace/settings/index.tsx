@@ -607,7 +607,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             {tokenSettings.enabled && (
               <>
                 <div className="bg-white border border-zinc-200 rounded-xl p-4">
-                  <h3 className="text-sm font-semibold text-zinc-900 mb-4">每日 Token 限制</h3>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-semibold text-zinc-900">每日 Token 限制</h3>
+                    <button
+                      onClick={saveTokenSettings}
+                      className="px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors"
+                    >
+                      保存
+                    </button>
+                  </div>
                   <div className="space-y-4">
                     <div>
                       <label className="block text-xs text-zinc-500 mb-1">
@@ -639,7 +647,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                               daily_limit: 50000
                             }));
                           }
-                          saveTokenSettings();
                         }}
                         className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                       />
@@ -663,7 +670,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                             warning_threshold: parseInt(e.target.value) / 100 
                           }));
                         }}
-                        onBlur={saveTokenSettings}
                         className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                       />
                     </div>
@@ -718,36 +724,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                 
                 {/* 今日使用情况 - 使用用户设置的 daily_limit */}
                 <div className="bg-white border border-zinc-200 rounded-xl p-4">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-sm font-semibold text-zinc-900">今日使用情况</h3>
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => {
-                          const newValue = prompt('修改今日已使用 Token 数量:', tokenStatus.daily_used.toString());
-                          if (newValue !== null) {
-                            const numValue = parseInt(newValue);
-                            if (!isNaN(numValue) && numValue >= 0) {
-                              // 调用 API 修改已使用量
-                              fetch('/api/settings/token/usage', {
-                                method: 'PUT',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ daily_used: numValue })
-                              }).then(() => loadSettings());
-                            }
-                          }
-                        }}
-                        className="text-xs text-zinc-600 hover:text-zinc-700"
-                      >
-                        修改
-                      </button>
-                      <button
-                        onClick={resetDailyToken}
-                        className="text-xs text-indigo-600 hover:text-indigo-700"
-                      >
-                        重置
-                      </button>
-                    </div>
-                  </div>
+                  <h3 className="text-sm font-semibold text-zinc-900 mb-4">今日使用情况</h3>
                   
                   <div className="space-y-3">
                     <div>
