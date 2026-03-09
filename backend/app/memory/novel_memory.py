@@ -504,5 +504,29 @@ class NovelMemory:
         return False
 
 
-# 全局实例
-novel_memory = NovelMemory()
+# 全局实例 - 延迟初始化
+_novel_memory_instance = None
+
+def get_novel_memory():
+    """获取 NovelMemory 实例（延迟初始化）"""
+    global _novel_memory_instance
+    if _novel_memory_instance is None:
+        _novel_memory_instance = NovelMemory()
+    return _novel_memory_instance
+
+# 为了向后兼容，使用属性代理
+class _NovelMemoryProxy:
+    """代理类，实现真正的延迟初始化"""
+    def _get_instance(self):
+        return get_novel_memory()
+    
+    def __getattr__(self, name):
+        return getattr(self._get_instance(), name)
+    
+    def __setattr__(self, name, value):
+        if name in ('_get_instance',):
+            super().__setattr__(name, value)
+        else:
+            setattr(self._get_instance(), name, value)
+
+novel_memory = _NovelMemoryProxy()

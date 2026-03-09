@@ -7,7 +7,15 @@ from pydantic import BaseModel, Field
 from app.services.agent_chat_service import AgentChatService
 
 router = APIRouter(prefix="/api/agent", tags=["agent-room"])
-chat_service = AgentChatService()
+
+# 延迟初始化 chat_service
+_chat_service_instance = None
+
+def get_chat_service():
+    global _chat_service_instance
+    if _chat_service_instance is None:
+        _chat_service_instance = AgentChatService()
+    return _chat_service_instance
 
 
 class WordCountRange(BaseModel):
@@ -50,7 +58,7 @@ async def agent_chat(payload: AgentChatRequest) -> Dict[str, Any]:
                 "max": payload.word_count_range.max
             }
         
-        result = chat_service.chat(
+        result = get_chat_service().chat(
             payload.message, 
             payload.story_id or "demo-story",
             word_count_range=word_count_dict,
