@@ -56,36 +56,134 @@ class AIConfigRequest(BaseModel):
 @router.get("/token")
 async def get_token_settings():
     """获取 Token 设置"""
-    manager = get_system_settings_manager()
-    settings = manager.get_settings()
-    return {
-        "enabled": settings.token.enabled,
-        "daily_limit": settings.token.daily_limit,
-        "warning_threshold": settings.token.warning_threshold,
-        "budget_allocation": settings.token.budget_allocation
-    }
+    try:
+        from app.memory.system_settings import supabase
+        
+        # 获取当前用户ID
+        auth_response = supabase.auth.get_user()
+        user_id = auth_response.user.id if auth_response and auth_response.user else None
+        
+        if not user_id:
+            # 返回默认值
+            return {
+                "enabled": False,
+                "daily_limit": 50000,
+                "warning_threshold": 0.8,
+                "budget_allocation": {
+                    "planner": 0.10,
+                    "discussion": 0.13,
+                    "conflict": 0.07,
+                    "writing": 0.47,
+                    "editor": 0.13,
+                    "reader": 0.07,
+                    "summary": 0.03,
+                }
+            }
+        
+        # 从数据库获取设置
+        result = supabase.table("settings").select("*").eq("user_id", user_id).execute()
+        
+        if result.data and len(result.data) > 0:
+            data = result.data[0]
+            return {
+                "enabled": data.get('token_enabled', False),
+                "daily_limit": data.get('token_daily_limit', 50000),
+                "warning_threshold": data.get('token_warning_threshold', 0.8),
+                "budget_allocation": data.get('token_budget_allocation', {
+                    "planner": 0.10,
+                    "discussion": 0.13,
+                    "conflict": 0.07,
+                    "writing": 0.47,
+                    "editor": 0.13,
+                    "reader": 0.07,
+                    "summary": 0.03,
+                })
+            }
+        else:
+            # 返回默认值
+            return {
+                "enabled": False,
+                "daily_limit": 50000,
+                "warning_threshold": 0.8,
+                "budget_allocation": {
+                    "planner": 0.10,
+                    "discussion": 0.13,
+                    "conflict": 0.07,
+                    "writing": 0.47,
+                    "editor": 0.13,
+                    "reader": 0.07,
+                    "summary": 0.03,
+                }
+            }
+    except Exception as e:
+        print(f"获取 Token 设置失败: {e}")
+        # 返回默认值
+        return {
+            "enabled": False,
+            "daily_limit": 50000,
+            "warning_threshold": 0.8,
+            "budget_allocation": {
+                "planner": 0.10,
+                "discussion": 0.13,
+                "conflict": 0.07,
+                "writing": 0.47,
+                "editor": 0.13,
+                "reader": 0.07,
+                "summary": 0.03,
+            }
+        }
 
 
 @router.put("/token")
 async def update_token_settings(request: TokenSettingsRequest):
     """更新 Token 设置"""
-    manager = get_system_settings_manager()
-    
-    # 更新设置
-    kwargs = request.dict(exclude_unset=True)
-    manager.update_token_settings(**kwargs)
-    
-    # 同步更新 Token Budget Manager
-    budget_manager = get_token_budget_manager()
-    if request.enabled is not None:
-        if request.enabled and request.daily_limit:
+    try:
+        from app.memory.system_settings import supabase
+        
+        # 获取当前用户ID
+        auth_response = supabase.auth.get_user()
+        user_id = auth_response.user.id if auth_response and auth_response.user else None
+        
+        if not user_id:
+            raise HTTPException(status_code=401, detail="未登录")
+        
+        # 构建更新数据
+        update_data = {}
+        if request.enabled is not None:
+            update_data["token_enabled"] = request.enabled
+        if request.daily_limit is not None:
+            update_data["token_daily_limit"] = request.daily_limit
+        if request.warning_threshold is not None:
+            update_data["token_warning_threshold"] = request.warning_threshold
+        if request.budget_allocation is not None:
+            update_data["token_budget_allocation"] = request.budget_allocation
+        
+        # 检查是否已有设置记录
+        result = supabase.table("settings").select("id").eq("user_id", user_id).execute()
+        
+        if result.data and len(result.data) > 0:
+            # 更新现有记录
+            setting_id = result.data[0]["id"]
+            supabase.table("settings").update(update_data).eq("id", setting_id).eq("user_id", user_id).execute()
+        else:
+            # 创建新记录
+            update_data["user_id"] = user_id
+            supabase.table("settings").insert(update_data).execute()
+        
+        # 同步更新 Token Budget Manager
+        budget_manager = get_token_budget_manager()
+        if request.enabled is not None:
+            if request.enabled and request.daily_limit:
+                budget_manager.set_daily_limit(request.daily_limit)
+            elif not request.enabled:
+                budget_manager.set_daily_limit(None)
+        elif request.daily_limit is not None:
             budget_manager.set_daily_limit(request.daily_limit)
-        elif not request.enabled:
-            budget_manager.set_daily_limit(None)
-    elif request.daily_limit is not None and settings.token.enabled:
-        budget_manager.set_daily_limit(request.daily_limit)
-    
-    return {"message": "Token 设置已更新"}
+        
+        return {"message": "Token 设置已更新"}
+    except Exception as e:
+        print(f"更新 Token 设置失败: {e}")
+        raise HTTPException(status_code=500, detail=f"更新 Token 设置失败: {str(e)}")
 
 
 @router.get("/token/status")
@@ -125,23 +223,89 @@ async def update_token_usage(request: TokenUsageRequest):
 @router.get("/discussion")
 async def get_discussion_settings():
     """获取讨论设置"""
-    manager = get_system_settings_manager()
-    settings = manager.get_settings()
-    return {
-        "max_rounds": settings.discussion.max_rounds,
-        "max_tokens_per_response": settings.discussion.max_tokens_per_response,
-        "enable_short_mode": settings.discussion.enable_short_mode,
-        "min_chapter_interval": settings.discussion.min_chapter_interval
-    }
+    try:
+        from app.memory.system_settings import supabase
+        
+        # 获取当前用户ID
+        auth_response = supabase.auth.get_user()
+        user_id = auth_response.user.id if auth_response and auth_response.user else None
+        
+        if not user_id:
+            return {
+                "max_rounds": 2,
+                "max_tokens_per_response": 80,
+                "enable_short_mode": True,
+                "min_chapter_interval": 3
+            }
+        
+        # 从数据库获取设置
+        result = supabase.table("settings").select("*").eq("user_id", user_id).execute()
+        
+        if result.data and len(result.data) > 0:
+            data = result.data[0]
+            return {
+                "max_rounds": data.get('discussion_max_rounds', 2),
+                "max_tokens_per_response": data.get('discussion_max_tokens', 80),
+                "enable_short_mode": data.get('discussion_enable_short_mode', True),
+                "min_chapter_interval": data.get('discussion_min_interval', 3)
+            }
+        else:
+            return {
+                "max_rounds": 2,
+                "max_tokens_per_response": 80,
+                "enable_short_mode": True,
+                "min_chapter_interval": 3
+            }
+    except Exception as e:
+        print(f"获取讨论设置失败: {e}")
+        return {
+            "max_rounds": 2,
+            "max_tokens_per_response": 80,
+            "enable_short_mode": True,
+            "min_chapter_interval": 3
+        }
 
 
 @router.put("/discussion")
 async def update_discussion_settings(request: DiscussionSettingsRequest):
     """更新讨论设置"""
-    manager = get_system_settings_manager()
-    kwargs = request.dict(exclude_unset=True)
-    manager.update_discussion_settings(**kwargs)
-    return {"message": "讨论设置已更新"}
+    try:
+        from app.memory.system_settings import supabase
+        
+        # 获取当前用户ID
+        auth_response = supabase.auth.get_user()
+        user_id = auth_response.user.id if auth_response and auth_response.user else None
+        
+        if not user_id:
+            raise HTTPException(status_code=401, detail="未登录")
+        
+        # 构建更新数据
+        update_data = {}
+        if request.max_rounds is not None:
+            update_data["discussion_max_rounds"] = request.max_rounds
+        if request.max_tokens_per_response is not None:
+            update_data["discussion_max_tokens"] = request.max_tokens_per_response
+        if request.enable_short_mode is not None:
+            update_data["discussion_enable_short_mode"] = request.enable_short_mode
+        if request.min_chapter_interval is not None:
+            update_data["discussion_min_interval"] = request.min_chapter_interval
+        
+        # 检查是否已有设置记录
+        result = supabase.table("settings").select("id").eq("user_id", user_id).execute()
+        
+        if result.data and len(result.data) > 0:
+            # 更新现有记录
+            setting_id = result.data[0]["id"]
+            supabase.table("settings").update(update_data).eq("id", setting_id).eq("user_id", user_id).execute()
+        else:
+            # 创建新记录
+            update_data["user_id"] = user_id
+            supabase.table("settings").insert(update_data).execute()
+        
+        return {"message": "讨论设置已更新"}
+    except Exception as e:
+        print(f"更新讨论设置失败: {e}")
+        raise HTTPException(status_code=500, detail=f"更新讨论设置失败: {str(e)}")
 
 
 # ============ 缓存设置接口 ============
