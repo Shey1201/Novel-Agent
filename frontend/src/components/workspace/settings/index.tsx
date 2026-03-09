@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE } from '@/lib/api';
 
 type SettingsTab = 'account' | 'general' | 'token' | 'generation' | 'notifications' | 'storage' | 'about';
 
@@ -205,35 +206,35 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   const loadSettings = async () => {
     try {
       // 加载 Token 设置
-      const tokenRes = await fetch('/api/settings/token');
+      const tokenRes = await fetch(`${API_BASE}/api/settings/token`);
       if (tokenRes.ok) {
         const tokenData = await tokenRes.json();
         setTokenSettings(tokenData);
       }
-      
+
       // 加载 Token 状态
-      const statusRes = await fetch('/api/settings/token/status');
+      const statusRes = await fetch(`${API_BASE}/api/settings/token/status`);
       if (statusRes.ok) {
         const statusData = await statusRes.json();
         setTokenStatus(statusData);
       }
-      
+
       // 加载生成设置
-      const genRes = await fetch('/api/settings/generation');
+      const genRes = await fetch(`${API_BASE}/api/settings/generation`);
       if (genRes.ok) {
         const genData = await genRes.json();
         setGenerationSettings(prev => ({ ...prev, ...genData }));
       }
-      
+
       // 加载讨论设置
-      const discRes = await fetch('/api/settings/discussion');
+      const discRes = await fetch(`${API_BASE}/api/settings/discussion`);
       if (discRes.ok) {
         const discData = await discRes.json();
         setGenerationSettings(prev => ({ ...prev, ...discData }));
       }
-      
+
       // 加载 AI 配置
-      const aiRes = await fetch('/api/settings/ai');
+      const aiRes = await fetch(`${API_BASE}/api/settings/ai`);
       if (aiRes.ok) {
         const aiData = await aiRes.json();
         setAiConfig({
@@ -251,7 +252,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   // 保存 Token 设置
   const saveTokenSettings = async () => {
     try {
-      await fetch('/api/settings/token', {
+      await fetch(`${API_BASE}/api/settings/token`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(tokenSettings)
@@ -264,7 +265,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   // 保存生成设置
   const saveGenerationSettings = async () => {
     try {
-      await fetch('/api/settings/generation', {
+      await fetch(`${API_BASE}/api/settings/generation`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -273,8 +274,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
           enable_streaming: generationSettings.enable_streaming,
         })
       });
-      
-      await fetch('/api/settings/discussion', {
+
+      await fetch(`${API_BASE}/api/settings/discussion`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -291,7 +292,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   // 重置每日 Token
   const resetDailyToken = async () => {
     try {
-      await fetch('/api/settings/token/reset', { method: 'POST' });
+      await fetch(`${API_BASE}/api/settings/token/reset`, { method: 'POST' });
       loadSettings();
     } catch (error) {
       console.error('重置 Token 失败:', error);
@@ -302,7 +303,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   const saveAIConfig = async () => {
     try {
       setIsSavingAI(true);
-      await fetch('/api/settings/ai', {
+      await fetch(`${API_BASE}/api/settings/ai`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -326,7 +327,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     const newActiveState = !aiConfig.is_active;
     try {
       setIsSavingAI(true);
-      await fetch('/api/settings/ai', {
+      await fetch(`${API_BASE}/api/settings/ai`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
