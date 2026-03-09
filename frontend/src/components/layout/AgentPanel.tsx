@@ -156,39 +156,38 @@ export const AgentPanel: React.FC = () => {
           push("system", "agent", "✅ 已自动保存到小说大纲");
         }
         
-        // 5. 更新设定/世界观
+        // 5. 更新设定/世界观 - 保存到 outline 中并标记类型
         else if (lowerMsg.includes('设定') || lowerMsg.includes('世界观') || lowerMsg.includes('背景') ||
                  lowerMsg.includes('world') || lowerMsg.includes('setting') || lowerMsg.includes('规则')) {
           const currentNovel = novels.find(n => n.id === currentNovelId);
-          const existingSettings = currentNovel?.settings || {};
+          const existingOutline = currentNovel?.outline || '';
+          const worldBuildingSection = `\n\n【世界观设定】\n${data.final_text}`;
           updateNovel(currentNovelId, { 
-            settings: { 
-              ...existingSettings, 
-              worldBuilding: data.final_text 
-            } 
+            outline: existingOutline + worldBuildingSection 
           });
-          push("system", "agent", "✅ 已自动保存到小说设定");
+          push("system", "agent", "✅ 已自动保存到小说大纲（世界观部分）");
         }
         
-        // 6. 更新角色设定
+        // 6. 更新角色设定 - 保存到 outline 中并标记类型
         else if (lowerMsg.includes('角色') || lowerMsg.includes('人物') || lowerMsg.includes('character') ||
                  lowerMsg.includes('主角') || lowerMsg.includes('配角')) {
           const currentNovel = novels.find(n => n.id === currentNovelId);
-          const existingSettings = currentNovel?.settings || {};
+          const existingOutline = currentNovel?.outline || '';
+          const charactersSection = `\n\n【角色设定】\n${data.final_text}`;
           updateNovel(currentNovelId, { 
-            settings: { 
-              ...existingSettings, 
-              characters: data.final_text 
-            } 
+            outline: existingOutline + charactersSection 
           });
-          push("system", "agent", "✅ 已自动保存到角色设定");
+          push("system", "agent", "✅ 已自动保存到小说大纲（角色部分）");
         }
         
-        // 7. 更新简介/描述
+        // 7. 更新简介/描述 - 保存到 outline 开头
         else if (lowerMsg.includes('简介') || lowerMsg.includes('描述') || lowerMsg.includes('description') ||
                  lowerMsg.includes('summary') || lowerMsg.includes('介绍')) {
-          updateNovel(currentNovelId, { description: data.final_text });
-          push("system", "agent", "✅ 已自动保存到小说简介");
+          const currentNovel = novels.find(n => n.id === currentNovelId);
+          const existingOutline = currentNovel?.outline || '';
+          const summarySection = `【简介】\n${data.final_text}\n\n${existingOutline}`;
+          updateNovel(currentNovelId, { outline: summarySection });
+          push("system", "agent", "✅ 已自动保存到小说大纲（简介部分）");
         }
       }
     } catch (error) {
