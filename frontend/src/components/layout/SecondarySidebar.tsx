@@ -99,7 +99,8 @@ export const SecondarySidebar: React.FC = () => {
     currentNovel.chapters.forEach(ch => {
       const volName = ch.volumeName || '未分卷';
       const volOrder = ch.volumeOrder || 0;
-      const volId = `vol-${volOrder}-${volName}`;
+      // 未分卷使用固定的 id，其他卷使用动态 id
+      const volId = volName === '未分卷' ? 'vol-default' : `vol-${volOrder}-${volName}`;
       
       if (!volumeMap.has(volId)) {
         volumeMap.set(volId, {

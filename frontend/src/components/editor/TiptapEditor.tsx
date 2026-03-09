@@ -128,10 +128,9 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle>((_, ref) => {
 
   useEffect(() => {
     if (editor && currentChapter) {
-      const currentContent = editor.getHTML();
-      if (currentContent !== currentChapter.content) {
-        editor.commands.setContent(currentChapter.content || "<p>在这里开始你的小说创作...</p>", false);
-      }
+      // 总是设置内容，确保切换章节时正确显示
+      const contentToSet = currentChapter.content || "<p>在这里开始你的小说创作...</p>";
+      editor.commands.setContent(contentToSet, false);
       setHasUnsavedChanges(false);
       pendingContentRef.current = currentChapter.content || "";
     }
