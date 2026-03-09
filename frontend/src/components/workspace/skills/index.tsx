@@ -602,7 +602,7 @@ const SkillsManagement: React.FC = () => {
                   <div className="mt-3 flex items-center gap-2">
                     <span className="text-xs text-zinc-500">适用 Agent:</span>
                     <div className="flex items-center gap-1">
-                      {(['writer', 'editor', 'planner', 'conflict', 'reader', 'summary'] as AgentType[]).map((agent) => (
+                      {(['writer', 'editor', 'planner', 'conflict', 'reader', 'summary', 'critic', 'consistency'] as AgentType[]).map((agent) => (
                         <button
                           key={agent}
                           onClick={() => {
