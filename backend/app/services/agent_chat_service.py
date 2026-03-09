@@ -10,16 +10,19 @@ from app.agents.writing_agent import WritingAgent
 from app.memory.story_memory import StoryBible
 from app.services.chapter_service import load_memory
 from app.services.world_service import WorldDebateRequest, WorldService
+from app.core.llm import get_llm
 
 
 class AgentChatService:
     def __init__(self, llm: Any = None):
-        self.strategist = StrategistAgent(llm=llm)
-        self.writer = WritingAgent(llm=llm)
-        self.editor = EditorAgent(llm=llm)
-        self.critic = CriticAgent(llm=llm)
-        self.memory = MemoryAgent(llm=llm)
-        self.world = WorldService(llm=llm)
+        # 如果没有传入 llm，尝试从配置获取
+        self.llm = llm or get_llm()
+        self.strategist = StrategistAgent(llm=self.llm)
+        self.writer = WritingAgent(llm=self.llm)
+        self.editor = EditorAgent(llm=self.llm)
+        self.critic = CriticAgent(llm=self.llm)
+        self.memory = MemoryAgent(llm=self.llm)
+        self.world = WorldService(llm=self.llm)
 
     def _recent_summaries(self, story_id: str, n: int = 3) -> List[str]:
         memory = load_memory(story_id)
@@ -105,65 +108,160 @@ class AgentChatService:
             "locations": False
         }
     
+    def _call_llm(self, prompt: str, system_message: str = "") -> str:
+        """
+        调用 LLM 生成内容
+        """
+        if self.llm is None:
+            return "[LLM 未配置，无法生成内容]"
+        
+        try:
+            from langchain.schema import HumanMessage, SystemMessage
+            
+            messages = []
+            if system_message:
+                messages.append(SystemMessage(content=system_message))
+            messages.append(HumanMessage(content=prompt))
+            
+            response = self.llm.invoke(messages)
+            return response.content if hasattr(response, 'content') else str(response)
+        except Exception as e:
+            print(f"LLM call error: {e}")
+            return f"[调用 LLM 时出错: {str(e)}]"
+    
     def _generate_story_bible_content(self, topic: str, missing_parts: Dict[str, bool]) -> List[Dict[str, Any]]:
         """
         为缺失的 Story Bible 部分生成内容
+        使用 LLM 生成，而不是硬编码
         """
         logs: List[Dict[str, Any]] = []
         
         # 检查是否需要补充世界观
         if not missing_parts.get("world", False):
+            world_prompt = f"""基于以下小说主题，设计一个详细的世界观设定：
+
+主题：{topic}
+
+请提供：
+1. 世界背景（时代、地点、基本环境）
+2. 核心规则（这个世界的特殊规则或力量体系）
+3. 社会结构（主要势力、组织、阶层）
+4. 与故事主题的关联
+
+请用简洁但详细的中文回答。"""
+            
+            world_content = self._call_llm(world_prompt, "你是一位专业的世界观设计师，擅长为小说创建引人入胜的世界观设定。")
+            
             logs.append({
                 "agent": "strategist",
                 "agent_name": "策划师",
                 "message": "🌍 补充世界观",
-                "content": f"检测到 Story Bible 中缺少世界观设定。基于主题'{topic}'，我来补充：\n\n【世界观框架】\n- 故事发生在一个现代都市背景\n- 社会结构：普通人类社会，存在隐秘的超自然元素\n- 核心规则：主角拥有特殊能力，但需要在日常生活中隐藏\n- 时代背景：当代，科技发达但神秘力量依然存在\n\n这个设定可以支撑青春校园+奇幻的故事类型。",
+                "content": f"检测到 Story Bible 中缺少世界观设定。基于主题'{topic}'，我来补充：\n\n{world_content}",
                 "auto_fill": {
                     "type": "worldbuilding",
-                    "content": "现代都市背景，存在隐秘超自然元素。主角拥有特殊能力但需隐藏。"
+                    "content": world_content[:200] + "..." if len(world_content) > 200 else world_content
                 }
             })
         
         # 检查是否需要补充角色
         if not missing_parts.get("characters", False):
+            char_prompt = f"""基于以下小说主题和世界观，设计主要角色：
+
+主题：{topic}
+
+请提供：
+1. 主角（姓名、年龄、性格、背景、目标）
+2. 2-3个重要配角（与主角的关系、性格特点）
+3. 角色之间的关系网
+
+请用简洁但详细的中文回答，使用列表格式。"""
+            
+            char_content = self._call_llm(char_prompt, "你是一位专业的角色设计师，擅长创造有深度、令人难忘的角色。")
+            
+            # 尝试从内容中提取角色名
+            import re
+            char_names = re.findall(r'[【\[]([^【\]\[\]]+)[】\]]|([^：:\n]{2,8})[：:]', char_content)
+            char_items = []
+            for match in char_names[:5]:
+                name = (match[0] or match[1]).strip()
+                if name and len(name) > 1:
+                    char_items.append({"name": name, "role": "角色"})
+            
+            if not char_items:
+                char_items = [{"name": "主角", "role": "主角"}]
+            
             logs.append({
                 "agent": "writer",
                 "agent_name": "作家",
                 "message": "👤 设计主角",
-                "content": "基于主题，我设计了以下核心角色：\n\n【主角】\n- 姓名：林墨（暂定）\n- 年龄：17岁\n- 性格：内向敏感，但内心坚韧\n- 背景：普通高中生，偶然发现自己有特殊能力\n- 目标：在保护秘密的同时，寻找自己能力的来源\n\n【重要配角】\n- 苏晴：主角的同学，阳光开朗，可能是第一个发现主角秘密的人\n- 陈教授：神秘的历史老师，似乎知道一些关于超自然力量的秘密",
+                "content": f"基于主题，我设计了以下核心角色：\n\n{char_content}",
                 "auto_fill": {
                     "type": "characters",
-                    "items": [
-                        {"name": "林墨", "role": "主角"},
-                        {"name": "苏晴", "role": "同学/朋友"},
-                        {"name": "陈教授", "role": "导师"}
-                    ]
+                    "items": char_items
                 }
             })
         
         # 检查是否需要补充大纲
         if not missing_parts.get("outline", False):
+            outline_prompt = f"""基于以下小说主题，构建一个详细的故事大纲：
+
+主题：{topic}
+
+请提供：
+1. 故事结构（建议分为3-4幕）
+2. 每幕的主要情节点
+3. 关键转折点
+4. 预计章节数（每幕的章节范围）
+
+请用简洁但详细的中文回答，使用清晰的层次结构。"""
+            
+            outline_content = self._call_llm(outline_prompt, "你是一位专业的故事结构设计师，擅长构建引人入胜的故事大纲。")
+            
             logs.append({
                 "agent": "strategist",
                 "agent_name": "策划师",
                 "message": "📋 构建大纲",
-                "content": "让我为这个故事构建一个基础大纲：\n\n【第一幕：觉醒】（第1-5章）\n- 主角发现自己的能力\n- 试图隐藏但遇到困难\n- 遇到第一个关键人物\n\n【第二幕：探索】（第6-15章）\n- 逐渐了解能力来源\n- 建立人际关系\n- 发现潜在威胁\n\n【第三幕：冲突】（第16-25章）\n- 秘密面临暴露危机\n- 与反派势力对抗\n- 关键抉择时刻\n\n【第四幕：结局】（第26-30章）\n- 最终对决\n- 能力完全觉醒\n- 新的开始",
+                "content": f"让我为这个故事构建一个基础大纲：\n\n{outline_content}",
                 "auto_fill": {
                     "type": "outline",
-                    "content": "第一幕：觉醒（1-5章）→ 第二幕：探索（6-15章）→ 第三幕：冲突（16-25章）→ 第四幕：结局（26-30章）"
+                    "content": outline_content[:300] + "..." if len(outline_content) > 300 else outline_content
                 }
             })
         
         # 检查是否需要补充势力/组织
         if not missing_parts.get("factions", False):
+            faction_prompt = f"""基于以下小说主题，设计故事中的主要势力或组织：
+
+主题：{topic}
+
+请提供：
+1. 3-4个主要势力/组织
+2. 每个势力的性质、目标、与主角的关系
+3. 势力之间的冲突和关系
+
+请用简洁但详细的中文回答。"""
+            
+            faction_content = self._call_llm(faction_prompt, "你是一位专业的势力设计师，擅长创造有张力的组织冲突。")
+            
+            # 尝试提取势力名
+            faction_names = re.findall(r'[【\[]([^【\]\[\]]+)[】\]]|([^：:\n]{2,10})[：:]', faction_content)
+            faction_items = []
+            for match in faction_names[:5]:
+                name = (match[0] or match[1]).strip()
+                if name and len(name) > 1:
+                    faction_items.append(name)
+            
+            if not faction_items:
+                faction_items = ["主要势力"]
+            
             logs.append({
                 "agent": "critic",
                 "agent_name": "评论家",
                 "message": "🏛️ 设定势力",
-                "content": "为了让故事更有张力，我建议加入以下势力：\n\n【守秘人协会】\n- 性质：隐秘组织\n- 目标：保护超自然秘密，维持平衡\n- 对主角态度：观察中，可能招募\n\n【觉醒者联盟】\n- 性质：松散的能力者组织\n- 目标：帮助新觉醒者适应能力\n- 对主角态度：友好，提供帮助\n\n【影子议会】\n- 性质：神秘势力\n- 目标：利用能力者达到某种目的\n- 对主角态度：敌视，可能制造麻烦",
+                "content": f"为了让故事更有张力，我建议加入以下势力：\n\n{faction_content}",
                 "auto_fill": {
                     "type": "factions",
-                    "items": ["守秘人协会", "觉醒者联盟", "影子议会"]
+                    "items": faction_items
                 }
             })
         
