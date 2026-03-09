@@ -35,7 +35,7 @@ export const AgentPanel: React.FC = () => {
   const [inputValue, setEditValue] = useState("");
   const [selectedWordCount, setSelectedWordCount] = useState(WORD_COUNT_OPTIONS[2]); // 默认标准
   const [showSettings, setShowSettings] = useState(false);
-  const [conversationState, setConversationState] = useState<ChatResponse['conversation_state']>(null);
+  const [conversationState, setConversationState] = useState<ChatResponse['conversation_state'] | null>(null);
   const [isWaitingForUser, setIsWaitingForUser] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const seqRef = useRef(100);
