@@ -59,29 +59,8 @@ async def get_token_settings():
     try:
         from app.memory.system_settings import supabase
         
-        # 获取当前用户ID
-        auth_response = supabase.auth.get_user()
-        user_id = auth_response.user.id if auth_response and auth_response.user else None
-        
-        if not user_id:
-            # 返回默认值
-            return {
-                "enabled": False,
-                "daily_limit": 50000,
-                "warning_threshold": 0.8,
-                "budget_allocation": {
-                    "planner": 0.10,
-                    "discussion": 0.13,
-                    "conflict": 0.07,
-                    "writing": 0.47,
-                    "editor": 0.13,
-                    "reader": 0.07,
-                    "summary": 0.03,
-                }
-            }
-        
-        # 从数据库获取设置
-        result = supabase.table("settings").select("*").eq("user_id", user_id).execute()
+        # 从数据库获取设置（使用 service key，不需要 user_id 过滤）
+        result = supabase.table("settings").select("*").limit(1).execute()
         
         if result.data and len(result.data) > 0:
             data = result.data[0]
@@ -140,13 +119,6 @@ async def update_token_settings(request: TokenSettingsRequest):
     try:
         from app.memory.system_settings import supabase
         
-        # 获取当前用户ID
-        auth_response = supabase.auth.get_user()
-        user_id = auth_response.user.id if auth_response and auth_response.user else None
-        
-        if not user_id:
-            raise HTTPException(status_code=401, detail="未登录")
-        
         # 构建更新数据
         update_data = {}
         if request.enabled is not None:
@@ -159,15 +131,14 @@ async def update_token_settings(request: TokenSettingsRequest):
             update_data["token_budget_allocation"] = request.budget_allocation
         
         # 检查是否已有设置记录
-        result = supabase.table("settings").select("id").eq("user_id", user_id).execute()
+        result = supabase.table("settings").select("id").limit(1).execute()
         
         if result.data and len(result.data) > 0:
             # 更新现有记录
             setting_id = result.data[0]["id"]
-            supabase.table("settings").update(update_data).eq("id", setting_id).eq("user_id", user_id).execute()
+            supabase.table("settings").update(update_data).eq("id", setting_id).execute()
         else:
             # 创建新记录
-            update_data["user_id"] = user_id
             supabase.table("settings").insert(update_data).execute()
         
         # 同步更新 Token Budget Manager
@@ -226,20 +197,8 @@ async def get_discussion_settings():
     try:
         from app.memory.system_settings import supabase
         
-        # 获取当前用户ID
-        auth_response = supabase.auth.get_user()
-        user_id = auth_response.user.id if auth_response and auth_response.user else None
-        
-        if not user_id:
-            return {
-                "max_rounds": 2,
-                "max_tokens_per_response": 80,
-                "enable_short_mode": True,
-                "min_chapter_interval": 3
-            }
-        
         # 从数据库获取设置
-        result = supabase.table("settings").select("*").eq("user_id", user_id).execute()
+        result = supabase.table("settings").select("*").limit(1).execute()
         
         if result.data and len(result.data) > 0:
             data = result.data[0]
@@ -272,13 +231,6 @@ async def update_discussion_settings(request: DiscussionSettingsRequest):
     try:
         from app.memory.system_settings import supabase
         
-        # 获取当前用户ID
-        auth_response = supabase.auth.get_user()
-        user_id = auth_response.user.id if auth_response and auth_response.user else None
-        
-        if not user_id:
-            raise HTTPException(status_code=401, detail="未登录")
-        
         # 构建更新数据
         update_data = {}
         if request.max_rounds is not None:
@@ -291,15 +243,14 @@ async def update_discussion_settings(request: DiscussionSettingsRequest):
             update_data["discussion_min_interval"] = request.min_chapter_interval
         
         # 检查是否已有设置记录
-        result = supabase.table("settings").select("id").eq("user_id", user_id).execute()
+        result = supabase.table("settings").select("id").limit(1).execute()
         
         if result.data and len(result.data) > 0:
             # 更新现有记录
             setting_id = result.data[0]["id"]
-            supabase.table("settings").update(update_data).eq("id", setting_id).eq("user_id", user_id).execute()
+            supabase.table("settings").update(update_data).eq("id", setting_id).execute()
         else:
             # 创建新记录
-            update_data["user_id"] = user_id
             supabase.table("settings").insert(update_data).execute()
         
         return {"message": "讨论设置已更新"}
@@ -472,27 +423,16 @@ async def get_ai_config():
     try:
         from app.memory.system_settings import supabase
         
-        # 获取当前用户ID
-        auth_response = supabase.auth.get_user()
-        user_id = auth_response.user.id if auth_response and auth_response.user else None
+        # 获取设置
+        result = supabase.table("settings").select("ai_chat_model, ai_api_key, ai_base_url, ai_is_active").limit(1).execute()
         
-        if not user_id:
+        if result.data and len(result.data) > 0:
+            data = result.data[0]
             return {
-                "chat_model": None,
-                "api_key": None,
-                "base_url": None,
-                "is_active": False
-            }
-        
-        # 获取当前用户的设置
-        result = supabase.table("settings").select("ai_chat_model, ai_api_key, ai_base_url, ai_is_active").eq("user_id", user_id).single().execute()
-        
-        if result.data:
-            return {
-                "chat_model": result.data.get("ai_chat_model"),
-                "api_key": result.data.get("ai_api_key"),
-                "base_url": result.data.get("ai_base_url"),
-                "is_active": result.data.get("ai_is_active", False)
+                "chat_model": data.get("ai_chat_model"),
+                "api_key": data.get("ai_api_key"),
+                "base_url": data.get("ai_base_url"),
+                "is_active": data.get("ai_is_active", False)
             }
         else:
             return {
@@ -517,13 +457,6 @@ async def update_ai_config(request: AIConfigRequest):
     try:
         from app.memory.system_settings import supabase
         
-        # 获取当前用户ID
-        auth_response = supabase.auth.get_user()
-        user_id = auth_response.user.id if auth_response and auth_response.user else None
-        
-        if not user_id:
-            raise HTTPException(status_code=401, detail="未登录")
-        
         # 构建更新数据
         update_data = {}
         if request.chat_model is not None:
@@ -536,15 +469,14 @@ async def update_ai_config(request: AIConfigRequest):
             update_data["ai_is_active"] = request.is_active
         
         # 检查是否已有设置记录
-        result = supabase.table("settings").select("id").eq("user_id", user_id).execute()
+        result = supabase.table("settings").select("id").limit(1).execute()
         
         if result.data and len(result.data) > 0:
             # 更新现有记录
             setting_id = result.data[0]["id"]
-            supabase.table("settings").update(update_data).eq("id", setting_id).eq("user_id", user_id).execute()
+            supabase.table("settings").update(update_data).eq("id", setting_id).execute()
         else:
             # 创建新记录
-            update_data["user_id"] = user_id
             supabase.table("settings").insert(update_data).execute()
         
         return {"message": "AI 配置已更新"}

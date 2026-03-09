@@ -14,6 +14,19 @@ try:
 except ImportError:
     SUPABASE_AVAILABLE = False
 
+# 创建模块级别的 supabase 客户端
+supabase = None
+if SUPABASE_AVAILABLE:
+    supabase_url = os.getenv("SUPABASE_URL") or os.getenv("NEXT_PUBLIC_SUPABASE_URL")
+    supabase_key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_ANON_KEY") or os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+    
+    if supabase_url and supabase_key:
+        try:
+            supabase = create_client(supabase_url, supabase_key)
+            print("[SystemSettings] Module-level Supabase client created")
+        except Exception as e:
+            print(f"[SystemSettings] Error creating module-level Supabase client: {e}")
+
 
 @dataclass
 class TokenSettings:
