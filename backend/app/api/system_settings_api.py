@@ -103,6 +103,23 @@ async def reset_daily_token_usage():
     return {"message": "每日 Token 使用已重置"}
 
 
+class TokenUsageRequest(BaseModel):
+    daily_used: int
+
+
+@router.put("/token/usage")
+async def update_token_usage(request: TokenUsageRequest):
+    """修改今日 Token 使用量"""
+    try:
+        budget_manager = get_token_budget_manager()
+        # 设置当前使用量
+        budget_manager.daily_usage = request.daily_used
+        budget_manager._save_usage()
+        return {"message": "Token 使用量已更新", "daily_used": request.daily_used}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"更新 Token 使用量失败: {str(e)}")
+
+
 # ============ 讨论设置接口 ============
 
 @router.get("/discussion")
@@ -291,8 +308,20 @@ async def get_ai_config():
     try:
         from app.memory.system_settings import supabase
         
+        # 获取当前用户ID
+        auth_response = supabase.auth.get_user()
+        user_id = auth_response.user.id if auth_response and auth_response.user else None
+        
+        if not user_id:
+            return {
+                "chat_model": None,
+                "api_key": None,
+                "base_url": None,
+                "is_active": False
+            }
+        
         # 获取当前用户的设置
-        result = supabase.table("settings").select("ai_chat_model, ai_api_key, ai_base_url, ai_is_active").single().execute()
+        result = supabase.table("settings").select("ai_chat_model, ai_api_key, ai_base_url, ai_is_active").eq("user_id", user_id).single().execute()
         
         if result.data:
             return {
@@ -324,6 +353,13 @@ async def update_ai_config(request: AIConfigRequest):
     try:
         from app.memory.system_settings import supabase
         
+        # 获取当前用户ID
+        auth_response = supabase.auth.get_user()
+        user_id = auth_response.user.id if auth_response and auth_response.user else None
+        
+        if not user_id:
+            raise HTTPException(status_code=401, detail="未登录")
+        
         # 构建更新数据
         update_data = {}
         if request.chat_model is not None:
@@ -336,14 +372,15 @@ async def update_ai_config(request: AIConfigRequest):
             update_data["ai_is_active"] = request.is_active
         
         # 检查是否已有设置记录
-        result = supabase.table("settings").select("id").execute()
+        result = supabase.table("settings").select("id").eq("user_id", user_id).execute()
         
         if result.data and len(result.data) > 0:
             # 更新现有记录
             setting_id = result.data[0]["id"]
-            supabase.table("settings").update(update_data).eq("id", setting_id).execute()
+            supabase.table("settings").update(update_data).eq("id", setting_id).eq("user_id", user_id).execute()
         else:
             # 创建新记录
+            update_data["user_id"] = user_id
             supabase.table("settings").insert(update_data).execute()
         
         return {"message": "AI 配置已更新"}

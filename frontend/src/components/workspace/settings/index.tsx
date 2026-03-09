@@ -720,12 +720,33 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                 <div className="bg-white border border-zinc-200 rounded-xl p-4">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-sm font-semibold text-zinc-900">今日使用情况</h3>
-                    <button
-                      onClick={resetDailyToken}
-                      className="text-xs text-indigo-600 hover:text-indigo-700"
-                    >
-                      重置
-                    </button>
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => {
+                          const newValue = prompt('修改今日已使用 Token 数量:', tokenStatus.daily_used.toString());
+                          if (newValue !== null) {
+                            const numValue = parseInt(newValue);
+                            if (!isNaN(numValue) && numValue >= 0) {
+                              // 调用 API 修改已使用量
+                              fetch('/api/settings/token/usage', {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ daily_used: numValue })
+                              }).then(() => loadSettings());
+                            }
+                          }
+                        }}
+                        className="text-xs text-zinc-600 hover:text-zinc-700"
+                      >
+                        修改
+                      </button>
+                      <button
+                        onClick={resetDailyToken}
+                        className="text-xs text-indigo-600 hover:text-indigo-700"
+                      >
+                        重置
+                      </button>
+                    </div>
                   </div>
                   
                   <div className="space-y-3">
