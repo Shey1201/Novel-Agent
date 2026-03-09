@@ -768,13 +768,19 @@ export const useSupabaseStore = create<NovelState>()(
       addMessage: async (message) => {
         // 同步到 Supabase - 不指定ID，让数据库自动生成UUID
         try {
+          // 确保 timestamp 是有效的 ISO 字符串
+          let timestamp = (message as any).timestamp;
+          if (!timestamp || typeof timestamp !== 'string' || !timestamp.includes('T')) {
+            timestamp = new Date().toISOString();
+          }
+          
           const { data, error } = await supabase.from('messages').insert({
             user_id: ANONYMOUS_USER_ID,
             role: message.role,
             content: message.content,
             agent_id: (message as any).agentId || null,
             agent_name: (message as any).agentName || null,
-            timestamp: (message as any).timestamp || new Date().toISOString(),
+            timestamp: timestamp,
             created_at: new Date().toISOString(),
           }).select('id').single();
 
