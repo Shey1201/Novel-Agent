@@ -44,6 +44,13 @@ class GenerationSettingsRequest(BaseModel):
     enable_streaming: Optional[bool] = None
 
 
+class AIConfigRequest(BaseModel):
+    chat_model: Optional[str] = None
+    api_key: Optional[str] = None
+    base_url: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
 # ============ Token 设置接口 ============
 
 @router.get("/token")
@@ -274,3 +281,72 @@ async def get_chapter_budget_report(chapter_id: str):
         raise HTTPException(status_code=404, detail="章节预算不存在")
     
     return report
+
+
+# ============ AI 配置接口 ============
+
+@router.get("/ai")
+async def get_ai_config():
+    """获取 AI 配置"""
+    try:
+        from app.memory.system_settings import supabase
+        
+        # 获取当前用户的设置
+        result = supabase.table("settings").select("ai_chat_model, ai_api_key, ai_base_url, ai_is_active").single().execute()
+        
+        if result.data:
+            return {
+                "chat_model": result.data.get("ai_chat_model"),
+                "api_key": result.data.get("ai_api_key"),
+                "base_url": result.data.get("ai_base_url"),
+                "is_active": result.data.get("ai_is_active", False)
+            }
+        else:
+            return {
+                "chat_model": None,
+                "api_key": None,
+                "base_url": None,
+                "is_active": False
+            }
+    except Exception as e:
+        print(f"获取 AI 配置失败: {e}")
+        return {
+            "chat_model": None,
+            "api_key": None,
+            "base_url": None,
+            "is_active": False
+        }
+
+
+@router.put("/ai")
+async def update_ai_config(request: AIConfigRequest):
+    """更新 AI 配置"""
+    try:
+        from app.memory.system_settings import supabase
+        
+        # 构建更新数据
+        update_data = {}
+        if request.chat_model is not None:
+            update_data["ai_chat_model"] = request.chat_model
+        if request.api_key is not None:
+            update_data["ai_api_key"] = request.api_key
+        if request.base_url is not None:
+            update_data["ai_base_url"] = request.base_url
+        if request.is_active is not None:
+            update_data["ai_is_active"] = request.is_active
+        
+        # 检查是否已有设置记录
+        result = supabase.table("settings").select("id").execute()
+        
+        if result.data and len(result.data) > 0:
+            # 更新现有记录
+            setting_id = result.data[0]["id"]
+            supabase.table("settings").update(update_data).eq("id", setting_id).execute()
+        else:
+            # 创建新记录
+            supabase.table("settings").insert(update_data).execute()
+        
+        return {"message": "AI 配置已更新"}
+    except Exception as e:
+        print(f"更新 AI 配置失败: {e}")
+        raise HTTPException(status_code=500, detail=f"更新 AI 配置失败: {str(e)}")

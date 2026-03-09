@@ -140,6 +140,14 @@ interface GenerationSettings {
   enable_streaming: boolean;
 }
 
+// AI 配置接口
+interface AIConfig {
+  chat_model: string;
+  api_key: string;
+  base_url: string;
+  is_active: boolean;
+}
+
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
   
@@ -177,6 +185,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     daily_remaining: 50000,
     usage_rate: 0
   });
+  
+  // AI 配置状态
+  const [aiConfig, setAiConfig] = useState<AIConfig>({
+    chat_model: '',
+    api_key: '',
+    base_url: '',
+    is_active: false
+  });
+  const [isSavingAI, setIsSavingAI] = useState(false);
 
   // 加载设置
   useEffect(() => {
@@ -213,6 +230,18 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
       if (discRes.ok) {
         const discData = await discRes.json();
         setGenerationSettings(prev => ({ ...prev, ...discData }));
+      }
+      
+      // 加载 AI 配置
+      const aiRes = await fetch('/api/settings/ai');
+      if (aiRes.ok) {
+        const aiData = await aiRes.json();
+        setAiConfig({
+          chat_model: aiData.chat_model || '',
+          api_key: aiData.api_key || '',
+          base_url: aiData.base_url || '',
+          is_active: aiData.is_active || false
+        });
       }
     } catch (error) {
       console.error('加载设置失败:', error);
@@ -266,6 +295,51 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
       loadSettings();
     } catch (error) {
       console.error('重置 Token 失败:', error);
+    }
+  };
+
+  // 保存 AI 配置
+  const saveAIConfig = async () => {
+    try {
+      setIsSavingAI(true);
+      await fetch('/api/settings/ai', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_model: aiConfig.chat_model,
+          api_key: aiConfig.api_key,
+          base_url: aiConfig.base_url,
+          is_active: aiConfig.is_active
+        })
+      });
+      alert('AI 配置已保存');
+    } catch (error) {
+      console.error('保存 AI 配置失败:', error);
+      alert('保存 AI 配置失败');
+    } finally {
+      setIsSavingAI(false);
+    }
+  };
+
+  // 激活/停用 AI 配置
+  const toggleAIActivation = async () => {
+    const newActiveState = !aiConfig.is_active;
+    try {
+      setIsSavingAI(true);
+      await fetch('/api/settings/ai', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          is_active: newActiveState
+        })
+      });
+      setAiConfig(prev => ({ ...prev, is_active: newActiveState }));
+      alert(newActiveState ? 'AI 配置已激活' : 'AI 配置已停用，使用内置 Key');
+    } catch (error) {
+      console.error('激活 AI 配置失败:', error);
+      alert('激活 AI 配置失败');
+    } finally {
+      setIsSavingAI(false);
     }
   };
 
@@ -387,11 +461,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
               defaultExpanded={true}
               alignSubtitle="left"
               badge={
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-emerald-700 bg-emerald-50 rounded-full">
+                <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full ${
+                  aiConfig.is_active 
+                    ? 'text-emerald-700 bg-emerald-50' 
+                    : 'text-zinc-600 bg-zinc-100'
+                }`}>
                   <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M20 6 9 17l-5-5"/>
                   </svg>
-                  Built-in Key Active
+                  {aiConfig.is_active ? 'Custom Key Active' : 'Built-in Key Active'}
                 </span>
               }
             >
@@ -401,6 +479,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                   <label className="block text-xs font-medium text-zinc-700">CHAT_MODEL</label>
                   <input
                     type="text"
+                    value={aiConfig.chat_model}
+                    onChange={(e) => setAiConfig(prev => ({ ...prev, chat_model: e.target.value }))}
                     placeholder="e.g., gpt-4o-mini, qwen-max, deepseek-chat"
                     className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                   />
@@ -411,6 +491,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                   <label className="block text-xs font-medium text-zinc-700">API_KEY</label>
                   <input
                     type="password"
+                    value={aiConfig.api_key}
+                    onChange={(e) => setAiConfig(prev => ({ ...prev, api_key: e.target.value }))}
                     placeholder="Your API Key"
                     className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                   />
@@ -421,10 +503,41 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                   <label className="block text-xs font-medium text-zinc-700">BASE_URL</label>
                   <input
                     type="text"
+                    value={aiConfig.base_url}
+                    onChange={(e) => setAiConfig(prev => ({ ...prev, base_url: e.target.value }))}
                     placeholder="e.g., https://api.openai.com/v1, https://dashscope.aliyuncs.com/compatible-mode/v1"
                     className="w-full px-3 py-2 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                   />
                 </div>
+                
+                {/* Action Buttons */}
+                <div className="flex items-center gap-3 pt-2">
+                  <button
+                    onClick={saveAIConfig}
+                    disabled={isSavingAI}
+                    className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {isSavingAI ? 'Saving...' : 'Save Config'}
+                  </button>
+                  <button
+                    onClick={toggleAIActivation}
+                    disabled={isSavingAI || !aiConfig.chat_model || !aiConfig.api_key}
+                    className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                      aiConfig.is_active
+                        ? 'text-zinc-700 bg-zinc-100 hover:bg-zinc-200'
+                        : 'text-white bg-emerald-600 hover:bg-emerald-700'
+                    }`}
+                  >
+                    {aiConfig.is_active ? 'Deactivate' : 'Activate'}
+                  </button>
+                </div>
+                
+                {/* Hint Text */}
+                {!aiConfig.chat_model || !aiConfig.api_key ? (
+                  <p className="text-xs text-zinc-500">
+                    Please fill in CHAT_MODEL and API_KEY before activating
+                  </p>
+                ) : null}
               </div>
             </CollapsibleSection>
 
