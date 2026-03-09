@@ -79,13 +79,9 @@ const SkillsManagement: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<'constraints' | 'assets'>('constraints');
 
-  // 技能编辑相关状态
-  const [isAddingConstraint, setIsAddingConstraint] = useState(false);
-  const [newConstraintContent, setNewConstraintContent] = useState('');
-  const [newConstraintPriority, setNewConstraintPriority] = useState<'high' | 'medium' | 'low'>('medium');
-  const [editingConstraintId, setEditingConstraintId] = useState<string | null>(null);
-  const [editConstraintContent, setEditConstraintContent] = useState('');
-  const [editConstraintPriority, setEditConstraintPriority] = useState<'high' | 'medium' | 'low'>('medium');
+  // 技能约束内容编辑状态
+  const [skillConstraintContent, setSkillConstraintContent] = useState('');
+  const [isEditingConstraint, setIsEditingConstraint] = useState(false);
 
   // Skill 移动相关状态
   const [isMovingSkill, setIsMovingSkill] = useState(false);
@@ -203,45 +199,25 @@ const SkillsManagement: React.FC = () => {
     setIsAddingSkill(false);
   };
 
-  // 约束条件相关函数
-  const handleAddConstraint = async () => {
-    if (!selectedSkill || !newConstraintContent.trim()) return;
-    const newConstraint: SkillConstraint = {
-      id: `constraint-${Date.now()}`,
-      content: newConstraintContent.trim(),
-      priority: newConstraintPriority,
-      enabled: true,
-    };
-    await updateSkill(selectedSkill.id, {
-      constraints: [...selectedSkill.constraints, newConstraint],
+  // 技能约束内容相关函数
+  const handleSaveConstraintContent = async () => {
+    if (!selectedSkill) return;
+    await updateSkill(selectedSkill.id, { 
+      constraints: [{
+        id: `constraint-${selectedSkill.id}`,
+        content: skillConstraintContent,
+        priority: 'medium',
+        enabled: true,
+      }]
     });
-    setNewConstraintContent('');
-    setNewConstraintPriority('medium');
-    setIsAddingConstraint(false);
+    setIsEditingConstraint(false);
   };
 
-  const handleUpdateConstraint = async (constraintId: string) => {
+  const startEditingConstraint = () => {
     if (!selectedSkill) return;
-    const updatedConstraints = selectedSkill.constraints.map(c =>
-      c.id === constraintId 
-        ? { ...c, content: editConstraintContent, priority: editConstraintPriority }
-        : c
-    );
-    await updateSkill(selectedSkill.id, { constraints: updatedConstraints });
-    setEditingConstraintId(null);
-  };
-
-  const handleDeleteConstraint = async (constraintId: string) => {
-    if (!selectedSkill) return;
-    if (!confirm('确定要删除此约束条件吗？')) return;
-    const updatedConstraints = selectedSkill.constraints.filter(c => c.id !== constraintId);
-    await updateSkill(selectedSkill.id, { constraints: updatedConstraints });
-  };
-
-  const startEditingConstraint = (constraint: SkillConstraint) => {
-    setEditingConstraintId(constraint.id);
-    setEditConstraintContent(constraint.content);
-    setEditConstraintPriority(constraint.priority);
+    const content = selectedSkill.constraints[0]?.content || '';
+    setSkillConstraintContent(content);
+    setIsEditingConstraint(true);
   };
 
   // 递归获取分类及其所有子分类的技能数量
@@ -687,162 +663,50 @@ const SkillsManagement: React.FC = () => {
             <div className="flex-1 overflow-y-auto p-4">
               {activeTab === 'constraints' && (
                 <div className="space-y-4">
-                  {/* 添加新约束按钮 - 仅非系统技能显示 */}
-                  {!selectedSkill.is_system && (
-                    <button
-                      onClick={() => setIsAddingConstraint(true)}
-                      className="w-full px-4 py-2 border border-dashed border-zinc-300 text-zinc-600 text-sm rounded-lg hover:border-indigo-500 hover:text-indigo-600 transition-colors flex items-center justify-center gap-2"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-                      添加约束条目
-                    </button>
-                  )}
-
-                  {/* 新增约束表单 */}
-                  {isAddingConstraint && (
-                    <div className="p-4 bg-zinc-50 border border-zinc-200 rounded-lg">
-                      <RichTextEditor
-                        content={newConstraintContent}
-                        onChange={setNewConstraintContent}
-                        maxLength={5000}
-                        placeholder="输入约束条件内容..."
-                      />
-                      <div className="flex items-center gap-4 mt-3">
-                        <select
-                          value={newConstraintPriority}
-                          onChange={(e) => setNewConstraintPriority(e.target.value as 'high' | 'medium' | 'low')}
-                          className="px-3 py-1.5 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:border-indigo-500"
-                        >
-                          <option value="high">高优先级</option>
-                          <option value="medium">中优先级</option>
-                          <option value="low">低优先级</option>
-                        </select>
-                        <div className="flex-1"></div>
+                  {/* 技能约束内容编辑区 */}
+                  <div className="bg-white border border-zinc-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-sm font-medium text-zinc-700">约束内容</h4>
+                      {!selectedSkill.is_system && !isEditingConstraint && (
                         <button
-                          onClick={() => setIsAddingConstraint(false)}
-                          className="px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-200 rounded-lg transition-colors"
+                          onClick={startEditingConstraint}
+                          className="text-xs text-indigo-600 hover:text-indigo-700 px-2 py-1 rounded hover:bg-indigo-50 transition-colors"
                         >
-                          取消
+                          编辑
                         </button>
-                        <button
-                          onClick={handleAddConstraint}
-                          disabled={!newConstraintContent.trim()}
-                          className="px-3 py-1.5 text-sm bg-indigo-600 hover:bg-indigo-700 disabled:bg-zinc-300 text-white rounded-lg transition-colors"
-                        >
-                          添加
-                        </button>
-                      </div>
+                      )}
                     </div>
-                  )}
-
-                  {/* 约束列表 */}
-                  <div className="space-y-2">
-                    {selectedSkill.constraints.map((constraint, index) => (
-                      <div
-                        key={constraint.id}
-                        className={`p-3 bg-white border rounded-lg ${
-                          constraint.enabled !== false ? 'border-zinc-200' : 'border-zinc-100 opacity-60'
-                        }`}
-                      >
-                        {editingConstraintId === constraint.id ? (
-                          <div className="flex-1">
-                            <RichTextEditor
-                              content={editConstraintContent}
-                              onChange={setEditConstraintContent}
-                              maxLength={5000}
-                              placeholder="输入约束条件内容..."
-                            />
-                            <div className="flex items-center gap-4 mt-3">
-                              <select
-                                value={editConstraintPriority}
-                                onChange={(e) => setEditConstraintPriority(e.target.value as 'high' | 'medium' | 'low')}
-                                className="px-3 py-1 text-sm border border-zinc-200 rounded-lg focus:outline-none focus:border-indigo-500"
-                              >
-                                <option value="high">高优先级</option>
-                                <option value="medium">中优先级</option>
-                                <option value="low">低优先级</option>
-                              </select>
-                              <div className="flex-1"></div>
-                              <button
-                                onClick={() => setEditingConstraintId(null)}
-                                className="px-3 py-1 text-xs text-zinc-600 hover:bg-zinc-200 rounded transition-colors"
-                              >
-                                取消
-                              </button>
-                              <button
-                                onClick={() => handleUpdateConstraint(constraint.id)}
-                                className="px-3 py-1 text-xs bg-indigo-600 hover:bg-indigo-700 text-white rounded transition-colors"
-                              >
-                                保存
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="flex items-start gap-3">
-                            <span className="text-xs text-zinc-400 mt-2">{index + 1}.</span>
-                            <div className="flex-1">
-                              {selectedSkill.is_system ? (
-                                // 系统技能约束只读显示
-                                <div 
-                                  className="w-full text-sm px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-zinc-700 prose prose-sm max-w-none"
-                                  dangerouslySetInnerHTML={{ __html: constraint.content }}
-                                />
-                              ) : (
-                                // 非系统技能可编辑 - 点击编辑
-                                <div
-                                  onClick={() => startEditingConstraint(constraint)}
-                                  className="w-full text-sm px-3 py-2 border border-zinc-200 rounded-lg hover:border-indigo-300 cursor-pointer prose prose-sm max-w-none min-h-[40px]"
-                                  dangerouslySetInnerHTML={{ __html: constraint.content || '<span class="text-zinc-400">点击编辑约束条件...</span>' }}
-                                />
-                              )}
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {/* 启用/禁用切换 */}
-                              {!selectedSkill.is_system && (
-                                <button
-                                  onClick={() => {
-                                    updateSkill(selectedSkill.id, {
-                                      constraints: selectedSkill.constraints.map((c) =>
-                                        c.id === constraint.id ? { ...c, enabled: c.enabled !== false ? false : true } : c
-                                      ),
-                                    });
-                                  }}
-                                  className={`text-xs px-2 py-1 rounded transition-colors inline-flex items-center justify-center leading-none ${
-                                    constraint.enabled !== false
-                                      ? 'bg-emerald-100 text-emerald-700'
-                                      : 'bg-zinc-100 text-zinc-500'
-                                  }`}
-                                >
-                                  {constraint.enabled !== false ? '启用' : '禁用'}
-                                </button>
-                              )}
-                              {/* 优先级 */}
-                              <span className={`text-[10px] px-1.5 py-0.5 rounded inline-flex items-center justify-center leading-none h-5 min-w-[20px] ${
-                                constraint.priority === 'high' ? 'bg-red-100 text-red-600' :
-                                constraint.priority === 'medium' ? 'bg-amber-100 text-amber-600' :
-                                'bg-blue-100 text-blue-600'
-                              }`}>
-                                {constraint.priority === 'high' ? '高' : constraint.priority === 'medium' ? '中' : '低'}
-                              </span>
-                              {/* 删除按钮 */}
-                              {!selectedSkill.is_system && (
-                                <button
-                                  onClick={() => handleDeleteConstraint(constraint.id)}
-                                  className="p-1 text-zinc-400 hover:text-red-600"
-                                  title="删除"
-                                >
-                                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        )}
+                    
+                    {isEditingConstraint ? (
+                      <div>
+                        <RichTextEditor
+                          content={skillConstraintContent}
+                          onChange={setSkillConstraintContent}
+                          maxLength={5000}
+                          placeholder="输入技能约束内容..."
+                        />
+                        <div className="flex items-center gap-3 mt-3">
+                          <button
+                            onClick={() => setIsEditingConstraint(false)}
+                            className="px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-200 rounded-lg transition-colors"
+                          >
+                            取消
+                          </button>
+                          <button
+                            onClick={handleSaveConstraintContent}
+                            className="px-3 py-1.5 text-sm bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors"
+                          >
+                            保存
+                          </button>
+                        </div>
                       </div>
-                    ))}
-                    {selectedSkill.constraints.length === 0 && (
-                      <div className="text-center py-8 text-zinc-400">
-                        <p className="text-sm">暂无约束条件</p>
-                      </div>
+                    ) : (
+                      <div 
+                        className="prose prose-sm max-w-none text-zinc-700 min-h-[100px] p-3 bg-zinc-50 rounded-lg"
+                        dangerouslySetInnerHTML={{ 
+                          __html: selectedSkill.constraints[0]?.content || '<span class="text-zinc-400">暂无约束内容，点击编辑添加...</span>' 
+                        }}
+                      />
                     )}
                   </div>
                 </div>
