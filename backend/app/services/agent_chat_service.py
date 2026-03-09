@@ -31,9 +31,13 @@ class AgentChatService:
         world_info = self.world.get_world(story_id)
         bible = StoryBible.model_validate(world_info.get("world_bible", {}))
         recent = self._recent_summaries(story_id)
+        # 获取世界规则文本（world_rules 是列表，需要转换为文本）
+        rules_text = ""
+        if bible.world_rules:
+            rules_text = "\n".join([f"- {rule.name}: {rule.description}" for rule in bible.world_rules])
         return {
             "world": bible.world_view or "",
-            "rules": bible.rules or "",
+            "rules": rules_text,
             "recent_summaries": recent,
             "world_approved": world_info.get("approved", False),
         }
