@@ -12,10 +12,28 @@ from langchain_openai import ChatOpenAI
 def _get_ai_config_from_db() -> dict:
     """从数据库获取 AI 配置"""
     try:
+        # 尝试使用 novel_memory 中的 supabase 连接
+        from app.memory.novel_memory import get_novel_memory
+        
+        novel_memory = get_novel_memory()
+        if novel_memory and novel_memory.supabase:
+            # 使用已有的 supabase 连接
+            result = novel_memory.supabase.table("settings").select("ai_chat_model, ai_api_key, ai_base_url, ai_is_active").is_("deleted_at", "null").limit(1).execute()
+            
+            if result.data and len(result.data) > 0:
+                data = result.data[0]
+                print(f"[LLM] Loaded AI config from DB: model={data.get('ai_chat_model')}, active={data.get('ai_is_active')}")
+                return {
+                    "chat_model": data.get("ai_chat_model"),
+                    "api_key": data.get("ai_api_key"),
+                    "base_url": data.get("ai_base_url"),
+                    "is_active": data.get("ai_is_active", False)
+                }
+        
+        # 如果 novel_memory 不可用，尝试自己创建连接
         import os
         from supabase import create_client
         
-        # 获取 Supabase 连接信息
         supabase_url = os.getenv("SUPABASE_URL") or os.getenv("NEXT_PUBLIC_SUPABASE_URL")
         supabase_key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_ANON_KEY") or os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY")
         
@@ -23,14 +41,13 @@ def _get_ai_config_from_db() -> dict:
             print("[LLM] Supabase credentials not found")
             return {}
         
-        # 创建客户端
         supabase = create_client(supabase_url, supabase_key)
         
-        # 查询 AI 配置
         result = supabase.table("settings").select("ai_chat_model, ai_api_key, ai_base_url, ai_is_active").is_("deleted_at", "null").limit(1).execute()
         
         if result.data and len(result.data) > 0:
             data = result.data[0]
+            print(f"[LLM] Loaded AI config from DB: model={data.get('ai_chat_model')}, active={data.get('ai_is_active')}")
             return {
                 "chat_model": data.get("ai_chat_model"),
                 "api_key": data.get("ai_api_key"),
@@ -39,6 +56,8 @@ def _get_ai_config_from_db() -> dict:
             }
     except Exception as e:
         print(f"[LLM] Error loading AI config from DB: {e}")
+        import traceback
+        traceback.print_exc()
     
     return {}
 
