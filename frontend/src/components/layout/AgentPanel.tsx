@@ -9,7 +9,15 @@ interface ChatResponse {
   world_bible?: { world_view?: string; rules?: string; themes?: string[] };
   approved?: boolean;
   context?: { recent_summaries?: string[] };
-  agent_logs?: Array<{ agent?: string; message?: string; content?: string }>;
+  agent_logs?: Array<{ agent?: string; message?: string; content?: string; requires_user_input?: boolean }>;
+  conversation_state?: {
+    stage?: string;
+    workflow_type?: string;
+    waiting_for_user?: boolean;
+    accumulated_content?: string[];
+  };
+  requires_user_input?: boolean;
+  final_agent?: string;
 }
 
 // 字数范围选项
@@ -27,6 +35,8 @@ export const AgentPanel: React.FC = () => {
   const [inputValue, setEditValue] = useState("");
   const [selectedWordCount, setSelectedWordCount] = useState(WORD_COUNT_OPTIONS[2]); // 默认标准
   const [showSettings, setShowSettings] = useState(false);
+  const [conversationState, setConversationState] = useState<ChatResponse['conversation_state']>(null);
+  const [isWaitingForUser, setIsWaitingForUser] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const seqRef = useRef(100);
 
@@ -68,14 +78,26 @@ export const AgentPanel: React.FC = () => {
           word_count_range: {
             min: selectedWordCount.min,
             max: selectedWordCount.max
-          }
+          },
+          conversation_state: conversationState
         }),
       });
       const data = (await res.json()) as ChatResponse;
 
+      // 保存对话状态
+      if (data.conversation_state) {
+        setConversationState(data.conversation_state);
+        setIsWaitingForUser(data.conversation_state.waiting_for_user || false);
+      }
+
       data.agent_logs?.forEach((log) => {
         const text = log.content ? `${log.message || ""}\n${String(log.content)}` : log.message || "";
         push(log.agent || "agent", "agent", text);
+        
+        // 如果是需要用户输入的决策点，特殊标记
+        if (log.requires_user_input) {
+          setIsWaitingForUser(true);
+        }
       });
 
       if (data.context?.recent_summaries?.length) {
@@ -233,15 +255,36 @@ export const AgentPanel: React.FC = () => {
       </div>
 
       <div className="p-4 bg-white border-t border-zinc-200 shrink-0">
+        {isWaitingForUser && (
+          <div className="mb-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg">
+            <p className="text-xs text-amber-700 flex items-center gap-2">
+              <span>⏸️</span>
+              <span>Agent 正在等待您的决策或反馈...</span>
+            </p>
+          </div>
+        )}
         <div className="relative">
           <textarea
             value={inputValue}
             onChange={(e) => setEditValue(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), handleSend())}
-            placeholder="在 Room 中与 Agent 聊天，例如：/start chapter 8"
-            className="w-full pl-3 pr-10 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-sm resize-none h-20"
+            placeholder={isWaitingForUser 
+              ? "请输入您的决策或反馈，例如：继续 / 修改 / 确认" 
+              : "直接输入内容，Agent 团队会自主讨论并执行..."}
+            className={`w-full pl-3 pr-10 py-2.5 border rounded-xl text-sm resize-none h-20 ${
+              isWaitingForUser 
+                ? 'bg-amber-50 border-amber-300 focus:border-amber-500 focus:ring-amber-500/20' 
+                : 'bg-zinc-50 border-zinc-200 focus:border-indigo-500 focus:ring-indigo-500/20'
+            }`}
           />
-          <button onClick={handleSend} className="absolute right-2 bottom-2 w-7 h-7 bg-indigo-600 text-white rounded-lg">↗</button>
+          <button 
+            onClick={handleSend} 
+            className={`absolute right-2 bottom-2 w-7 h-7 text-white rounded-lg transition-colors ${
+              isWaitingForUser ? 'bg-amber-600 hover:bg-amber-700' : 'bg-indigo-600 hover:bg-indigo-700'
+            }`}
+          >
+            ↗
+          </button>
         </div>
       </div>
     </aside>

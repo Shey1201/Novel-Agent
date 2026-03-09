@@ -1,5 +1,6 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 import random
+import json
 
 from app.agents.critic_agent import CriticAgent
 from app.agents.editor_agent import EditorAgent
@@ -37,249 +38,375 @@ class AgentChatService:
             "world_approved": world_info.get("approved", False),
         }
 
-    def _generate_discussion(self, topic: str, context: Dict[str, Any], max_rounds: int = 3) -> List[Dict[str, Any]]:
+    def _analyze_intent(self, message: str) -> Dict[str, Any]:
         """
-        生成多 Agent 讨论流程
-        模拟多个 Agent 围绕话题进行讨论、提问、完善想法
+        分析用户意图，确定需要执行的操作流程
+        """
+        lower_msg = message.lower()
+        
+        # 检测操作类型
+        if any(kw in lower_msg for kw in ['写', '创作', 'draft', 'write', '生成内容']):
+            return {
+                "type": "write",
+                "needs_discussion": True,
+                "decision_points": ["确认大纲", "确认风格", "确认字数"],
+                "auto_execute": False
+            }
+        elif any(kw in lower_msg for kw in ['大纲', 'outline', '规划', '结构', '框架']):
+            return {
+                "type": "outline",
+                "needs_discussion": True,
+                "decision_points": ["确认主线", "确认章节数", "确认节奏"],
+                "auto_execute": False
+            }
+        elif any(kw in lower_msg for kw in ['设定', '世界观', 'world', 'setting', '背景']):
+            return {
+                "type": "world_building",
+                "needs_discussion": True,
+                "decision_points": ["确认世界观类型", "确认核心规则"],
+                "auto_execute": False
+            }
+        elif any(kw in lower_msg for kw in ['角色', '人物', 'character']):
+            return {
+                "type": "character",
+                "needs_discussion": True,
+                "decision_points": ["确认主角设定", "确认配角关系"],
+                "auto_execute": False
+            }
+        elif any(kw in lower_msg for kw in ['修改', '润色', '优化', 'edit', 'rewrite']):
+            return {
+                "type": "edit",
+                "needs_discussion": True,
+                "decision_points": ["确认修改方向"],
+                "auto_execute": False
+            }
+        else:
+            return {
+                "type": "general",
+                "needs_discussion": True,
+                "decision_points": [],
+                "auto_execute": True
+            }
+
+    def _generate_autonomous_workflow(self, topic: str, context: Dict[str, Any], intent: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        生成 Agent 自主工作流程
+        Agent 自主讨论、决策，只在关键点询问用户
         """
         logs: List[Dict[str, Any]] = []
+        workflow_type = intent["type"]
         
-        # 定义参与讨论的 Agents 及其角色定位
-        agents = [
-            {
-                "name": "strategist",
-                "display_name": "策划师",
-                "personality": "善于规划故事结构，关注整体框架",
-                "concerns": ["故事主线是否清晰", "情节发展是否合理", "读者期待如何满足"]
-            },
-            {
-                "name": "writer",
-                "display_name": "作家",
-                "personality": "专注于具体写作，关注细节描写",
-                "concerns": ["场景描写是否生动", "对话是否自然", "节奏是否合适"]
-            },
-            {
-                "name": "editor",
-                "display_name": "编辑",
-                "personality": "注重文字质量，追求精炼表达",
-                "concerns": ["文字是否流畅", "逻辑是否通顺", "风格是否统一"]
-            },
-            {
-                "name": "critic",
-                "display_name": "评论家",
-                "personality": "善于发现问题，提出改进建议",
-                "concerns": ["是否存在逻辑漏洞", "人物行为是否一致", "情节是否可信"]
-            }
-        ]
-        
-        # 第一轮：各 Agent 提出初步想法
+        # 开场：理解用户需求
         logs.append({
             "agent": "system",
-            "message": f"🎯 讨论主题：{topic}",
-            "content": "各 Agent 开始围绕主题展开讨论..."
+            "message": "🎬 Agent Room 启动",
+            "content": f"收到任务：{topic}\n类型识别：{workflow_type}\nAgent 团队开始自主分析..."
         })
         
-        for agent in agents:
-            concern = random.choice(agent["concerns"])
-            logs.append({
-                "agent": agent["name"],
-                "agent_name": agent["display_name"],
-                "message": f"💭 {agent['display_name']}思考中...",
-                "content": f"从{agent['personality']}的角度来看，我想关注：{concern}。\n\n关于'{topic}'，我认为..."
-            })
+        # Step 1: 策划师分析需求
+        logs.append({
+            "agent": "strategist",
+            "agent_name": "策划师",
+            "message": "📋 任务分析",
+            "content": f"我理解用户的需求是：{topic}\n\n让我分析一下关键点：\n1. 这是一个{workflow_type}类型的任务\n2. 需要先明确目标和约束条件\n3. 制定执行策略"
+        })
         
-        # 第二轮：互相提问和回应
-        if max_rounds >= 2:
-            logs.append({
-                "agent": "system",
-                "message": "🔄 进入互动讨论阶段",
-                "content": "Agent 们开始互相提问、质疑、完善想法"
-            })
-            
-            # 评论家提问
-            logs.append({
-                "agent": "critic",
-                "agent_name": "评论家",
-                "message": "❓ 我有一个疑问",
-                "content": f"策划师，关于'{topic}'，如果读者对这个设定不感兴趣怎么办？我们是否需要增加一些悬念元素？"
-            })
-            
-            # 策划师回应
+        # Step 2: 评论家提出潜在问题
+        logs.append({
+            "agent": "critic",
+            "agent_name": "评论家",
+            "message": "⚠️ 风险评估",
+            "content": "在开始前，我需要考虑几个潜在问题：\n- 用户是否有明确的风格偏好？\n- 是否有特定的字数或篇幅要求？\n- 目标读者群体是谁？\n\n如果这些信息不明确，可能会偏离用户预期。"
+        })
+        
+        # Step 3: 编辑建议流程
+        logs.append({
+            "agent": "editor",
+            "agent_name": "编辑",
+            "message": "📝 流程建议",
+            "content": "建议按以下流程执行：\n1. 先进行内部讨论，明确方案\n2. 在关键决策点向用户确认\n3. 根据反馈调整\n4. 最终输出成果"
+        })
+        
+        # Step 4: 团队内部讨论（模拟自主决策）
+        logs.append({
+            "agent": "system",
+            "message": "💬 团队内部讨论",
+            "content": "Agent 们正在讨论最佳方案..."
+        })
+        
+        # 根据任务类型进行专业讨论
+        if workflow_type == "write":
             logs.append({
                 "agent": "strategist",
                 "agent_name": "策划师",
-                "message": "💡 回应评论家的疑问",
-                "content": "很好的问题！我建议在开篇加入一个冲突场景，让读者立刻被吸引。同时，我们可以设置一个长期悬念..."
-            })
-            
-            # 作家提出执行层面的问题
-            logs.append({
-                "agent": "writer",
-                "agent_name": "作家",
-                "message": "✍️ 从写作角度考虑",
-                "content": "这个思路很好，但我担心具体的场景描写。策划师能否给出一个具体的场景示例？这样我能更好地把握氛围。"
-            })
-            
-            # 编辑提出优化建议
-            logs.append({
-                "agent": "editor",
-                "agent_name": "编辑",
-                "message": "🔍 文字优化建议",
-                "content": "在写作时，注意控制节奏。建议先铺垫再爆发，让读者有情感积累的过程。另外，对话要简洁有力，避免冗长。"
-            })
-        
-        # 第三轮：总结和达成共识
-        if max_rounds >= 3:
-            logs.append({
-                "agent": "system",
-                "message": "✅ 讨论总结",
-                "content": "各 Agent 达成共识，形成最终方案"
-            })
-            
-            logs.append({
-                "agent": "strategist",
-                "agent_name": "策划师",
-                "message": "📋 整体方案",
-                "content": f"经过讨论，我们确定'{topic}'的核心方向：\n1. 开篇设置悬念吸引读者\n2. 情节发展注重逻辑性\n3. 人物行为符合设定\n4. 结尾留有回味空间"
+                "message": "💡 方案提议",
+                "content": "我建议这样安排：先确定本章的核心冲突和情感走向，然后由作家负责具体写作，编辑润色，最后评论家审核。"
             })
             
             logs.append({
                 "agent": "writer",
                 "agent_name": "作家",
-                "message": "📝 写作要点",
-                "content": "我会重点关注：场景描写的层次感、对话的自然度、情感的真挚性。确保文字能够打动读者。"
+                "message": "✍️ 执行思路",
+                "content": "我同意策划师的方案。在具体写作时，我会注意场景切换的自然性，对话要符合人物性格，同时保持节奏紧凑。"
             })
             
             logs.append({
                 "agent": "critic",
                 "agent_name": "评论家",
-                "message": "👍 最终确认",
-                "content": "这个方案考虑得比较全面。建议在执行过程中注意人物动机的一致性，避免出现为了情节牺牲人物的情况。"
+                "message": "👁️ 质量把控",
+                "content": "我会重点关注：情节逻辑是否通顺、人物动机是否合理、是否存在让读者出戏的描写。"
             })
+            
+        elif workflow_type == "outline":
+            logs.append({
+                "agent": "strategist",
+                "agent_name": "策划师",
+                "message": "📊 结构规划",
+                "content": "我建议采用三幕式结构：铺垫-冲突-高潮-结局。先确定关键情节点，再细化每章内容。"
+            })
+            
+            logs.append({
+                "agent": "critic",
+                "agent_name": "评论家",
+                "message": "📈 节奏建议",
+                "content": "要注意节奏把控，避免前期铺垫过长导致读者流失。建议在每章结尾设置小悬念。"
+            })
+            
+        elif workflow_type == "world_building":
+            logs.append({
+                "agent": "strategist",
+                "agent_name": "策划师",
+                "message": "🌍 世界观框架",
+                "content": "我们需要确定：世界的基本规则、力量体系（如果有）、社会结构、历史背景。这些要服务于故事主题。"
+            })
+            
+            logs.append({
+                "agent": "writer",
+                "agent_name": "作家",
+                "message": "🎨 呈现方式",
+                "content": "世界观要通过故事自然展现，避免大段说明。建议设计几个典型场景来体现世界特点。"
+            })
+        
+        # Step 5: 达成共识
+        logs.append({
+            "agent": "system",
+            "message": "✅ 方案确定",
+            "content": "Agent 团队已达成共识，准备执行"
+        })
+        
+        logs.append({
+            "agent": "strategist",
+            "agent_name": "策划师",
+            "message": "📋 执行计划",
+            "content": f"我们确定的方案是：\n1. 针对'{topic}'进行创作\n2. 按照专业流程执行\n3. 在关键节点向用户汇报进展\n\n现在开始执行第一阶段..."
+        })
         
         return logs
 
-    def chat(self, message: str, story_id: str = "demo-story", word_count_range: Dict[str, int] = None) -> Dict[str, Any]:
+    def _generate_decision_point(self, workflow_type: str, stage: str) -> Dict[str, Any]:
+        """
+        生成决策点，向用户询问
+        """
+        decision_points = {
+            "write": {
+                "after_outline": {
+                    "agent": "strategist",
+                    "agent_name": "策划师", 
+                    "message": "🤔 需要您的确认",
+                    "content": "大纲已经规划完成。在开始正式写作前，想确认一下：\n\n1. 这个情节走向是否符合您的预期？\n2. 您希望这一章的字数大概在什么范围？\n3. 有没有特别想要强调的情感或主题？\n\n请告诉我，我们会据此调整。",
+                    "requires_user_input": True
+                },
+                "after_first_draft": {
+                    "agent": "editor",
+                    "agent_name": "编辑",
+                    "message": "📝 初稿完成，请审阅",
+                    "content": "初稿已经完成。在继续润色前，想听听您的意见：\n\n- 整体风格是否符合您的要求？\n- 有没有需要调整的情节或描写？\n- 人物表现是否自然？\n\n您可以直接回复修改意见，或者回复'继续'让编辑进行润色。",
+                    "requires_user_input": True
+                }
+            },
+            "outline": {
+                "after_proposal": {
+                    "agent": "strategist",
+                    "agent_name": "策划师",
+                    "message": "📋 大纲方案",
+                    "content": "我们讨论出了一个大纲框架。在细化前，想确认几个关键点：\n\n1. 总章节数您有预期吗？（建议15-30章）\n2. 希望故事节奏偏快还是偏慢？\n3. 结局倾向于圆满、开放式还是悲剧？\n\n请给出您的偏好，我们会据此优化大纲。",
+                    "requires_user_input": True
+                }
+            },
+            "world_building": {
+                "after_framework": {
+                    "agent": "strategist", 
+                    "agent_name": "策划师",
+                    "message": "🌍 世界观框架确认",
+                    "content": "世界观的基本框架已经确定。在详细展开前，想确认：\n\n1. 这个世界观类型是否符合您的设想？\n2. 有没有特别想要避免或一定要包含的元素？\n3. 力量体系（如果有）的复杂度您希望如何？\n\n请告诉我们，避免偏离您的预期。",
+                    "requires_user_input": True
+                }
+            }
+        }
+        
+        return decision_points.get(workflow_type, {}).get(stage, {
+            "agent": "system",
+            "agent_name": "系统",
+            "message": "⏸️ 等待用户反馈",
+            "content": "执行到关键节点，需要您的确认或反馈后才能继续。",
+            "requires_user_input": True
+        })
+
+    def chat(self, message: str, story_id: str = "demo-story", word_count_range: Dict[str, int] = None, conversation_state: Dict[str, Any] = None) -> Dict[str, Any]:
+        """
+        主聊天接口
+        支持 Agent 自主流程 + 关键点询问用户
+        """
         msg = message.strip()
         logs: List[Dict[str, Any]] = []
-
-        if msg.startswith("/start chapter"):
-            context = self._build_room_context(story_id)
-            logs.append({"agent": "system", "message": "Context loaded"})
-            logs.append(
-                {
-                    "agent": "memory-agent",
-                    "message": "Recent Chapters",
-                    "content": "\n".join(context["recent_summaries"]) or "暂无最近章节总结",
-                }
-            )
-            return {"agent_logs": logs, "context": context, "final_text": ""}
-
-        if msg.startswith("/world"):
-            if msg.startswith("/world approve"):
-                world_info = self.world.get_world(story_id)
-                bible = StoryBible.model_validate(world_info.get("world_bible", {}))
-                result = self.world.approve(story_id, bible)
-                logs.append({"agent": "memory-agent", "message": result["message"]})
-                return {"agent_logs": logs, "final_text": bible.world_view or "", "world": result, "approved": True}
-
-            prompt = msg.replace("/world", "").strip() or "请设计一个新世界观"
-            debate = self.world.debate(WorldDebateRequest(prompt=prompt, story_id=story_id, max_rounds=2))
-            logs.extend(debate.agent_logs)
-            logs.append({"agent": "memory-agent", "message": "世界观草案已进入待审批状态"})
-            return {
-                "agent_logs": logs,
-                "final_text": debate.world_bible.world_view or "",
-                "world_bible": debate.world_bible.model_dump(),
-                "approved": False,
+        
+        # 初始化或恢复对话状态
+        if conversation_state is None:
+            conversation_state = {
+                "stage": "initial",
+                "workflow_type": None,
+                "waiting_for_user": False,
+                "accumulated_content": []
             }
-
-        if msg.startswith("/generate"):
-            # Room 推荐流程：Planner -> Conflict -> Writer -> Editor -> Critic
-            plan = self.strategist.run({"text": msg})
-            logs.append(plan)
-            conflict_notes = ["建议强化对手压迫感", "建议引入资源竞争与时间压力"]
-            logs.append({"agent": "conflict-agent", "message": "已提出冲突建议", "content": "\n".join(conflict_notes)})
-            write_input = f"{plan.get('plan_text','')}\n\n[Conflict]\n" + "\n".join(conflict_notes)
-            draft = self.writer.run({"text": write_input})
-            logs.append(draft)
-            polished = self.editor.run({"draft_text": draft.get("draft_text", "")})
-            logs.append(polished)
-            review = self.critic.run({"draft_text": polished.get("edited_text", "")})
-            logs.append(review)
-            return {"agent_logs": logs, "final_text": polished.get("edited_text", "")}
-
-        if msg.startswith("/plan") or msg.startswith("/outline"):
-            # 使用多 Agent 讨论模式
-            topic = msg.replace("/plan", "").replace("/outline", "").strip() or "故事大纲规划"
-            context = self._build_room_context(story_id)
-            logs.extend(self._generate_discussion(topic, context, max_rounds=3))
+        
+        # 如果正在等待用户输入，处理用户反馈
+        if conversation_state.get("waiting_for_user"):
+            logs.append({
+                "agent": "system",
+                "message": "📥 收到反馈",
+                "content": f"用户反馈：{msg}\n\nAgent 团队会根据反馈调整方案..."
+            })
             
-            # 最后由策划师输出正式的计划
-            r = self.strategist.run({"text": msg})
-            logs.append(r)
-            return {"agent_logs": logs, "final_text": r.get("plan_text", "")}
-
-        if msg.startswith("/write") or msg.startswith("/continue"):
-            # 使用多 Agent 讨论模式
-            topic = msg.replace("/write", "").replace("/continue", "").strip() or "章节写作"
-            context = self._build_room_context(story_id)
-            logs.extend(self._generate_discussion(topic, context, max_rounds=3))
+            # 根据反馈继续流程
+            workflow_type = conversation_state.get("workflow_type", "general")
             
-            # 最后由作家输出正式的内容
-            w = self.writer.run({"text": msg})
-            logs.append(w)
-            return {"agent_logs": logs, "final_text": w.get("draft_text", "")}
-
-        if msg.startswith("/rewrite") or msg.startswith("/style"):
-            e = self.editor.run({"draft_text": msg})
-            logs.append(e)
-            return {"agent_logs": logs, "final_text": e.get("edited_text", "")}
-
-        if msg.startswith("/review"):
-            c = self.critic.run({"draft_text": msg})
-            logs.append(c)
-            return {"agent_logs": logs, "final_text": "\n".join(c.get("reader_feedback", []))}
-
-        # 默认：任何输入都触发多 Agent 讨论流程
-        # 不需要命令前缀，直接根据内容开始讨论
+            # 模拟 Agent 讨论用户反馈
+            logs.append({
+                "agent": "strategist",
+                "agent_name": "策划师",
+                "message": "💭 分析反馈",
+                "content": "收到用户的反馈，让我分析一下...\n\n根据用户的意见，我们需要调整之前的方案。"
+            })
+            
+            logs.append({
+                "agent": "writer",
+                "agent_name": "作家",
+                "message": "✍️ 调整思路",
+                "content": "明白用户的需求了，我会在后续创作中注意这些要点。"
+            })
+            
+            # 继续执行，生成内容
+            conversation_state["waiting_for_user"] = False
+            conversation_state["stage"] = "executing"
+        
+        # 分析用户意图
+        intent = self._analyze_intent(msg)
+        workflow_type = intent["type"]
+        conversation_state["workflow_type"] = workflow_type
+        
+        # 构建上下文
         context = self._build_room_context(story_id)
-        logs.extend(self._generate_discussion(msg, context, max_rounds=3))
         
-        # 根据内容类型决定由哪个 Agent 输出最终结果
-        if any(keyword in msg for keyword in ["写", "创作", "章节", "内容", "draft", "write"]):
-            # 写作类请求由作家输出
-            final_agent = self.writer
-            final_key = "draft_text"
-            agent_name = "作家"
-        elif any(keyword in msg for keyword in ["规划", "大纲", "结构", "plan", "outline", "框架"]):
-            # 规划类请求由策划师输出
-            final_agent = self.strategist
-            final_key = "plan_text"
-            agent_name = "策划师"
-        elif any(keyword in msg for keyword in ["修改", "润色", "优化", "edit", "rewrite", "改进"]):
-            # 修改类请求由编辑输出
-            final_agent = self.editor
-            final_key = "edited_text"
-            agent_name = "编辑"
-        elif any(keyword in msg for keyword in ["评价", "分析", "review", "批评", "feedback"]):
-            # 评价类请求由评论家输出
-            final_agent = self.critic
-            final_key = "reader_feedback"
-            agent_name = "评论家"
+        # 生成自主工作流程
+        workflow_logs = self._generate_autonomous_workflow(msg, context, intent)
+        logs.extend(workflow_logs)
+        
+        # 根据任务类型执行具体操作
+        final_text = ""
+        final_agent_name = ""
+        
+        if workflow_type == "write":
+            # 写作任务：先询问关键信息，再生成
+            if conversation_state["stage"] == "initial":
+                decision = self._generate_decision_point("write", "after_outline")
+                logs.append(decision)
+                conversation_state["waiting_for_user"] = True
+                conversation_state["stage"] = "waiting_for_details"
+                final_text = "等待用户确认写作细节..."
+                final_agent_name = "策划师"
+            else:
+                # 执行写作
+                result = self.writer.run({"text": msg})
+                final_text = result.get("draft_text", "")
+                final_agent_name = "作家"
+                
+                logs.append({
+                    "agent": "writer",
+                    "agent_name": "作家",
+                    "message": "✅ 写作完成",
+                    "content": f"已完成创作，共 {len(final_text)} 字。\n\n{final_text[:200]}..."
+                })
+                
+                # 询问是否继续下一章
+                logs.append({
+                    "agent": "strategist",
+                    "agent_name": "策划师", 
+                    "message": "🤔 下一步？",
+                    "content": "本章已完成！\n\n您觉得如何？\n\n- 回复'继续'生成下一章\n- 回复修改意见，我们调整本章\n- 回复'保存'确认完成",
+                    "requires_user_input": True
+                })
+                conversation_state["waiting_for_user"] = True
+                
+        elif workflow_type == "outline":
+            # 大纲任务
+            if conversation_state["stage"] == "initial":
+                decision = self._generate_decision_point("outline", "after_proposal")
+                logs.append(decision)
+                conversation_state["waiting_for_user"] = True
+                conversation_state["stage"] = "waiting_for_details"
+                final_text = "等待用户确认大纲框架..."
+                final_agent_name = "策划师"
+            else:
+                result = self.strategist.run({"text": msg})
+                final_text = result.get("plan_text", "")
+                final_agent_name = "策划师"
+                
+                logs.append({
+                    "agent": "strategist",
+                    "agent_name": "策划师",
+                    "message": "📋 大纲完成",
+                    "content": f"大纲已生成！\n\n{final_text[:300]}..."
+                })
+                
+        elif workflow_type == "world_building":
+            # 世界观任务
+            if conversation_state["stage"] == "initial":
+                decision = self._generate_decision_point("world_building", "after_framework")
+                logs.append(decision)
+                conversation_state["waiting_for_user"] = True
+                conversation_state["stage"] = "waiting_for_details"
+                final_text = "等待用户确认世界观框架..."
+                final_agent_name = "策划师"
+            else:
+                # 生成世界观
+                debate = self.world.debate(WorldDebateRequest(prompt=msg, story_id=story_id, max_rounds=1))
+                logs.extend(debate.agent_logs)
+                final_text = debate.world_bible.world_view or ""
+                final_agent_name = "策划师"
+                
+        elif workflow_type == "edit":
+            # 编辑任务
+            result = self.editor.run({"draft_text": msg})
+            final_text = result.get("edited_text", "")
+            final_agent_name = "编辑"
+            
+            logs.append({
+                "agent": "editor",
+                "agent_name": "编辑",
+                "message": "✅ 润色完成",
+                "content": f"已完成润色！\n\n主要修改：\n- 优化了文字流畅度\n- 调整了部分句式\n- 增强了表现力\n\n{final_text[:200]}..."
+            })
+            
         else:
-            # 默认由策划师输出
-            final_agent = self.strategist
-            final_key = "plan_text"
-            agent_name = "策划师"
+            # 通用对话
+            result = self.strategist.run({"text": msg})
+            final_text = result.get("plan_text", "")
+            final_agent_name = "策划师"
         
-        # 执行最终 Agent 输出
-        result = final_agent.run({"text": msg})
-        logs.append({
-            "agent": final_agent.__class__.__name__.lower().replace("agent", ""),
-            "agent_name": agent_name,
-            "message": f"📄 最终输出",
-            "content": result.get(final_key, "已根据讨论生成内容")
-        })
-        
-        return {"agent_logs": logs, "final_text": result.get(final_key, "")}
+        return {
+            "agent_logs": logs,
+            "final_text": final_text,
+            "final_agent": final_agent_name,
+            "conversation_state": conversation_state,
+            "requires_user_input": conversation_state.get("waiting_for_user", False)
+        }
