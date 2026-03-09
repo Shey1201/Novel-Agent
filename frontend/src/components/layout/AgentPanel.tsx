@@ -30,7 +30,7 @@ const WORD_COUNT_OPTIONS = [
 ];
 
 export const AgentPanel: React.FC = () => {
-  const { messages, addMessage, currentNovelId, currentChapterId, updateChapterContent, setWorldBible, setWorldApproved, updateNovel, updateChapter, novels } =
+  const { messages, addMessage, currentNovelId, currentChapterId, updateChapterContent, setWorldBible, setWorldApproved, updateNovel, updateChapter, novels, addStoryAsset } =
     useSupabaseStore();
   const [inputValue, setEditValue] = useState("");
   const [selectedWordCount, setSelectedWordCount] = useState(WORD_COUNT_OPTIONS[2]); // 默认标准
@@ -156,28 +156,66 @@ export const AgentPanel: React.FC = () => {
           push("system", "agent", "✅ 已自动保存到小说大纲");
         }
         
-        // 5. 更新设定/世界观 - 保存到 outline 中并标记类型
+        // 5. 更新设定/世界观 - 保存到 Story Bible > World
         else if (lowerMsg.includes('设定') || lowerMsg.includes('世界观') || lowerMsg.includes('背景') ||
                  lowerMsg.includes('world') || lowerMsg.includes('setting') || lowerMsg.includes('规则')) {
+          // 同时保存到 outline 和 Story Bible
           const currentNovel = novels.find(n => n.id === currentNovelId);
           const existingOutline = currentNovel?.outline || '';
           const worldBuildingSection = `\n\n【世界观设定】\n${data.final_text}`;
           updateNovel(currentNovelId, { 
             outline: existingOutline + worldBuildingSection 
           });
-          push("system", "agent", "✅ 已自动保存到小说大纲（世界观部分）");
+          
+          // 添加到 Story Bible > World
+          if (currentNovelId) {
+            addStoryAsset('worldbuilding', {
+              id: `world-${Date.now()}`,
+              name: `世界观设定-${new Date().toLocaleDateString()}`,
+              novelId: currentNovelId
+            });
+          }
+          
+          push("system", "agent", "✅ 已自动保存到小说大纲和 Story Bible > World");
         }
         
-        // 6. 更新角色设定 - 保存到 outline 中并标记类型
+        // 6. 更新角色设定 - 保存到 Story Bible > Characters
         else if (lowerMsg.includes('角色') || lowerMsg.includes('人物') || lowerMsg.includes('character') ||
                  lowerMsg.includes('主角') || lowerMsg.includes('配角')) {
+          // 解析角色列表并添加到 Story Bible
           const currentNovel = novels.find(n => n.id === currentNovelId);
           const existingOutline = currentNovel?.outline || '';
           const charactersSection = `\n\n【角色设定】\n${data.final_text}`;
           updateNovel(currentNovelId, { 
             outline: existingOutline + charactersSection 
           });
-          push("system", "agent", "✅ 已自动保存到小说大纲（角色部分）");
+          
+          // 尝试解析角色名称并添加到 Story Bible > Characters
+          if (currentNovelId && data.final_text) {
+            // 简单解析：查找可能的角色名（以【】或[]包裹的内容，或"角色名："格式）
+            const characterMatches = data.final_text.match(/[【\[]([^【\]\[\]]+)[】\]]|([^：:\n]{2,20})[：:]/g);
+            if (characterMatches && characterMatches.length > 0) {
+              characterMatches.slice(0, 5).forEach((match, index) => {
+                const name = match.replace(/[【\]\[】：:]/g, '').trim();
+                if (name && name.length > 1 && name.length < 20) {
+                  addStoryAsset('characters', {
+                    id: `char-${Date.now()}-${index}`,
+                    name: name,
+                    novelId: currentNovelId
+                  });
+                }
+              });
+            } else {
+              // 如果没有解析到角色名，添加一个整体条目
+              addStoryAsset('characters', {
+                id: `char-${Date.now()}`,
+                name: `角色设定-${new Date().toLocaleDateString()}`,
+                novelId: currentNovelId
+              });
+            }
+          }
+          
+          push("system", "agent", "✅ 已自动保存到小说大纲和 Story Bible > Characters");
         }
         
         // 7. 更新简介/描述 - 保存到 outline 开头
@@ -188,6 +226,72 @@ export const AgentPanel: React.FC = () => {
           const summarySection = `【简介】\n${data.final_text}\n\n${existingOutline}`;
           updateNovel(currentNovelId, { outline: summarySection });
           push("system", "agent", "✅ 已自动保存到小说大纲（简介部分）");
+        }
+        
+        // 8. 更新势力/组织 - 保存到 Story Bible > Factions
+        else if (lowerMsg.includes('势力') || lowerMsg.includes('组织') || lowerMsg.includes('门派') ||
+                 lowerMsg.includes('faction') || lowerMsg.includes('组织') || lowerMsg.includes('集团')) {
+          const currentNovel = novels.find(n => n.id === currentNovelId);
+          const existingOutline = currentNovel?.outline || '';
+          const factionsSection = `\n\n【势力/组织设定】\n${data.final_text}`;
+          updateNovel(currentNovelId, { 
+            outline: existingOutline + factionsSection 
+          });
+          
+          // 添加到 Story Bible > Factions
+          if (currentNovelId) {
+            addStoryAsset('factions', {
+              id: `faction-${Date.now()}`,
+              name: `势力设定-${new Date().toLocaleDateString()}`,
+              novelId: currentNovelId
+            });
+          }
+          
+          push("system", "agent", "✅ 已自动保存到小说大纲和 Story Bible > Factions");
+        }
+        
+        // 9. 更新时间线 - 保存到 Story Bible > Timeline
+        else if (lowerMsg.includes('时间线') || lowerMsg.includes('timeline') || lowerMsg.includes('年表') ||
+                 lowerMsg.includes('历史') || lowerMsg.includes('时间轴') || lowerMsg.includes('年代')) {
+          const currentNovel = novels.find(n => n.id === currentNovelId);
+          const existingOutline = currentNovel?.outline || '';
+          const timelineSection = `\n\n【时间线/历史】\n${data.final_text}`;
+          updateNovel(currentNovelId, { 
+            outline: existingOutline + timelineSection 
+          });
+          
+          // 添加到 Story Bible > Timeline
+          if (currentNovelId) {
+            addStoryAsset('timeline', {
+              id: `timeline-${Date.now()}`,
+              name: `时间线-${new Date().toLocaleDateString()}`,
+              novelId: currentNovelId
+            });
+          }
+          
+          push("system", "agent", "✅ 已自动保存到小说大纲和 Story Bible > Timeline");
+        }
+        
+        // 10. 更新地点/场景 - 保存到 Story Bible > Locations
+        else if (lowerMsg.includes('地点') || lowerMsg.includes('场景') || lowerMsg.includes('location') ||
+                 lowerMsg.includes('地图') || lowerMsg.includes('场景') || lowerMsg.includes('场所')) {
+          const currentNovel = novels.find(n => n.id === currentNovelId);
+          const existingOutline = currentNovel?.outline || '';
+          const locationsSection = `\n\n【地点/场景设定】\n${data.final_text}`;
+          updateNovel(currentNovelId, { 
+            outline: existingOutline + locationsSection 
+          });
+          
+          // 添加到 Story Bible > Locations
+          if (currentNovelId) {
+            addStoryAsset('locations', {
+              id: `location-${Date.now()}`,
+              name: `场景设定-${new Date().toLocaleDateString()}`,
+              novelId: currentNovelId
+            });
+          }
+          
+          push("system", "agent", "✅ 已自动保存到小说大纲和 Story Bible > Locations");
         }
       }
     } catch (error) {
