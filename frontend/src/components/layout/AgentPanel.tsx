@@ -9,7 +9,17 @@ interface ChatResponse {
   world_bible?: { world_view?: string; rules?: string; themes?: string[] };
   approved?: boolean;
   context?: { recent_summaries?: string[] };
-  agent_logs?: Array<{ agent?: string; message?: string; content?: string; requires_user_input?: boolean }>;
+  agent_logs?: Array<{ 
+    agent?: string; 
+    message?: string; 
+    content?: string; 
+    requires_user_input?: boolean;
+    auto_fill?: {
+      type: string;
+      content?: string;
+      items?: Array<{name: string; role?: string}> | string[];
+    };
+  }>;
   conversation_state?: {
     stage?: string;
     workflow_type?: string;
@@ -97,6 +107,79 @@ export const AgentPanel: React.FC = () => {
         // 如果是需要用户输入的决策点，特殊标记
         if (log.requires_user_input) {
           setIsWaitingForUser(true);
+        }
+        
+        // 处理自动填充到 Story Bible
+        if (log.auto_fill && currentNovelId) {
+          const { type, content, items } = log.auto_fill;
+          
+          switch (type) {
+            case 'worldbuilding':
+              addStoryAsset('worldbuilding', {
+                id: `world-${Date.now()}`,
+                name: `世界观设定-${new Date().toLocaleDateString()}`,
+                novelId: currentNovelId
+              });
+              push("system", "agent", "✅ 已自动添加到 Story Bible > World");
+              break;
+              
+            case 'characters':
+              if (items && Array.isArray(items)) {
+                items.forEach((item: any, index: number) => {
+                  if (typeof item === 'object' && item.name) {
+                    addStoryAsset('characters', {
+                      id: `char-${Date.now()}-${index}`,
+                      name: item.name,
+                      novelId: currentNovelId
+                    });
+                  }
+                });
+                push("system", "agent", `✅ 已自动添加 ${items.length} 个角色到 Story Bible > Characters`);
+              }
+              break;
+              
+            case 'factions':
+              if (items && Array.isArray(items)) {
+                items.forEach((name: string, index: number) => {
+                  addStoryAsset('factions', {
+                    id: `faction-${Date.now()}-${index}`,
+                    name: typeof name === 'string' ? name : `势力${index + 1}`,
+                    novelId: currentNovelId
+                  });
+                });
+                push("system", "agent", `✅ 已自动添加 ${items.length} 个势力到 Story Bible > Factions`);
+              }
+              break;
+              
+            case 'outline':
+              if (content) {
+                const currentNovel = novels.find(n => n.id === currentNovelId);
+                const existingOutline = currentNovel?.outline || '';
+                updateNovel(currentNovelId, { 
+                  outline: existingOutline + '\n\n【大纲框架】\n' + content 
+                });
+                push("system", "agent", "✅ 已自动保存大纲到小说设定");
+              }
+              break;
+              
+            case 'timeline':
+              addStoryAsset('timeline', {
+                id: `timeline-${Date.now()}`,
+                name: `时间线-${new Date().toLocaleDateString()}`,
+                novelId: currentNovelId
+              });
+              push("system", "agent", "✅ 已自动添加到 Story Bible > Timeline");
+              break;
+              
+            case 'locations':
+              addStoryAsset('locations', {
+                id: `location-${Date.now()}`,
+                name: `场景设定-${new Date().toLocaleDateString()}`,
+                novelId: currentNovelId
+              });
+              push("system", "agent", "✅ 已自动添加到 Story Bible > Locations");
+              break;
+          }
         }
       });
 

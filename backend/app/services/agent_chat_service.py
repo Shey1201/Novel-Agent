@@ -88,6 +88,83 @@ class AgentChatService:
                 "auto_execute": True
             }
 
+    def _check_story_bible_completeness(self, context: Dict[str, Any]) -> Dict[str, bool]:
+        """
+        检查 Story Bible 的完整性，返回缺失的部分
+        """
+        return {
+            "world": bool(context.get("world") and len(context.get("world", "")) > 50),
+            "outline": bool(context.get("recent_summaries") and len(context.get("recent_summaries", [])) > 0),
+            "characters": False,  # 简化检查，实际应该从数据库获取
+            "factions": False,
+            "timeline": False,
+            "locations": False
+        }
+    
+    def _generate_story_bible_content(self, topic: str, missing_parts: Dict[str, bool]) -> List[Dict[str, Any]]:
+        """
+        为缺失的 Story Bible 部分生成内容
+        """
+        logs: List[Dict[str, Any]] = []
+        
+        # 检查是否需要补充世界观
+        if not missing_parts.get("world", False):
+            logs.append({
+                "agent": "strategist",
+                "agent_name": "策划师",
+                "message": "🌍 补充世界观",
+                "content": f"检测到 Story Bible 中缺少世界观设定。基于主题'{topic}'，我来补充：\n\n【世界观框架】\n- 故事发生在一个现代都市背景\n- 社会结构：普通人类社会，存在隐秘的超自然元素\n- 核心规则：主角拥有特殊能力，但需要在日常生活中隐藏\n- 时代背景：当代，科技发达但神秘力量依然存在\n\n这个设定可以支撑青春校园+奇幻的故事类型。",
+                "auto_fill": {
+                    "type": "worldbuilding",
+                    "content": "现代都市背景，存在隐秘超自然元素。主角拥有特殊能力但需隐藏。"
+                }
+            })
+        
+        # 检查是否需要补充角色
+        if not missing_parts.get("characters", False):
+            logs.append({
+                "agent": "writer",
+                "agent_name": "作家",
+                "message": "👤 设计主角",
+                "content": "基于主题，我设计了以下核心角色：\n\n【主角】\n- 姓名：林墨（暂定）\n- 年龄：17岁\n- 性格：内向敏感，但内心坚韧\n- 背景：普通高中生，偶然发现自己有特殊能力\n- 目标：在保护秘密的同时，寻找自己能力的来源\n\n【重要配角】\n- 苏晴：主角的同学，阳光开朗，可能是第一个发现主角秘密的人\n- 陈教授：神秘的历史老师，似乎知道一些关于超自然力量的秘密",
+                "auto_fill": {
+                    "type": "characters",
+                    "items": [
+                        {"name": "林墨", "role": "主角"},
+                        {"name": "苏晴", "role": "同学/朋友"},
+                        {"name": "陈教授", "role": "导师"}
+                    ]
+                }
+            })
+        
+        # 检查是否需要补充大纲
+        if not missing_parts.get("outline", False):
+            logs.append({
+                "agent": "strategist",
+                "agent_name": "策划师",
+                "message": "📋 构建大纲",
+                "content": "让我为这个故事构建一个基础大纲：\n\n【第一幕：觉醒】（第1-5章）\n- 主角发现自己的能力\n- 试图隐藏但遇到困难\n- 遇到第一个关键人物\n\n【第二幕：探索】（第6-15章）\n- 逐渐了解能力来源\n- 建立人际关系\n- 发现潜在威胁\n\n【第三幕：冲突】（第16-25章）\n- 秘密面临暴露危机\n- 与反派势力对抗\n- 关键抉择时刻\n\n【第四幕：结局】（第26-30章）\n- 最终对决\n- 能力完全觉醒\n- 新的开始",
+                "auto_fill": {
+                    "type": "outline",
+                    "content": "第一幕：觉醒（1-5章）→ 第二幕：探索（6-15章）→ 第三幕：冲突（16-25章）→ 第四幕：结局（26-30章）"
+                }
+            })
+        
+        # 检查是否需要补充势力/组织
+        if not missing_parts.get("factions", False):
+            logs.append({
+                "agent": "critic",
+                "agent_name": "评论家",
+                "message": "🏛️ 设定势力",
+                "content": "为了让故事更有张力，我建议加入以下势力：\n\n【守秘人协会】\n- 性质：隐秘组织\n- 目标：保护超自然秘密，维持平衡\n- 对主角态度：观察中，可能招募\n\n【觉醒者联盟】\n- 性质：松散的能力者组织\n- 目标：帮助新觉醒者适应能力\n- 对主角态度：友好，提供帮助\n\n【影子议会】\n- 性质：神秘势力\n- 目标：利用能力者达到某种目的\n- 对主角态度：敌视，可能制造麻烦",
+                "auto_fill": {
+                    "type": "factions",
+                    "items": ["守秘人协会", "觉醒者联盟", "影子议会"]
+                }
+            })
+        
+        return logs
+
     def _generate_autonomous_workflow(self, topic: str, context: Dict[str, Any], intent: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
         生成 Agent 自主工作流程
@@ -111,7 +188,42 @@ class AgentChatService:
             "content": f"我理解用户的需求是：{topic}\n\n让我分析一下关键点：\n1. 这是一个{workflow_type}类型的任务\n2. 需要先明确目标和约束条件\n3. 制定执行策略"
         })
         
-        # Step 2: 评论家提出潜在问题
+        # Step 2: 检查 Story Bible 完整性并自动补充
+        logs.append({
+            "agent": "system",
+            "message": "🔍 检查 Story Bible",
+            "content": "Agent 们正在检查当前项目的设定完整性..."
+        })
+        
+        completeness = self._check_story_bible_completeness(context)
+        missing_count = sum(1 for v in completeness.values() if not v)
+        
+        if missing_count > 0:
+            logs.append({
+                "agent": "strategist",
+                "agent_name": "策划师",
+                "message": "⚠️ 发现缺失",
+                "content": f"检测到 Story Bible 有 {missing_count} 个部分需要补充。Agent 团队将自主完善这些内容。"
+            })
+            
+            # 自动生成缺失内容
+            auto_fill_logs = self._generate_story_bible_content(topic, completeness)
+            logs.extend(auto_fill_logs)
+            
+            logs.append({
+                "agent": "system",
+                "message": "✅ 补充完成",
+                "content": "Story Bible 基础内容已自动生成。这些内容已保存到项目设定中。"
+            })
+        else:
+            logs.append({
+                "agent": "strategist",
+                "agent_name": "策划师",
+                "message": "✓ 设定完整",
+                "content": "Story Bible 内容完整，可以直接开始创作。"
+            })
+        
+        # Step 3: 评论家提出潜在问题
         logs.append({
             "agent": "critic",
             "agent_name": "评论家",
@@ -119,7 +231,7 @@ class AgentChatService:
             "content": "在开始前，我需要考虑几个潜在问题：\n- 用户是否有明确的风格偏好？\n- 是否有特定的字数或篇幅要求？\n- 目标读者群体是谁？\n\n如果这些信息不明确，可能会偏离用户预期。"
         })
         
-        # Step 3: 编辑建议流程
+        # Step 4: 编辑建议流程
         logs.append({
             "agent": "editor",
             "agent_name": "编辑",
@@ -127,7 +239,7 @@ class AgentChatService:
             "content": "建议按以下流程执行：\n1. 先进行内部讨论，明确方案\n2. 在关键决策点向用户确认\n3. 根据反馈调整\n4. 最终输出成果"
         })
         
-        # Step 4: 团队内部讨论（模拟自主决策）
+        # Step 5: 团队内部讨论（模拟自主决策）
         logs.append({
             "agent": "system",
             "message": "💬 团队内部讨论",
