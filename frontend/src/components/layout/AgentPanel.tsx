@@ -140,7 +140,7 @@ export const AgentPanel: React.FC = () => {
               
             case 'factions':
               if (items && Array.isArray(items)) {
-                items.forEach((name: string, index: number) => {
+                (items as string[]).forEach((name: string, index: number) => {
                   addStoryAsset('factions', {
                     id: `faction-${Date.now()}-${index}`,
                     name: typeof name === 'string' ? name : `势力${index + 1}`,
