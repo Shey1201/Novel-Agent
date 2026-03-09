@@ -983,6 +983,14 @@ export const useSupabaseStore = create<NovelState>()(
 
       // 资源方法
       addStoryAsset: async (category, asset) => {
+        // 先更新本地状态（无论 Supabase 是否成功）
+        set((state) => ({
+          storyAssets: {
+            ...state.storyAssets,
+            [category]: [...state.storyAssets[category], asset],
+          },
+        }));
+        
         // 同步到 Supabase - 使用新的 assets 表（合并 story_assets 和 global_assets）
         try {
           const { data, error } = await supabase.from('assets').insert({
@@ -998,7 +1006,7 @@ export const useSupabaseStore = create<NovelState>()(
           }).select('id').single();
 
           if (error) {
-            console.error('Failed to create story asset in Supabase:', error);
+            console.warn('Failed to sync story asset to Supabase (RLS policy may be needed):', error);
             return;
           }
 
@@ -1007,12 +1015,12 @@ export const useSupabaseStore = create<NovelState>()(
           set((state) => ({
             storyAssets: {
               ...state.storyAssets,
-              [category]: [...state.storyAssets[category], assetWithDbId],
+              [category]: state.storyAssets[category].map(a => a.id === asset.id ? assetWithDbId : a),
             },
           }));
           console.log('Story asset created in Supabase:', data.id);
         } catch (err) {
-          console.error('Error creating story asset:', err);
+          console.warn('Error syncing story asset to Supabase:', err);
         }
       },
       removeStoryAsset: async (category, id) => {
