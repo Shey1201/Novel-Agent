@@ -458,19 +458,38 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             <CollapsibleSection
               title="AI Configuration"
               subtitle="Configure AI API (OpenAI Compatible)"
-              defaultExpanded={true}
+              defaultExpanded={false}
               alignSubtitle="left"
               badge={
-                <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full ${
-                  aiConfig.is_active 
-                    ? 'text-emerald-700 bg-emerald-50' 
-                    : 'text-zinc-600 bg-zinc-100'
-                }`}>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M20 6 9 17l-5-5"/>
-                  </svg>
-                  {aiConfig.is_active ? 'Custom Key Active' : 'Built-in Key Active'}
-                </span>
+                <div className="flex items-center gap-3">
+                  {/* Activation Toggle */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      // 检查是否已配置
+                      if (!aiConfig.chat_model || !aiConfig.api_key || !aiConfig.base_url) {
+                        alert('请先填写 AI 配置信息（CHAT_MODEL、API_KEY、BASE_URL）');
+                        return;
+                      }
+                      toggleAIActivation();
+                    }}
+                    disabled={isSavingAI}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed ${
+                      aiConfig.is_active ? 'bg-emerald-500' : 'bg-zinc-200'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        aiConfig.is_active ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                  <span className={`text-xs font-medium ${
+                    aiConfig.is_active ? 'text-emerald-600' : 'text-zinc-500'
+                  }`}>
+                    {aiConfig.is_active ? '已激活' : '未激活'}
+                  </span>
+                </div>
               }
             >
               <div className="space-y-4">
@@ -510,7 +529,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                   />
                 </div>
                 
-                {/* Action Buttons */}
+                {/* Save Button */}
                 <div className="flex items-center gap-3 pt-2">
                   <button
                     onClick={saveAIConfig}
@@ -519,25 +538,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                   >
                     {isSavingAI ? 'Saving...' : 'Save Config'}
                   </button>
-                  <button
-                    onClick={toggleAIActivation}
-                    disabled={isSavingAI || !aiConfig.chat_model || !aiConfig.api_key}
-                    className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                      aiConfig.is_active
-                        ? 'text-zinc-700 bg-zinc-100 hover:bg-zinc-200'
-                        : 'text-white bg-emerald-600 hover:bg-emerald-700'
-                    }`}
-                  >
-                    {aiConfig.is_active ? 'Deactivate' : 'Activate'}
-                  </button>
                 </div>
-                
-                {/* Hint Text */}
-                {!aiConfig.chat_model || !aiConfig.api_key ? (
-                  <p className="text-xs text-zinc-500">
-                    Please fill in CHAT_MODEL and API_KEY before activating
-                  </p>
-                ) : null}
               </div>
             </CollapsibleSection>
 
