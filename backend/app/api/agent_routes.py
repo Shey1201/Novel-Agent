@@ -14,19 +14,11 @@ from app.core.ai_config import create_llm_from_config, get_ai_config_from_db
 
 router = APIRouter(prefix="/api/agent", tags=["agent-room"])
 
-# 延迟初始化 chat_service
-_chat_service_instance = None
-
-
 def get_chat_service():
-    """获取 AgentChatService 实例，使用数据库中的 AI 配置"""
-    global _chat_service_instance
-    if _chat_service_instance is None:
-        # 从数据库读取 AI 配置并创建 LLM
-        ai_config = get_ai_config_from_db()
-        llm = create_llm_from_config(ai_config)
-        _chat_service_instance = AgentChatService(llm=llm)
-    return _chat_service_instance
+    """每次请求动态创建 AgentChatService，确保读取最新 AI 配置。"""
+    ai_config = get_ai_config_from_db()
+    llm = create_llm_from_config(ai_config)
+    return AgentChatService(llm=llm)
 
 
 class WordCountRange(BaseModel):

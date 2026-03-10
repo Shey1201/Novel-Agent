@@ -7,34 +7,37 @@ from typing import Optional, Dict, Any
 
 
 def get_ai_config_from_db() -> Optional[Dict[str, Any]]:
-    """
-    从数据库读取 AI 配置
-    
-    Returns:
-        如果配置存在且激活，返回配置字典；否则返回 None
-    """
+    """从数据库读取 AI 配置（兼容 settings/system_settings 两种表结构）。"""
     try:
         from app.memory.system_settings import supabase
-        
-        result = supabase.table("settings").select(
-            "ai_chat_model, ai_api_key, ai_base_url, ai_is_active"
-        ).limit(1).execute()
-        
-        if result.data and len(result.data) > 0:
+
+        if supabase is None:
+            return None
+
+        def _read_from_table(table_name: str) -> Optional[Dict[str, Any]]:
+            query = supabase.table(table_name).select(
+                "ai_chat_model, ai_api_key, ai_base_url, ai_is_active"
+            )
+            if table_name == "settings":
+                query = query.is_("deleted_at", "null")
+
+            result = query.limit(1).execute()
+            if not result.data:
+                return None
+
             data = result.data[0]
-            is_active = data.get("ai_is_active", False)
+            is_active = bool(data.get("ai_is_active", False))
             api_key = data.get("ai_api_key")
-            
-            # 只有当配置激活且有 API Key 时才返回配置
             if is_active and api_key:
                 return {
                     "model": data.get("ai_chat_model", "gpt-4o-mini"),
                     "api_key": api_key,
                     "base_url": data.get("ai_base_url"),
-                    "is_active": True
+                    "is_active": True,
                 }
-        
-        return None
+            return None
+
+        return _read_from_table("settings") or _read_from_table("system_settings")
     except Exception as e:
         print(f"从数据库读取 AI 配置失败: {e}")
         return None
@@ -77,22 +80,13 @@ def create_llm_from_config(config: Optional[Dict[str, Any]] = None):
 
 def get_llm_with_fallback():
     """
-    获取 LLM 实例，优先使用数据库配置，其次使用环境变量
-    
+    获取 LLM 实例（仅使用数据库配置）。
+
     Returns:
         LLM 实例或 None
     """
-    # 首先尝试从数据库获取配置
     db_config = get_ai_config_from_db()
-    if db_config:
-        llm = create_llm_from_config(db_config)
-        if llm:
-            return llm
-    
-    # 如果数据库配置无效，尝试使用环境变量
-    try:
-        from app.core.llm import get_llm
-        return get_llm()
-    except Exception as e:
-        print(f"从环境变量获取 LLM 失败: {e}")
+    if not db_config:
         return None
+
+    return create_llm_from_config(db_config)
