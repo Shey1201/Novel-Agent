@@ -17,11 +17,11 @@ class Settings(BaseSettings):
     """
 
     # 基础
-    app_name: str = "Multi-Agent Novel Backend"
+    app_name: str = "Novel Agent Studio"
     debug: bool = True
 
     # LLM 配置（占位）
-    openai_api_key: Optional[str] = None
+    openai_api_key: str = ""
     deepseek_api_key: Optional[str] = None
     claude_api_key: Optional[str] = None
 

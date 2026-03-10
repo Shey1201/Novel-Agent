@@ -211,9 +211,15 @@ class AssetManager:
         return self.get_assets_by_novel(novel_id)
 
     def get_asset_mount_count(self, asset_id: str) -> int:
-        """获取资产挂载次数（当前返回0，需要后续实现）"""
-        # TODO: 实现挂载计数逻辑
-        return 0
+        """获取资产挂载次数"""
+        if not self._ensure_connected():
+            return 0
+        try:
+            response = self.supabase.table("asset_mounts").select("*", count="exact").eq("asset_id", asset_id).execute()
+            return response.count if response.count is not None else 0
+        except Exception as e:
+            print(f"[AssetManager] Error getting mount count: {e}")
+            return 0
 
     def search_assets(self, query: str) -> List[Asset]:
         """搜索资产"""
@@ -241,22 +247,56 @@ class AssetManager:
         return []
 
     def mount_asset_to_novel(self, asset_id: str, novel_id: str, reference_type: str = "linked", version_id: Optional[str] = None) -> bool:
-        """挂载资产到小说（当前实现为更新 novel_id）"""
-        return self.update_asset(asset_id, {"novel_id": novel_id}) is not None
+        """挂载资产到小说"""
+        if not self._ensure_connected():
+            return False
+        try:
+            data = {
+                "asset_id": asset_id,
+                "novel_id": novel_id,
+                "reference_type": reference_type,
+                "version_id": version_id
+            }
+            response = self.supabase.table("asset_mounts").insert(data).execute()
+            return len(response.data) > 0
+        except Exception as e:
+            print(f"[AssetManager] Error mounting asset: {e}")
+            return False
 
     def unmount_asset_from_novel(self, asset_id: str, novel_id: str) -> bool:
         """从小说卸载资产"""
-        asset = self.get_asset(asset_id)
-        if asset and asset.novel_id == novel_id:
-            return self.update_asset(asset_id, {"novel_id": None}) is not None
-        return False
+        if not self._ensure_connected():
+            return False
+        try:
+            response = self.supabase.table("asset_mounts").delete().eq("asset_id", asset_id).eq("novel_id", novel_id).execute()
+            return len(response.data) > 0
+        except Exception as e:
+            print(f"[AssetManager] Error unmounting asset: {e}")
+            return False
 
     def get_mount_info(self, asset_id: str, novel_id: str) -> Optional[Dict[str, Any]]:
         """获取资产挂载信息"""
-        asset = self.get_asset(asset_id)
-        if asset and asset.novel_id == novel_id:
-            return {"asset_id": asset_id, "novel_id": novel_id, "mounted": True}
-        return None
+        if not self._ensure_connected():
+            return None
+        try:
+            response = self.supabase.table("asset_mounts").select("*").eq("asset_id", asset_id).eq("novel_id", novel_id).execute()
+            if response.data:
+                return {"asset_id": asset_id, "novel_id": novel_id, "mounted": True, **response.data[0]}
+            return None
+        except Exception as e:
+            print(f"[AssetManager] Error getting mount info: {e}")
+            return None
+
+    def is_asset_mounted_to_novel(self, asset_id: str, novel_id: str) -> bool:
+        """检查资产是否已挂载到小说"""
+        if not self._ensure_connected():
+            return False
+        try:
+            response = self.supabase.table("asset_mounts").select("*").eq("asset_id", asset_id).eq("novel_id", novel_id).execute()
+            return len(response.data) > 0
+        except Exception as e:
+            print(f"[AssetManager] Error checking mount status: {e}")
+            return False
 
     def create_asset_version(self, asset_id: str, version: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """创建资产版本（当前实现为将版本信息存储在 content 中）"""

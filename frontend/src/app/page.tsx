@@ -16,6 +16,7 @@ import SkillsManagement from "@/components/workspace/skills";
 import Settings, { SettingsModal } from "@/components/workspace/settings";
 import Library from "@/components/workspace/library";
 import RecycleBin from "@/components/workspace/recycle-bin";
+import PerformanceDashboard from "@/components/workspace/performance";
 
 export default function Home() {
   const editorRef = useRef<TiptapEditorHandle>(null);
@@ -145,6 +146,12 @@ export default function Home() {
               {workspaceModule === 'recycle-bin' && (
                 <div className="p-8">
                   <RecycleBin />
+                </div>
+              )}
+
+              {workspaceModule === 'performance' && (
+                <div className="h-full">
+                  <PerformanceDashboard />
                 </div>
               )}
             </div>

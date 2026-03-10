@@ -292,24 +292,76 @@ POST /api/world/{novel_id}
 
 ---
 
-## 写作室 API
+## Agent Room API
 
-### 创建讨论
+### 开始讨论
 
 ```http
-POST /api/writers-room/discuss
+POST /api/agent-room/discussion/start
 ```
 
 **请求体**:
 ```json
 {
+  "novel_id": "string",
+  "chapter_id": "string",
   "topic": "string",
-  "agents": ["string"],
-  "context": "string"
+  "current_draft": "string",
+  "author_preferences": {},
+  "constraints": {},
+  "max_rounds": 3
 }
 ```
 
-**响应**: 流式SSE响应
+**响应**:
+```json
+{
+  "discussion_id": "string",
+  "status": "started",
+  "max_rounds": 3,
+  "participating_agents": ["planner", "conflict", "writer", "editor", "reader"]
+}
+```
+
+### 获取讨论轮次
+
+```http
+GET /api/agent-room/discussion/{discussion_id}/round/{round_num}
+```
+
+**响应**:
+```json
+{
+  "round": 1,
+  "messages": [
+    {
+      "agent": "planner",
+      "content": "string",
+      "timestamp": "2024-01-01T00:00:00Z"
+    }
+  ]
+}
+```
+
+### 人工干预
+
+```http
+POST /api/agent-room/discussion/{discussion_id}/intervene
+```
+
+**请求体**:
+```json
+{
+  "action": "accept|reject|comment",
+  "content": "string"
+}
+```
+
+### WebSocket 实时通信
+
+```
+ws://localhost:8000/api/agent-room/ws/{discussion_id}
+```
 
 ---
 

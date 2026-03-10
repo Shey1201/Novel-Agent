@@ -7,6 +7,7 @@ import uuid
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass, field
+from app.core.cache_manager import cached, cache_invalidate
 
 try:
     from supabase import create_client
@@ -112,6 +113,7 @@ class NovelMemory:
     
     # ========== 小说操作 ==========
     
+    @cached(ttl=60, key_prefix="novels")
     def get_all_novels(self) -> List[Novel]:
         """获取所有小说（排除已删除的）"""
         print(f"[NovelMemory] get_all_novels called, supabase connected: {self.supabase is not None}")
@@ -175,6 +177,7 @@ class NovelMemory:
             
             response = self.supabase.table("novels").insert(data).execute()
             if response.data:
+                cache_invalidate("novels")
                 return Novel(**response.data[0])
         except Exception as e:
             print(f"NovelMemory: Error creating novel: {e}")
@@ -190,6 +193,7 @@ class NovelMemory:
             
             response = self.supabase.table("novels").update(updates).eq("id", novel_id).execute()
             if response.data:
+                cache_invalidate("novels")
                 return Novel(**response.data[0])
         except Exception as e:
             print(f"NovelMemory: Error updating novel: {e}")
@@ -206,7 +210,9 @@ class NovelMemory:
             
             # 再删除小说
             response = self.supabase.table("novels").delete().eq("id", novel_id).execute()
-            return len(response.data) > 0
+            if len(response.data) > 0:
+                cache_invalidate("novels")
+                return True
         except Exception as e:
             print(f"NovelMemory: Error deleting novel: {e}")
         return False

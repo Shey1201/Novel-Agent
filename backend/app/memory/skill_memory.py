@@ -533,6 +533,162 @@ class SkillMemory:
             print(f"Error unlinking asset from skill: {e}")
         return False
 
+    def get_skills_by_asset(self, asset_id: str) -> List[Skill]:
+        """获取资产关联的所有技能"""
+        if not self.supabase:
+            return []
+
+        try:
+            response = self.supabase.table("skills").select("*").contains("linked_assets", [asset_id]).execute()
+            if not response.data:
+                return []
+
+            skills = []
+            for skill_data in response.data:
+                skill_data["constraints"] = _process_constraints(skill_data.get("constraints"))
+                skills.append(Skill(**skill_data))
+
+            return skills
+        except Exception as e:
+            print(f"Error fetching skills by asset: {e}")
+        return []
+
+    def get_skills_for_agent(self, novel_id: str, agent_type: str) -> List[Skill]:
+        """获取指定小说的指定Agent类型的技能"""
+        novel_skills = self.get_active_skills_for_novel(novel_id)
+        return [s for s in novel_skills if agent_type in s.target_agents]
+
+    def build_agent_prompt(self, novel_id: str, agent_type: str) -> str:
+        """构建Agent的prompt，包含所有相关技能约束"""
+        skills = self.get_skills_for_agent(novel_id, agent_type)
+
+        if not skills:
+            return ""
+
+        prompt_parts = ["\n=== 创作约束与设定 ===\n"]
+        for skill in skills:
+            for constraint in skill.constraints:
+                if constraint.enabled:
+                    prompt_parts.append(f"\n【{constraint.priority.upper()}】{constraint.content}\n")
+
+        return "\n".join(prompt_parts)
+
+    def toggle_skill_active(self, skill_id: str) -> Optional[bool]:
+        """切换技能激活状态"""
+        if not self.supabase:
+            return None
+
+        try:
+            # 获取当前状态
+            skill = self.get_skill_by_id(skill_id)
+            if not skill:
+                return None
+
+            new_status = not skill.is_active
+            self.supabase.table("skills").update({
+                "is_active": new_status,
+                "updated_at": datetime.now().isoformat()
+            }).eq("id", skill_id).execute()
+
+            return new_status
+        except Exception as e:
+            print(f"Error toggling skill active: {e}")
+        return None
+
+    def create_skill_from_asset(
+        self,
+        skill_id: str,
+        skill_name: str,
+        description: str,
+        asset_id: str,
+        asset_type: str,
+        asset_content: str,
+        target_agents: List[str],
+        novel_id: Optional[str] = None
+    ) -> Skill:
+        """从资产创建Agent技能"""
+        import uuid
+
+        # 构建技能内容约束
+        constraint_content = self._build_skill_content_from_asset(asset_type, skill_name, asset_content)
+
+        skill = Skill(
+            id=skill_id or f"skill-{uuid.uuid4().hex[:8]}",
+            name=skill_name,
+            description=description,
+            constraints=[
+                SkillConstraint(
+                    id=f"constraint-{uuid.uuid4().hex[:8]}",
+                    content=constraint_content,
+                    priority="high",
+                    enabled=True
+                )
+            ],
+            target_agents=target_agents,
+            linked_assets=[asset_id],
+            applicable_novels=[novel_id] if novel_id else [],
+            is_active=True
+        )
+
+        return self.create_skill(skill)
+
+    def _build_skill_content_from_asset(self, asset_type: str, name: str, content: str) -> str:
+        """从资产构建技能内容文本"""
+        templates = {
+            "characters": f"""【角色设定约束】
+角色名称: {name}
+角色描述: {content}
+
+在创作过程中，请确保：
+1. 该角色的言行符合上述设定
+2. 保持角色性格的一致性
+3. 角色的成长变化需要有合理的铺垫
+""",
+            "worldbuilding": f"""【世界观约束】
+设定名称: {name}
+设定内容: {content}
+
+在创作过程中，请确保：
+1. 严格遵守上述世界观设定
+2. 所有情节发展符合世界规则
+3. 不出现与设定矛盾的内容
+""",
+            "factions": f"""【势力设定约束】
+势力名称: {name}
+势力描述: {content}
+
+在创作过程中，请确保：
+1. 该势力的行为符合其设定
+2. 势力间的互动符合逻辑
+3. 势力发展和变化有合理铺垫
+""",
+            "timeline": f"""【时间线约束】
+时间线名称: {name}
+时间线内容: {content}
+
+在创作过程中，请确保：
+1. 严格遵守时间线顺序
+2. 事件发展符合时间逻辑
+3. 不出现时间矛盾
+""",
+            "locations": f"""【场景设定约束】
+场景名称: {name}
+场景描述: {content}
+
+在创作过程中，请确保：
+1. 场景描述符合设定
+2. 场景转换自然合理
+3. 保持场景一致性
+"""
+        }
+
+        return templates.get(asset_type, f"""【设定约束】
+设定名称: {name}
+设定内容: {content}
+
+在创作过程中，请确保遵守上述设定。
+""")
+
 
 # 全局实例
 skill_memory = SkillMemory()

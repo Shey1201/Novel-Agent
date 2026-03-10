@@ -33,8 +33,7 @@ Novel-Agent-Studio/
 │   │   │   ├── layout/         # 布局组件
 │   │   │   ├── story-bible/    # 故事设定组件
 │   │   │   ├── visualization/  # 可视化组件
-│   │   │   ├── workspace/      # 工作区组件
-│   │   │   └── writers-room/   # 写作室组件
+│   │   │   └── workspace/      # 工作区组件
 │   │   └── store/              # Zustand状态管理
 │   ├── public/                 # 静态资源
 │   ├── jest.config.js          # Jest测试配置
@@ -89,8 +88,7 @@ Novel-Agent-Studio/
 | `skills.py` | `/api/skills` | 技能系统 |
 | `world_routes.py` | `/api/world` | 世界观管理 |
 | `stream_api.py` | `/api/stream` | 流式生成 |
-| `writers_room_api.py` | `/api/writers-room` | 写作室 |
-| `agent_room_api.py` | `/api/agent-room` | Agent房间 |
+| `agent_room_api.py` | `/api/agent-room` | Agent房间 (包含写作室功能) |
 | `analysis_api.py` | `/api/analysis` | 文本分析 |
 | `analytics_api.py` | `/api/analytics` | 数据统计 |
 | `cache_api.py` | `/api/cache` | 缓存管理 |
@@ -152,9 +150,9 @@ Novel-Agent-Studio/
 | 文件 | 功能 |
 |------|------|
 | `langgraph_flow_v3.py` | LangGraph工作流编排 |
-| `writers_room.py` | 写作室工作流 |
-| `facilitator.py` | 协调者 |
 | `human_in_the_loop.py` | 人工介入机制 |
+
+> 注：Writers Room 功能已合并到 Agent Room |
 
 ### 6. 服务层 (`app/services/`)
 
@@ -234,12 +232,10 @@ tests/
 │   ├── test_download_api.py   # 下载API测试
 │   ├── test_story_memory.py   # 记忆系统测试
 │   ├── test_memory_manager.py # 记忆管理器测试
-│   ├── test_writers_room.py   # 写作室测试
 │   └── test_config.py         # 配置测试
 ├── integration/               # 集成测试
 │   ├── test_api_basic.py      # API基础测试
-│   ├── test_novel_workflow.py # 小说流程测试
-│   └── test_writers_room_api.py # 写作室API测试
+│   └── test_novel_workflow.py # 小说流程测试
 └── conftest.py                # Pytest配置
 ```
 

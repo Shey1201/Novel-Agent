@@ -10,8 +10,12 @@ from app.agents.summary_agent import SummaryAgent
 from app.agents.writing_agent import WritingAgent
 from app.domain.pipeline_state import GraphState
 from app.memory.story_memory import ChapterSummary
-from app.memory.agent_skill_manager import skill_manager
+from app.memory.skill_memory import skill_memory
 from app.services.chapter_service import save_memory
+
+
+# 全局 LLM 实例，由 build_full_flow 设置
+_global_llm = None
 
 
 def _get_story_id(state: GraphState) -> Optional[str]:
@@ -29,7 +33,7 @@ def _build_agent_input(state: GraphState, agent_type: str, base_input: str) -> s
         return base_input
 
     # 获取该Agent类型的技能约束
-    skill_prompt = skill_manager.build_agent_prompt(story_id, agent_type)
+    skill_prompt = skill_memory.build_agent_prompt(story_id, agent_type)
 
     if skill_prompt:
         return f"{base_input}\n\n{skill_prompt}"
@@ -37,7 +41,7 @@ def _build_agent_input(state: GraphState, agent_type: str, base_input: str) -> s
 
 
 def planner_node(state: GraphState) -> Dict[str, Any]:
-    agent = PlannerAgent()
+    agent = PlannerAgent(llm=_global_llm)
     input_text = _build_agent_input(state, "planner", state.get("input_text", ""))
     result = agent.run({"text": input_text})
     return {
@@ -47,7 +51,7 @@ def planner_node(state: GraphState) -> Dict[str, Any]:
 
 
 def conflict_node(state: GraphState) -> Dict[str, Any]:
-    agent = ConflictAgent()
+    agent = ConflictAgent(llm=_global_llm)
     input_text = _build_agent_input(state, "conflict", state.get("plan_text", ""))
     result = agent.run({"draft_text": input_text})
     return {
@@ -57,7 +61,7 @@ def conflict_node(state: GraphState) -> Dict[str, Any]:
 
 
 def writing_node(state: GraphState) -> Dict[str, Any]:
-    agent = WritingAgent()
+    agent = WritingAgent(llm=_global_llm)
     base_input = f"{state.get('plan_text', '')}\n\n[Conflict Suggestions]\n" + "\n".join(
         state.get("conflict_suggestions", [])
     )
@@ -71,7 +75,7 @@ def writing_node(state: GraphState) -> Dict[str, Any]:
 
 
 def editor_node(state: GraphState) -> Dict[str, Any]:
-    agent = EditorAgent()
+    agent = EditorAgent(llm=_global_llm)
     base_input = state.get("draft_text", "")
     input_text = _build_agent_input(state, "editor", base_input)
     result = agent.run(
@@ -88,7 +92,7 @@ def editor_node(state: GraphState) -> Dict[str, Any]:
 
 
 def reader_node(state: GraphState) -> Dict[str, Any]:
-    agent = ReaderAgent()
+    agent = ReaderAgent(llm=_global_llm)
     base_input = state.get("edited_text", "")
     input_text = _build_agent_input(state, "reader", base_input)
     result = agent.run({"draft_text": input_text})
@@ -99,15 +103,16 @@ def reader_node(state: GraphState) -> Dict[str, Any]:
 
 
 def summary_node(state: GraphState) -> Dict[str, Any]:
-    agent = SummaryAgent()
+    agent = SummaryAgent(llm=_global_llm)
     base_input = state.get("edited_text", "")
     input_text = _build_agent_input(state, "summary", base_input)
     summary_result = agent.run(input_text)
 
     memory = state.get("story_memory")
-    if memory:
+    chapter_id = state.get("chapter_id") or "new-chapter"
+    if memory and chapter_id:
         new_summary = ChapterSummary(
-            chapter_id="new-chapter",
+            chapter_id=chapter_id,
             title="Chapter Summary",
             summary=summary_result,
         )
@@ -129,7 +134,10 @@ def summary_node(state: GraphState) -> Dict[str, Any]:
     }
 
 
-def build_full_flow():
+def build_full_flow(llm=None):
+    global _global_llm
+    _global_llm = llm
+
     workflow = StateGraph(GraphState)
 
     workflow.add_node("planner", planner_node)

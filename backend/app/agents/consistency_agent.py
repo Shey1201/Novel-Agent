@@ -306,6 +306,59 @@ class ConsistencyAgent(BaseAgent):
             return issue.get("suggestion", "请检查并修改")
 
 
+    def run(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        标准 Agent 接口 - 执行一致性检查
+        
+        Args:
+            input_data: 包含以下键的字典
+                - text: 待检查的文本
+                - story_bible: 故事圣经（包含角色、世界观、剧情设定）
+                - check_type: 检查类型 (all/character/world/plot)，默认 all
+                
+        Returns:
+            包含检查结果的字典
+        """
+        text = input_data.get("text", "")
+        story_bible = input_data.get("story_bible", {})
+        check_type = input_data.get("check_type", "all")
+        
+        all_issues = []
+        
+        if check_type in ["all", "character"]:
+            character_profiles = story_bible.get("characters", {})
+            issues = self.check_character_consistency(text, character_profiles)
+            all_issues.extend(issues)
+        
+        if check_type in ["all", "world"]:
+            world_data = story_bible.get("world", {})
+            issues = self.check_world_consistency(text, world_data)
+            all_issues.extend(issues)
+        
+        if check_type in ["all", "plot"]:
+            plot_data = story_bible.get("plot", {})
+            previous = story_bible.get("previous_chapters", [])
+            issues = self.check_plot_consistency(text, plot_data, previous)
+            all_issues.extend(issues)
+        
+        # 格式化结果
+        has_issues = len(all_issues) > 0
+        formatted_issues = []
+        
+        for issue in all_issues:
+            severity = issue.get("severity", "medium")
+            icon = "🔴" if severity == "critical" else "🟡" if severity == "medium" else "🟢"
+            formatted_issues.append(f"{icon} {issue.get('description', '')}")
+        
+        return {
+            "issues": all_issues,
+            "has_issues": has_issues,
+            "issues_count": len(all_issues),
+            "formatted_issues": "\n".join(formatted_issues) if formatted_issues else "✅ 未发现问题",
+            "feedback": "\n".join(formatted_issues) if formatted_issues else "内容一致性良好"
+        }
+
+
 # 便捷函数
 def check_consistency(
     text: str,

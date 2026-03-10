@@ -25,9 +25,17 @@ interface ChatResponse {
     workflow_type?: string;
     waiting_for_user?: boolean;
     accumulated_content?: string[];
+    story_id?: string;
+    chapter_id?: string;
+    context_confirmed?: boolean;
   };
   requires_user_input?: boolean;
   final_agent?: string;
+  trace_data?: Array<{
+    text?: string;
+    source_agent?: string;
+    revisions?: string[];
+  }>;
 }
 
 // 字数范围选项
@@ -84,7 +92,8 @@ export const AgentPanel: React.FC = () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           message, 
-          story_id: "demo-story",
+          story_id: currentNovelId || "demo-story",
+          chapter_id: currentChapterId,
           word_count_range: {
             min: selectedWordCount.min,
             max: selectedWordCount.max
@@ -207,7 +216,13 @@ export const AgentPanel: React.FC = () => {
             (lowerMsg.includes('写') || lowerMsg.includes('创作') || lowerMsg.includes('章节') || 
              lowerMsg.includes('内容') || lowerMsg.includes('draft') || lowerMsg.includes('write') ||
              lowerMsg.includes('正文') || lowerMsg.includes('段落'))) {
-          updateChapterContent(currentNovelId, currentChapterId, data.final_text);
+          // 传递 trace_data 如果存在，并确保类型匹配
+          const traceData = data.trace_data?.map((item: {text?: string, source_agent?: string, revisions?: string[]}) => ({
+            text: item.text || '',
+            source_agent: item.source_agent || '',
+            revisions: item.revisions
+          }));
+          updateChapterContent(currentNovelId, currentChapterId, data.final_text, traceData);
           push("system", "agent", "✅ 已自动填充到当前章节内容");
         }
         

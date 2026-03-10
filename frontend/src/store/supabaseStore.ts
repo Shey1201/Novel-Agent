@@ -20,7 +20,7 @@ import type {
 } from './novelStore';
 
 // API 基础URL
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
 
 // 匿名用户ID，用于没有登录系统的情况
 // 使用随机生成的UUID，避免与真实用户ID冲突
@@ -361,23 +361,21 @@ export const useSupabaseStore = create<NovelState>()(
           console.error('Error permanently deleting novel:', err);
         }
       },
-      clearRecycleBin: () => set((state) => {
-        const now = Date.now();
-        const thirtyDays = 30 * 24 * 60 * 60 * 1000;
-        const expired = state.deletedNovels.filter((n) => now - (n.deletedAt || 0) >= thirtyDays);
-        const remaining = state.deletedNovels.filter((n) => now - (n.deletedAt || 0) < thirtyDays);
+      clearRecycleBin: async () => {
+        const deletedNovels = get().deletedNovels;
         
-        // 同步到 Supabase：删除过期的小说
-        expired.forEach(async (novel) => {
+        // 同步到 Supabase：删除所有回收站中的小说
+        for (const novel of deletedNovels) {
           try {
             await supabase.from('novels').delete().eq('id', novel.id);
           } catch (err) {
-            console.error('Error deleting expired novel:', err);
+            console.error('Error deleting novel from recycle bin:', err);
           }
-        });
+        }
         
-        return { deletedNovels: remaining };
-      }),
+        // 清空本地状态
+        set({ deletedNovels: [] });
+      },
       renameNovel: async (id, newTitle) => {
         // 先更新本地状态
         set((state) => ({

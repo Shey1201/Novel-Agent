@@ -15,7 +15,7 @@ from docx.oxml.ns import qn
 import re
 from urllib.parse import quote
 
-router = APIRouter(prefix="/download", tags=["download"])
+router = APIRouter(prefix="/api/download", tags=["download"])
 
 
 class ChapterData(BaseModel):

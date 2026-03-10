@@ -203,6 +203,54 @@ class CriticAgent(BaseAgent):
             }
 
 
+    def run(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        标准 Agent 接口 - 评估文本质量
+        
+        Args:
+            input_data: 包含以下键的字典
+                - text: 待评估的文本
+                - plan: 写作计划（可选）
+                - reader_feedback: 读者反馈（可选）
+                
+        Returns:
+            包含评估结果的字典
+        """
+        text = input_data.get("text", "")
+        context = {
+            "plan": input_data.get("plan", ""),
+            "reader_feedback": input_data.get("reader_feedback", "")
+        }
+        
+        result = self.evaluate(text, context)
+        
+        # 格式化反馈为字符串
+        feedback_parts = []
+        
+        if "feedback" in result:
+            fb = result["feedback"]
+            if fb.get("strengths"):
+                feedback_parts.append("优点：" + "; ".join(fb["strengths"]))
+            if fb.get("weaknesses"):
+                feedback_parts.append("不足：" + "; ".join(fb["weaknesses"]))
+            if fb.get("suggestions"):
+                feedback_parts.append("建议：" + "; ".join(fb["suggestions"]))
+        
+        if "breakdown" in result:
+            scores = result["breakdown"]
+            score_str = f"评分：总分 {result.get('total_score', 0):.2f}"
+            feedback_parts.append(score_str)
+        
+        feedback_text = "\n".join(feedback_parts) if feedback_parts else "评估完成"
+        
+        return {
+            "feedback": feedback_text,
+            "evaluation": result,
+            "rewrite_needed": result.get("rewrite_needed", False),
+            "total_score": result.get("total_score", 0.5)
+        }
+
+
 # 便捷函数
 def evaluate_chapter(chapter: str, context: Dict[str, Any]) -> Dict[str, Any]:
     """评估章节便捷函数"""

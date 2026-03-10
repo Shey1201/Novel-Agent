@@ -87,14 +87,14 @@ class GraphStateV3(TypedDict):
 
 def _build_agent_input(state: GraphStateV3, agent_type: str, base_input: str) -> str:
     """构建Agent输入，注入上下文"""
-    from app.memory.agent_skill_manager import skill_manager
+    from app.memory.skill_memory import skill_memory
     
     story_id = state.get("novel_id")
     if not story_id:
         return base_input
     
     # 获取技能约束
-    skill_prompt = skill_manager.build_agent_prompt(story_id, agent_type)
+    skill_prompt = skill_memory.build_agent_prompt(story_id, agent_type)
     
     # 获取相关记忆（RAG）
     memory_context = _get_relevant_memory(state, agent_type)

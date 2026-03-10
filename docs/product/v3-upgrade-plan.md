@@ -21,7 +21,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Writers Room (黑板模式)                    │
+│                    Agent Room (黑板模式)                      │
 │  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐        │
 │  │ Planner │  │ Conflict│  │ Writing │  │  Editor │        │
 │  │  Agent  │  │  Agent  │  │  Agent  │  │  Agent  │        │
@@ -68,7 +68,9 @@
 
 ## 三、核心功能模块
 
-### 3.1 自治 Writers Room（自由讨论核心）
+### 3.1 自治 Agent Room（自由讨论核心）
+
+> 注：Writers Room 已合并到 Agent Room，功能在小说编辑页面右侧 Agent Room 面板中使用
 
 #### 3.1.1 议案机制 (Proposal-based)
 - **发起者**: 用户或 Planner Agent
@@ -420,11 +422,13 @@ class CriticAgent:
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 4.2 Writers Room 讨论界面
+### 4.2 Agent Room 讨论界面
+
+> 注：Writers Room 已合并到 Agent Room，在小说编辑页面右侧 Agent Room 面板中使用
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  💬 Writers Room - 议案: 主角如何脱困？                       │
+│  💬 Agent Room - 议案: 主角如何脱困？                         │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │  🤖 Planner: 我建议让主角发现密道                            │
@@ -451,7 +455,7 @@ class CriticAgent:
 ┌─────────────────────────────────────────────────────────────┐
 │  选中文本: "他小心翼翼地推开那扇破旧的门"                    │
 ├─────────────────────────────────────────────────────────────┤
-│  📍 来源: Writers Room 讨论 #12                              │
+│  📍 来源: Agent Room 讨论 #12                                │
 │  🕐 时间: 2024-01-15 14:32                                   │
 │  🤖 提出者: Writing Agent                                    │
 │  💭 思考过程:                                                │
@@ -645,14 +649,14 @@ backend/app/
 │   ├── editor_agent.py
 │   ├── reader_agent.py
 │   ├── critic_agent.py
-│   ├── consistency_agent.py       # 一致性检查 Agent
-│   └── facilitator.py             # 讨论主持人
+│   └── consistency_agent.py       # 一致性检查 Agent
 │
 ├── workflow/
 │   ├── langgraph_flow.py          # LangGraph 工作流定义
-│   ├── writers_room.py            # Writers Room 实现
-│   ├── interrupts.py              # 人工中断机制
+│   ├── human_in_the_loop.py       # 人工介入机制
 │   └── consensus.py               # 共识判定逻辑
+│
+> 注：Writers Room 和 facilitator 已合并到 Agent Room
 │
 ├── memory/
 │   ├── short_memory.py            # L1 短期记忆
@@ -674,7 +678,7 @@ backend/app/
 │
 ├── api/
 │   ├── stream_api.py              # SSE 流式接口
-│   ├── writers_room_api.py        # Writers Room 接口
+│   ├── agent_room_api.py          # Agent Room 接口（包含原 Writers Room 功能）
 │   └── websocket.py               # WebSocket 实时协作
 │
 └── models/
@@ -688,11 +692,11 @@ backend/app/
 ```
 frontend/src/
 ├── components/
-│   ├── writers-room/
-│   │   ├── DiscussionPanel.tsx    # 讨论面板
-│   │   ├── AgentMessage.tsx       # Agent 消息气泡
-│   │   ├── ConsensusIndicator.tsx # 共识度指示器
-│   │   └── ProposalCard.tsx       # 议案卡片
+│   ├── layout/
+│   │   ├── AgentPanel.tsx         # Agent Room 面板（包含原 Writers Room 功能）
+│   │   ├── MainSidebar.tsx        # 主导航栏
+│   │   ├── SecondarySidebar.tsx   # 次侧边栏
+│   │   └── TopBar.tsx             # 顶部栏
 │   │
 │   ├── visualization/
 │   │   ├── AgentTimeline.tsx      # Agent 执行时间线
@@ -811,19 +815,19 @@ interface AgentConfig {
 ## 九、实施路线图
 
 ### Phase 1: 基础架构（4周）
-- [ ] LangGraph 工作流重构
-- [ ] 三层记忆系统实现
-- [ ] 基础 Writers Room
+- [x] LangGraph 工作流重构
+- [x] 三层记忆系统实现
+- [x] 基础 Agent Room（原 Writers Room 已合并）
 
 ### Phase 2: 智能增强（4周）
-- [ ] Facilitator 调度系统
-- [ ] Consistency Agent
-- [ ] Critic Agent + 质量评估
+- [x] Facilitator 调度系统（已合并到 Agent Room）
+- [x] Consistency Agent
+- [x] Critic Agent + 质量评估
 
 ### Phase 3: 可视化（3周）
-- [ ] Agent 执行时间线
-- [ ] Writers Room UI
-- [ ] Diff 视图
+- [x] Agent 执行时间线
+- [x] Agent Room UI（原 Writers Room UI 已合并）
+- [x] Diff 视图
 
 ### Phase 4: 实时协作（3周）
 - [ ] SSE 流式写作
@@ -846,7 +850,7 @@ interface AgentConfig {
 | **架构** | LangGraph 可控流程 | Blackboard 自由讨论 | Hybrid 双模式 |
 | **记忆** | 三层记忆系统 | Story Bible | 增强三层 + 实体化 Bible |
 | **交互** | Human-in-the-loop | Agent 自治讨论 | 关键节点人工干预 |
-| **可视化** | OpenClaw 风格 | Writers Room | 两者结合 |
+| **可视化** | OpenClaw 风格 | Agent Room | 两者结合 |
 | **质量** | Critic Agent 评分 | 共识判定 | 双重保障 |
 | **一致性** | Reflexion 回滚 | Consistency Agent | 主动 + 被动检查 |
 

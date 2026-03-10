@@ -8,9 +8,10 @@ from pydantic import BaseModel
 
 # 使用新的 asset_manager（合并后的统一资产表）
 from app.memory.asset_manager import (
-    asset_manager, Asset
+    asset_manager, Asset, AssetVersion
 )
-from app.memory.agent_skill_manager import skill_manager, AgentSkill
+from app.memory.skill_memory import skill_memory
+from app.models.skill import Skill
 
 router = APIRouter(prefix="/api/assets", tags=["assets"])
 
@@ -18,7 +19,6 @@ router = APIRouter(prefix="/api/assets", tags=["assets"])
 # ==================== 请求/响应模型 ====================
 
 class CreateAssetRequest(BaseModel):
-    id: str
     name: str
     type: str
     description: Optional[str] = None
@@ -156,23 +156,30 @@ async def get_novel_mounted_assets(novel_id: str):
 @router.post("/create", response_model=AssetResponse)
 async def create_asset(request: CreateAssetRequest):
     """创建新资产"""
-    asset = GlobalAsset(
-        id=request.id,
+    import uuid
+    asset = Asset(
+        id=str(uuid.uuid4()),
         name=request.name,
         type=request.type,
-        description=request.description,
+        description=request.description or "",
         source_novel_id=request.source_novel_id,
-        source_novel_name=request.source_novel_name,
-        color=request.color
+        is_global=True,
+        is_starred=False,
+        color=request.color or "#6366f1",
+        content={},
+        novel_id=None,
+        user_id=None
     )
     created = asset_manager.create_asset(asset)
+    if not created:
+        raise HTTPException(status_code=500, detail="Failed to create asset")
     return AssetResponse(
         id=created.id,
         name=created.name,
         type=created.type,
         description=created.description,
-        source_novel_id=created.source_novel_id,
-        source_novel_name=created.source_novel_name,
+        source_novel_id=created.source_novel_id or "",
+        source_novel_name=request.source_novel_name,
         color=created.color,
         is_starred=created.is_starred,
         mount_count=0,
@@ -356,7 +363,7 @@ class SkillResponse(BaseModel):
 @router.post("/skills/create", response_model=SkillResponse)
 async def create_skill_from_asset(request: CreateSkillRequest):
     """从资产创建Agent技能"""
-    skill = skill_manager.create_skill_from_asset(
+    skill = skill_memory.create_skill_from_asset(
         skill_id=request.skill_id,
         skill_name=request.skill_name,
         description=request.description,
@@ -370,8 +377,8 @@ async def create_skill_from_asset(request: CreateSkillRequest):
         id=skill.id,
         name=skill.name,
         description=skill.description,
-        asset_id=skill.asset_id,
-        asset_type=skill.asset_type,
+        asset_id=request.asset_id,
+        asset_type=request.asset_type,
         target_agents=skill.target_agents,
         is_active=skill.is_active,
         created_at=skill.created_at,
@@ -382,14 +389,14 @@ async def create_skill_from_asset(request: CreateSkillRequest):
 @router.get("/skills/all", response_model=List[SkillResponse])
 async def get_all_skills():
     """获取所有Agent技能"""
-    skills = skill_manager.get_all_skills()
+    skills = skill_memory.get_all_skills()
     return [
         SkillResponse(
             id=s.id,
             name=s.name,
             description=s.description,
-            asset_id=s.asset_id,
-            asset_type=s.asset_type,
+            asset_id=s.linked_assets[0] if s.linked_assets else "",
+            asset_type="",
             target_agents=s.target_agents,
             is_active=s.is_active,
             created_at=s.created_at,
@@ -401,14 +408,14 @@ async def get_all_skills():
 @router.get("/{asset_id}/skills", response_model=List[SkillResponse])
 async def get_skills_by_asset(asset_id: str):
     """获取资产关联的所有技能"""
-    skills = skill_manager.get_skills_by_asset(asset_id)
+    skills = skill_memory.get_skills_by_asset(asset_id)
     return [
         SkillResponse(
             id=s.id,
             name=s.name,
             description=s.description,
-            asset_id=s.asset_id,
-            asset_type=s.asset_type,
+            asset_id=asset_id,
+            asset_type="",
             target_agents=s.target_agents,
             is_active=s.is_active,
             created_at=s.created_at,
@@ -420,14 +427,14 @@ async def get_skills_by_asset(asset_id: str):
 @router.get("/novel/{novel_id}/skills", response_model=List[SkillResponse])
 async def get_skills_by_novel(novel_id: str):
     """获取小说的所有Agent技能"""
-    skills = skill_manager.get_skills_by_novel(novel_id)
+    skills = skill_memory.get_active_skills_for_novel(novel_id)
     return [
         SkillResponse(
             id=s.id,
             name=s.name,
             description=s.description,
-            asset_id=s.asset_id,
-            asset_type=s.asset_type,
+            asset_id=s.linked_assets[0] if s.linked_assets else "",
+            asset_type="",
             target_agents=s.target_agents,
             is_active=s.is_active,
             created_at=s.created_at,
@@ -439,7 +446,7 @@ async def get_skills_by_novel(novel_id: str):
 @router.post("/skills/{skill_id}/toggle")
 async def toggle_skill_active(skill_id: str):
     """切换技能激活状态"""
-    result = skill_manager.toggle_skill_active(skill_id)
+    result = skill_memory.toggle_skill_active(skill_id)
     if result is None:
         raise HTTPException(status_code=404, detail="Skill not found")
     return {"is_active": result}
@@ -448,7 +455,7 @@ async def toggle_skill_active(skill_id: str):
 @router.delete("/skills/{skill_id}")
 async def delete_skill(skill_id: str):
     """删除技能"""
-    success = skill_manager.delete_skill(skill_id)
+    success = skill_memory.delete_skill(skill_id)
     if not success:
         raise HTTPException(status_code=404, detail="Skill not found")
     return {"message": "Skill deleted successfully"}
@@ -457,7 +464,7 @@ async def delete_skill(skill_id: str):
 @router.post("/skills/{skill_id}/add-to-novel")
 async def add_skill_to_novel(skill_id: str, novel_id: str):
     """将技能添加到小说"""
-    success = skill_manager.add_skill_to_novel(skill_id, novel_id)
+    success = skill_memory.mount_skill_to_novel(skill_id, novel_id)
     if not success:
         raise HTTPException(status_code=400, detail="Failed to add skill to novel")
     return {"message": "Skill added to novel successfully"}
@@ -466,7 +473,7 @@ async def add_skill_to_novel(skill_id: str, novel_id: str):
 @router.post("/skills/{skill_id}/remove-from-novel")
 async def remove_skill_from_novel(skill_id: str, novel_id: str):
     """从小说移除技能"""
-    success = skill_manager.remove_skill_from_novel(skill_id, novel_id)
+    success = skill_memory.unmount_skill_from_novel(skill_id, novel_id)
     if not success:
         raise HTTPException(status_code=400, detail="Failed to remove skill from novel")
     return {"message": "Skill removed from novel successfully"}

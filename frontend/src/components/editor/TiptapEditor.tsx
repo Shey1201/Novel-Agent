@@ -149,17 +149,44 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle>((_, ref) => {
   useImperativeHandle(ref, () => ({
     handleRunAgents: async () => {
       const { agentConfigs, constraints } = useSupabaseStore.getState();
-      if (!editor) return;
+      if (!editor || !currentChapterId) {
+        console.error("No chapter selected");
+        return;
+      }
 
       // 先保存当前内容
       saveImmediately();
+
+      // 获取 AI 配置
+      let llmConfig = null;
+      try {
+        const aiRes = await fetch(`${API_BASE}/api/settings/ai`);
+        if (aiRes.ok) {
+          const aiData = await aiRes.json();
+          if (aiData.is_active && aiData.api_key) {
+            llmConfig = {
+              model: aiData.chat_model,
+              api_key: aiData.api_key,
+              base_url: aiData.base_url,
+            };
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load AI config:", err);
+      }
 
       const outline = editor.getText();
       try {
         const res = await fetch(`${API_BASE}/generate_chapter`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ outline, agent_configs: agentConfigs, constraints }),
+          body: JSON.stringify({
+            outline,
+            agent_configs: agentConfigs,
+            constraints,
+            chapter_id: currentChapterId,
+            llm_config: llmConfig,
+          }),
         });
         const data = (await res.json()) as GenerateChapterResponse;
 

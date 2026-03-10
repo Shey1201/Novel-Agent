@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, TypedDict
+from typing import Any, Dict, List, Optional, TypedDict
 
 from app.memory.story_memory import StoryMemory
 
@@ -15,9 +15,14 @@ class GraphState(TypedDict):
     agent_logs: List[Dict[str, Any]]
     trace_data: List[Dict[str, Any]]
     story_memory: StoryMemory
+    chapter_id: Optional[str]
 
 
-def build_initial_state(input_text: str, story_memory: StoryMemory) -> GraphState:
+def build_initial_state(
+    input_text: str,
+    story_memory: StoryMemory,
+    chapter_id: Optional[str] = None,
+) -> GraphState:
     return {
         "input_text": input_text,
         "agent_logs": [],
@@ -30,4 +35,5 @@ def build_initial_state(input_text: str, story_memory: StoryMemory) -> GraphStat
         "summary_text": "",
         "final_text": "",
         "story_memory": story_memory,
+        "chapter_id": chapter_id,
     }

@@ -1,3 +1,8 @@
+"""
+Agent Room API - AI编剧室API
+整合Agent Reasoning、Discussion、Author Decision等功能
+"""
+
 from typing import Any, Dict, Optional
 import traceback
 
@@ -5,16 +10,22 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from app.services.agent_chat_service import AgentChatService
+from app.core.ai_config import create_llm_from_config, get_ai_config_from_db
 
 router = APIRouter(prefix="/api/agent", tags=["agent-room"])
 
 # 延迟初始化 chat_service
 _chat_service_instance = None
 
+
 def get_chat_service():
+    """获取 AgentChatService 实例，使用数据库中的 AI 配置"""
     global _chat_service_instance
     if _chat_service_instance is None:
-        _chat_service_instance = AgentChatService()
+        # 从数据库读取 AI 配置并创建 LLM
+        ai_config = get_ai_config_from_db()
+        llm = create_llm_from_config(ai_config)
+        _chat_service_instance = AgentChatService(llm=llm)
     return _chat_service_instance
 
 
@@ -33,6 +44,7 @@ class ConversationState(BaseModel):
 class AgentChatRequest(BaseModel):
     message: str
     story_id: Optional[str] = "demo-story"
+    chapter_id: Optional[str] = None  # 新增：章节ID
     word_count_range: Optional[WordCountRange] = None
     conversation_state: Optional[ConversationState] = None
 
@@ -58,9 +70,13 @@ async def agent_chat(payload: AgentChatRequest) -> Dict[str, Any]:
                 "max": payload.word_count_range.max
             }
         
-        result = get_chat_service().chat(
+        # 获取 chat_service（会自动使用数据库中的 AI 配置）
+        service = get_chat_service()
+        
+        result = service.chat(
             payload.message, 
             payload.story_id or "demo-story",
+            chapter_id=payload.chapter_id,  # 传递 chapter_id
             word_count_range=word_count_dict,
             conversation_state=state_dict
         )

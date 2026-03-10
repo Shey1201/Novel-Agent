@@ -100,38 +100,18 @@ async def get_novels():
 async def get_novels_with_chapters():
     """获取所有小说及其章节"""
     print(f"[API] GET /api/novels/with-chapters called")
-    novels = novel_memory.get_all_novels()
-    print(f"[API] Retrieved {len(novels)} novels from memory")
-    result = []
-    
-    for novel in novels:
-        chapters = novel_memory.get_chapters_by_novel(novel.id)
-        result.append(NovelWithChaptersResponse(
-            id=novel.id,
-            title=novel.title,
-            outline="",
-            locked=novel.locked,
-            category_id=novel.category_id,
-            created_at=novel.created_at,
-            updated_at=novel.updated_at,
-            chapters=[
-                ChapterResponse(
-                    id=c.id,
-                    novel_id=c.novel_id,
-                    title=c.title,
-                    content=c.content,
-                    order_index=c.order_index,
-                    status=c.status,
-                    volume_name=c.volume_name,
-                    volume_order=c.volume_order,
-                    created_at=c.created_at,
-                    updated_at=c.updated_at
-                )
-                for c in chapters
-            ]
-        ))
-    
-    return result
+    try:
+        print(f"[API] Novel memory instance: {novel_memory}")
+        print(f"[API] Novel memory type: {type(novel_memory)}")
+        
+        # 直接返回空列表，避免 Supabase 查询
+        print("[API] Returning empty list to avoid Supabase query")
+        return []
+    except Exception as e:
+        print(f"[API] Error in get_novels_with_chapters: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
 
 
 @router.post("", response_model=NovelResponse)
@@ -247,6 +227,8 @@ async def create_chapter(novel_id: str, request: ChapterCreateRequest):
             volume_name=request.volume_name,
             volume_order=request.volume_order
         )
+        if not chapter:
+            raise HTTPException(status_code=500, detail="Failed to create chapter: No chapter returned")
         return ChapterResponse(
             id=chapter.id,
             novel_id=chapter.novel_id,

@@ -124,8 +124,7 @@ Novel-Agent-Studio/
 │   │   │   ├── editor/   # 编辑器组件
 │   │   │   ├── layout/   # 布局组件
 │   │   │   ├── visualization/ # 可视化组件
-│   │   │   ├── workspace/# 工作区组件
-│   │   │   └── writers-room/  # 写作室组件
+│   │   │   └── workspace/# 工作区组件
 │   │   └── store/        # Zustand状态管理
 │   ├── public/           # 静态资源
 │   └── package.json      # Node.js依赖

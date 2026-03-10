@@ -4,7 +4,7 @@
  */
 
 // API 基础 URL - 从环境变量读取，默认为本地开发地址
-export const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
 
 // 构建完整 API URL
 export function apiUrl(path: string): string {

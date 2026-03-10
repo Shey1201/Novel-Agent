@@ -2,8 +2,8 @@
 
 ## 🚀 新功能概览
 
-### 1. Writers Room 💬
-**多 Agent 协作讨论系统**
+### 1. Agent Room 💬
+**多 Agent 协作讨论系统**（原 Writers Room 已合并）
 
 - **功能特点**:
   - 多 Agent 实时讨论（Planner、Conflict、Writing、Consistency）
@@ -14,18 +14,16 @@
   - Consistency Agent 高优先级插话
 
 - **使用方式**:
-  1. 点击左侧边栏 "Writers Room" 图标
-  2. 创建讨论议案（输入标题和描述）
-  3. 点击"开始讨论"
-  4. 观察 Agent 们的讨论过程
-  5. 可随时人工干预
+  1. 在小说编辑页面右侧 "Agent Room" 面板
+  2. 输入消息触发 Agent 自动工作
+  3. 观察 Agent 们的讨论过程
+  4. 可随时人工干预
 
 - **API 端点**:
-  - `POST /api/writers-room/discussions` - 创建讨论
-  - `GET /api/writers-room/discussions/{id}` - 获取讨论状态
-  - `POST /api/writers-room/discussions/{id}/round` - 运行一轮
-  - `POST /api/writers-room/discussions/{id}/intervene` - 人工干预
-  - `WebSocket /api/writers-room/ws/{id}` - 实时通信
+  - `POST /api/agent-room/discussion/start` - 开始讨论
+  - `GET /api/agent-room/discussion/{id}/round/{round}` - 获取讨论轮次
+  - `POST /api/agent-room/discussion/{id}/intervene` - 人工干预
+  - `WebSocket /api/agent-room/ws/{id}` - 实时通信
 
 ### 2. Story Bible 📚
 **故事设定管理中心**
@@ -61,7 +59,7 @@
   - 执行状态追踪
 
 - **组件位置**:
-  - Writers Room 页面右侧
+  - 小说编辑页面右侧 Agent Room 面板
   - 独立弹窗（点击"AI写作"按钮时显示）
 
 - **事件类型**:
@@ -115,7 +113,7 @@
 backend/
 ├── app/
 │   ├── api/
-│   │   ├── writers_room_api.py    # Writers Room API
+│   │   ├── agent_room_api.py      # Agent Room API（包含原 Writers Room 功能）
 │   │   └── stream_api.py          # 流式 API
 │   ├── agents/
 │   │   ├── critic_agent.py        # Critic Agent
@@ -125,14 +123,13 @@ backend/
 │   │   ├── knowledge_graph.py     # L3 知识图谱
 │   │   └── memory_manager.py      # 记忆管理器
 │   └── workflow/
-│       ├── writers_room.py        # Writers Room 实现
 │       └── langgraph_flow_v3.py   # v3 工作流
 
 frontend/
 ├── src/
 │   ├── components/
-│   │   ├── writers-room/
-│   │   │   └── DiscussionPanel.tsx    # Writers Room UI
+│   │   ├── layout/
+│   │   │   └── AgentPanel.tsx     # Agent Room UI（包含原 Writers Room 功能）
 │   │   ├── visualization/
 │   │   │   └── AgentTimeline.tsx      # Agent 可视化
 │   │   ├── editor/
@@ -192,10 +189,10 @@ docker run -p 7474:7474 -p 7687:7687 neo4j:5.15.0
    - 设定世界规则
    - 规划情节结构
 
-3. **Writers Room 讨论**
-   - 进入 Writers Room
-   - 创建讨论议案
-   - 让 Agents 讨论剧情
+3. **Agent Room 讨论**
+   - 在小说编辑页面右侧 Agent Room 面板
+   - 输入消息触发 Agent 自动工作
+   - 观察 Agents 讨论剧情
    - 人工干预指导方向
 
 4. **流式写作**
