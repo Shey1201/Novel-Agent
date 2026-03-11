@@ -26,33 +26,20 @@ class WordCountRange(BaseModel):
     max: int = 4000
 
 
-class ConversationState(BaseModel):
-    stage: Optional[str] = None
-    workflow_type: Optional[str] = None
-    waiting_for_user: bool = False
-    accumulated_content: Optional[list] = None
-
-
 class AgentChatRequest(BaseModel):
     message: str
     story_id: Optional[str] = "demo-story"
     chapter_id: Optional[str] = None  # 新增：章节ID
     word_count_range: Optional[WordCountRange] = None
-    conversation_state: Optional[ConversationState] = None
+    # 允许完整透传对话状态，避免丢失 pending_save/context_confirmed 等字段
+    conversation_state: Optional[Dict[str, Any]] = None
 
 
 @router.post("/chat")
 async def agent_chat(payload: AgentChatRequest) -> Dict[str, Any]:
     try:
-        # 转换 conversation_state 为字典格式
-        state_dict = None
-        if payload.conversation_state:
-            state_dict = {
-                "stage": payload.conversation_state.stage,
-                "workflow_type": payload.conversation_state.workflow_type,
-                "waiting_for_user": payload.conversation_state.waiting_for_user,
-                "accumulated_content": payload.conversation_state.accumulated_content or []
-            }
+        # 直接透传 conversation_state，保留 pending_save 等关键状态
+        state_dict = payload.conversation_state or None
         
         # 转换 word_count_range 为字典格式
         word_count_dict = None
