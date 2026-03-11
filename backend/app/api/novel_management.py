@@ -99,19 +99,42 @@ async def get_novels():
 @router.get("/with-chapters", response_model=List[NovelWithChaptersResponse])
 async def get_novels_with_chapters():
     """获取所有小说及其章节"""
-    print(f"[API] GET /api/novels/with-chapters called")
     try:
-        print(f"[API] Novel memory instance: {novel_memory}")
-        print(f"[API] Novel memory type: {type(novel_memory)}")
-        
-        # 直接返回空列表，避免 Supabase 查询
-        print("[API] Returning empty list to avoid Supabase query")
-        return []
+        novels = novel_memory.get_all_novels()
+        payload: List[NovelWithChaptersResponse] = []
+
+        for novel in novels:
+            chapters = novel_memory.get_chapters_by_novel(novel.id)
+            payload.append(
+                NovelWithChaptersResponse(
+                    id=novel.id,
+                    title=novel.title,
+                    outline=novel.outline or "",
+                    locked=novel.locked,
+                    category_id=novel.category_id,
+                    created_at=novel.created_at,
+                    updated_at=novel.updated_at,
+                    chapters=[
+                        ChapterResponse(
+                            id=chapter.id,
+                            novel_id=chapter.novel_id,
+                            title=chapter.title,
+                            content=chapter.content,
+                            order_index=chapter.order_index,
+                            status=chapter.status,
+                            volume_name=chapter.volume_name,
+                            volume_order=chapter.volume_order,
+                            created_at=chapter.created_at,
+                            updated_at=chapter.updated_at,
+                        )
+                        for chapter in chapters
+                    ],
+                )
+            )
+
+        return payload
     except Exception as e:
-        print(f"[API] Error in get_novels_with_chapters: {e}")
-        import traceback
-        traceback.print_exc()
-        return []
+        raise HTTPException(status_code=500, detail=f"Failed to load novels with chapters: {str(e)}")
 
 
 @router.post("", response_model=NovelResponse)

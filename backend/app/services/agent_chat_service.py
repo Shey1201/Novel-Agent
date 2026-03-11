@@ -32,7 +32,7 @@ except ImportError:
 
 class AgentChatService:
     def __init__(self, llm: Any = None):
-        # 如果没有传入 llm，尝试从数据库配置或环境变量获取
+        # 如果没有传入 llm，仅从数据库 AI 配置获取
         self.llm = llm or get_llm_with_fallback()
         self.strategist = StrategistAgent(llm=self.llm)
         self.writer = WritingAgent(llm=self.llm)
@@ -258,7 +258,7 @@ class AgentChatService:
         调用 LLM 生成内容
         """
         if self.llm is None:
-            return "[LLM 未配置，无法生成内容]"
+            return "当前未检测到可用的 AI 配置。请在设置中填写并启用 API Key、模型与 Base URL。"
         
         if not LANGCHAIN_AVAILABLE:
             return "[langchain 未安装，无法生成内容]"
@@ -287,8 +287,8 @@ class AgentChatService:
             return [{
                 "agent": "system",
                 "agent_name": "系统",
-                "message": "⚠️ LLM 未配置",
-                "content": "请在设置中配置 AI 模型（API Key 和模型选择）后重试。"
+                "message": "⚠️ AI 配置不可用",
+                "content": "当前无法调用大模型。请前往“系统设置 / AI 配置”确认已填写 API Key、模型，并开启启用开关后重试。"
             }]
         
         # 检查是否需要补充世界观
@@ -534,8 +534,8 @@ class AgentChatService:
             return [{
                 "agent": "system",
                 "agent_name": "系统",
-                "message": "⚠️ LLM 未配置",
-                "content": "请在设置中配置 AI 模型（API Key 和模型选择）后重试。"
+                "message": "⚠️ AI 配置不可用",
+                "content": "当前无法调用大模型。请前往“系统设置 / AI 配置”确认已填写 API Key、模型，并开启启用开关后重试。"
             }]
         
         # 开场：使用 LLM 生成启动消息
