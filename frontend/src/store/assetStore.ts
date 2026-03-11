@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { API_BASE } from '@/lib/api';
 
 export type AssetType = 'characters' | 'worldbuilding' | 'factions' | 'locations' | 'timeline';
 
@@ -118,8 +119,6 @@ interface AssetState {
   isAssetMounted: (assetId: string, novelId: string) => boolean;
   getSkillsByAssetId: (assetId: string) => AgentSkill[];
 }
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export const useAssetStore = create<AssetState>((set, get) => ({
   assets: [],

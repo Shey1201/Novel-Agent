@@ -357,11 +357,29 @@ POST /api/agent-room/discussion/{discussion_id}/intervene
 }
 ```
 
-### WebSocket 实时通信
+### Agent Room WebSocket 实时通信
 
 ```
-ws://localhost:8000/api/agent-room/ws/{discussion_id}
+ws://localhost:8000/api/agent/ws/{story_id}
 ```
+
+消息类型：
+- `connected` - 连接成功
+- `agent_message` - Agent 消息
+- `agent_start` - 开始执行
+- `agent_complete` - 执行完成
+- `agent_error` - 执行错误
+- `progress_update` - 进度更新
+- `consensus_update` - 共识度更新
+- `user_input_required` - 需要用户输入
+
+### SSE 流式输出
+
+```
+POST /api/agent/chat/stream
+```
+
+返回 Server-Sent Events 流式数据。
 
 ---
 

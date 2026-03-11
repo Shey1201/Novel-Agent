@@ -86,9 +86,17 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
 
   return (
     <div className="bg-white border border-zinc-200 rounded-xl overflow-hidden">
-      <button
+      <div
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full p-4 flex items-center justify-between hover:bg-zinc-50 transition-colors"
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setIsExpanded(!isExpanded);
+          }
+        }}
+        className="w-full p-4 flex items-center justify-between hover:bg-zinc-50 transition-colors cursor-pointer"
       >
         <div className="flex-1 text-left">
           <div className="flex items-center gap-2">
@@ -117,7 +125,7 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
         >
           <path d="m6 9 6 6 6-6" />
         </svg>
-      </button>
+      </div>
       {isExpanded && <div className="px-4 pb-4">{children}</div>}
     </div>
   );

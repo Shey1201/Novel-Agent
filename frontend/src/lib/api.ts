@@ -3,8 +3,8 @@
  * 根据环境自动选择 API 基础 URL
  */
 
-// API 基础 URL - 从环境变量读取，默认为本地开发地址
-export const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
+// API 基础 URL - 从环境变量读取，本地开发默认连后端 8000 端口
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
 
 // 构建完整 API URL
 export function apiUrl(path: string): string {
@@ -24,6 +24,217 @@ export function wsUrl(path: string): string {
   }
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
   // 将 http 替换为 ws
-  const wsBase = API_BASE.replace('https://', 'wss://').replace('http://', 'ws://');
+  const wsBase = API_BASE.replace('https://', 'wss://').replace('http://', 'ws://') || 'ws://localhost:8000';
   return `${wsBase}${normalizedPath}`;
+}
+
+// ==================== Agent Room WebSocket 客户端 ====================
+export type AgentMessageHandler = (data: any) => void;
+export type AgentStreamCallbacks = {
+  onAgentStart?: AgentMessageHandler;
+  onAgentMessage?: AgentMessageHandler;
+  onAgentComplete?: AgentMessageHandler;
+  onAgentError?: AgentMessageHandler;
+  onConsensusUpdate?: AgentMessageHandler;
+  onProgressUpdate?: AgentMessageHandler;
+  onUserInputRequired?: AgentMessageHandler;
+};
+
+export class AgentRoomWebSocket {
+  private ws: WebSocket | null = null;
+  private storyId: string;
+  private callbacks: AgentStreamCallbacks;
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts = 5;
+  private reconnectDelay = 2000;
+
+  constructor(storyId: string, callbacks: AgentStreamCallbacks) {
+    this.storyId = storyId;
+    this.callbacks = callbacks;
+  }
+
+  connect(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const url = wsUrl(`/api/agent/ws/${this.storyId}`);
+
+      try {
+        this.ws = new WebSocket(url);
+
+        this.ws.onopen = () => {
+          console.log('[AgentRoomWebSocket] Connected to', url);
+          this.reconnectAttempts = 0;
+          resolve();
+        };
+
+        this.ws.onmessage = (event) => {
+          try {
+            const message = JSON.parse(event.data);
+            this.handleMessage(message);
+          } catch (e) {
+            console.error('[AgentRoomWebSocket] Failed to parse message:', e);
+          }
+        };
+
+        this.ws.onerror = (error) => {
+          console.error('[AgentRoomWebSocket] Error:', error);
+          // WebSocket 错误不立即 reject，等待重连机制处理
+          // 这样可以避免初始连接失败时抛出错误
+        };
+
+        this.ws.onclose = () => {
+          console.log('[AgentRoomWebSocket] Disconnected');
+          this.attemptReconnect();
+        };
+      } catch (e) {
+        reject(e);
+      }
+    });
+  }
+
+  private handleMessage(message: any) {
+    const { type, data } = message;
+
+    switch (type) {
+      case 'connected':
+        this.callbacks.onAgentStart?.(data);
+        break;
+      case 'agent_message':
+        this.callbacks.onAgentMessage?.(data);
+        break;
+      case 'agent_start':
+        this.callbacks.onAgentStart?.(data);
+        break;
+      case 'agent_complete':
+        this.callbacks.onAgentComplete?.(data);
+        break;
+      case 'agent_error':
+        this.callbacks.onAgentError?.(data);
+        break;
+      case 'consensus_update':
+        this.callbacks.onConsensusUpdate?.(data);
+        break;
+      case 'progress_update':
+        this.callbacks.onProgressUpdate?.(data);
+        break;
+      case 'user_input_required':
+        this.callbacks.onUserInputRequired?.(data);
+        break;
+      default:
+        console.log('[AgentRoomWebSocket] Unknown message type:', type);
+    }
+  }
+
+  private attemptReconnect() {
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      console.log('[AgentRoomWebSocket] Max reconnect attempts reached');
+      return;
+    }
+
+    this.reconnectAttempts++;
+    console.log(`[AgentRoomWebSocket] Reconnecting... Attempt ${this.reconnectAttempts}`);
+
+    setTimeout(() => {
+      this.connect().catch(console.error);
+    }, this.reconnectDelay);
+  }
+
+  sendMessage(message: string, options?: {
+    chapter_id?: string;
+    story_name?: string;
+    word_count_range?: { min: number; max: number };
+    conversation_state?: any;
+  }) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: 'send_message',
+        message,
+        ...options
+      }));
+    } else {
+      console.error('[AgentRoomWebSocket] WebSocket not connected');
+    }
+  }
+
+  disconnect() {
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
+  }
+
+  isConnected(): boolean {
+    return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
+  }
+}
+
+// ==================== SSE 流式请求 ====================
+export async function fetchAgentChatStream(
+  payload: {
+    message: string;
+    story_id?: string;
+    story_name?: string;
+    chapter_id?: string;
+    word_count_range?: { min: number; max: number };
+    conversation_state?: any;
+  },
+  callbacks: AgentStreamCallbacks
+): Promise<void> {
+  const response = await fetch(apiUrl('/api/agent/chat/stream'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message: payload.message,
+      story_id: payload.story_id || 'demo-story',
+      story_name: payload.story_name,
+      chapter_id: payload.chapter_id,
+      word_count_range: payload.word_count_range,
+      conversation_state: payload.conversation_state
+    })
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    callbacks.onAgentError?.({ error: error.detail || 'Request failed' });
+    return;
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) {
+    callbacks.onAgentError?.({ error: 'No response body' });
+    return;
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.agent_logs && data.agent_logs.length > 0) {
+              callbacks.onAgentMessage?.({ log: data.agent_logs[data.agent_logs.length - 1], data });
+            }
+            if (data.final_text !== undefined) {
+              callbacks.onAgentComplete?.({ data });
+            }
+          } catch (e) {
+            console.error('[fetchAgentChatStream] Parse error:', e);
+          }
+        }
+      }
+    }
+  } catch (e) {
+    callbacks.onAgentError?.({ error: String(e) });
+  }
 }

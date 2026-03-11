@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useSupabaseStore } from "@/store/supabaseStore";
-import { API_BASE } from "@/lib/api";
+import { apiUrl, AgentRoomWebSocket, fetchAgentChatStream, AgentStreamCallbacks } from "@/lib/api";
 
 interface ChatResponse {
   final_text?: string;
@@ -48,13 +48,24 @@ const WORD_COUNT_OPTIONS = [
 ];
 
 export const AgentPanel: React.FC = () => {
-  const { messages, addMessage, currentNovelId, currentChapterId, updateChapterContent, setWorldBible, setWorldApproved, updateNovel, updateChapter, novels, addStoryAsset } =
+  const { messages, addMessage, loadMessages, currentNovelId, currentChapterId, updateChapterContent, setWorldBible, setWorldApproved, updateNovel, updateChapter, novels, addStoryAsset } =
     useSupabaseStore();
+
+  // 根据 currentNovelId 获取当前小说名称
+  const currentNovel = novels.find(n => n.id === currentNovelId);
+  const currentNovelName = currentNovel?.title || null;
+  // 根据 currentChapterId 获取当前章节名称
+  const currentChapter = currentNovel?.chapters.find(c => c.id === currentChapterId);
+  const currentChapterName = currentChapter?.title || null;
   const [inputValue, setEditValue] = useState("");
   const [selectedWordCount, setSelectedWordCount] = useState(WORD_COUNT_OPTIONS[2]); // 默认标准
   const [showSettings, setShowSettings] = useState(false);
   const [conversationState, setConversationState] = useState<ChatResponse['conversation_state'] | null>(null);
   const [isWaitingForUser, setIsWaitingForUser] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [consensusScore, setConsensusScore] = useState<number | null>(null);
+  const [currentStep, setCurrentStep] = useState<string>('');
+  const wsRef = useRef<AgentRoomWebSocket | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const seqRef = useRef(100);
 
@@ -69,6 +80,86 @@ export const AgentPanel: React.FC = () => {
     const meta = nextMeta();
     addMessage({ ...meta, sender, role, content });
   };
+
+  // 进入 Agent Room 时加载历史消息
+  useEffect(() => {
+    loadMessages?.();
+  }, [loadMessages]);
+
+  // 处理 Agent 消息的回调
+  const handleAgentMessage = useCallback((data: any) => {
+    if (data.log) {
+      const log = data.log;
+      const text = log.content ? `${log.message || ""}\n${String(log.content)}` : log.message || "";
+      push(log.agent_name || log.agent || "agent", "agent", text);
+
+      if (log.requires_user_input) {
+        setIsWaitingForUser(true);
+      }
+    }
+  }, []);
+
+  // 处理进度更新
+  const handleProgressUpdate = useCallback((data: any) => {
+    setCurrentStep(data.message || data.step || '');
+  }, []);
+
+  // 处理共识度更新
+  const handleConsensusUpdate = useCallback((data: any) => {
+    if (data.consensus_score !== undefined) {
+      setConsensusScore(data.consensus_score);
+    }
+  }, []);
+
+  // 处理需要用户输入
+  const handleUserInputRequired = useCallback((data: any) => {
+    setIsWaitingForUser(true);
+    if (data.conversation_state) {
+      setConversationState(data.conversation_state);
+    }
+  }, []);
+
+  // 处理完成
+  const handleAgentComplete = useCallback((data: any) => {
+    setIsLoading(false);
+    setCurrentStep('');
+    setConsensusScore(null);
+
+    if (data.data?.conversation_state) {
+      setConversationState(data.data.conversation_state);
+      setIsWaitingForUser(data.data.conversation_state.waiting_for_user || false);
+    }
+  }, []);
+
+  // 处理错误
+  const handleAgentError = useCallback((data: any) => {
+    setIsLoading(false);
+    setCurrentStep('');
+    push("system", "agent", `❌ Agent 错误: ${data.error || JSON.stringify(data)}`);
+  }, []);
+
+  // 连接 WebSocket
+  useEffect(() => {
+    const storyId = currentNovelId || 'demo-story';
+    const callbacks: AgentStreamCallbacks = {
+      onAgentStart: () => setIsLoading(true),
+      onAgentMessage: handleAgentMessage,
+      onProgressUpdate: handleProgressUpdate,
+      onConsensusUpdate: handleConsensusUpdate,
+      onUserInputRequired: handleUserInputRequired,
+      onAgentComplete: handleAgentComplete,
+      onAgentError: handleAgentError,
+    };
+
+    const ws = new AgentRoomWebSocket(storyId, callbacks);
+    wsRef.current = ws;
+
+    ws.connect().catch(console.error);
+
+    return () => {
+      ws.disconnect();
+    };
+  }, [currentNovelId, handleAgentMessage, handleProgressUpdate, handleConsensusUpdate, handleUserInputRequired, handleAgentComplete, handleAgentError]);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -85,15 +176,18 @@ export const AgentPanel: React.FC = () => {
     
     push("User", "user", messageWithWordCount);
     setEditValue("");
+    setIsLoading(true);
 
     try {
-      const res = await fetch(`${API_BASE}/api/agent/chat`, {
+      const res = await fetch(apiUrl("/api/agent/chat"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          message, 
+        body: JSON.stringify({
+          message,
           story_id: currentNovelId || "demo-story",
+          story_name: currentNovelName,  // 传入小说名称供 AI 使用
           chapter_id: currentChapterId,
+          chapter_name: currentChapterName,  // 传入章节名称供 AI 显示
           word_count_range: {
             min: selectedWordCount.min,
             max: selectedWordCount.max
@@ -102,6 +196,11 @@ export const AgentPanel: React.FC = () => {
         }),
       });
       const data = (await res.json()) as ChatResponse;
+
+      if (data.error) {
+        push("system", "agent", `❌ Agent 处理失败: ${data.error}`);
+        setIsLoading(false);  // 错误时也要结束加载状态
+      }
 
       // 保存对话状态
       if (data.conversation_state) {
@@ -393,7 +492,13 @@ export const AgentPanel: React.FC = () => {
         }
       }
     } catch (error) {
-      push("system", "agent", `Agent Room 请求失败: ${String(error)}`);
+      const msg = error instanceof Error ? error.message : String(error);
+      const isNetwork = msg.includes("fetch") || msg.includes("Failed to fetch") || msg.includes("NetworkError");
+      push("system", "agent", isNetwork
+        ? "❌ 网络请求失败，请确认后端服务已启动（如 http://127.0.0.1:8000）且 CORS 已配置。"
+        : `Agent Room 请求失败: ${msg}`);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -453,10 +558,57 @@ export const AgentPanel: React.FC = () => {
             </div>
           </div>
         ))}
+        {isLoading && (
+          <div className="flex flex-col items-start">
+            <div className="flex items-center gap-2 mb-1 px-1">
+              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Agent</span>
+            </div>
+            <div className="max-w-[90%] p-3 rounded-2xl text-sm bg-white text-zinc-500 border border-zinc-100 rounded-tl-none flex items-center gap-2">
+              <span className="inline-block w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
+              <span className="inline-block w-2 h-2 rounded-full bg-indigo-500 animate-pulse [animation-delay:0.2s]" />
+              <span className="inline-block w-2 h-2 rounded-full bg-indigo-500 animate-pulse [animation-delay:0.4s]" />
+              <span className="text-zinc-500">Agent 正在加载中...</span>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="p-4 bg-white border-t border-zinc-200 shrink-0">
-        {isWaitingForUser && (
+        {/* 共识度可视化 */}
+        {consensusScore !== null && (
+          <div className="mb-3 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs text-emerald-700 font-medium">共识度</span>
+              <span className="text-xs font-bold text-emerald-600">{Math.round(consensusScore * 100)}%</span>
+            </div>
+            <div className="w-full h-1.5 bg-emerald-200 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-emerald-500 transition-all duration-300"
+                style={{ width: `${consensusScore * 100}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* 当前步骤显示 */}
+        {isLoading && currentStep && (
+          <div className="mb-3 px-3 py-2 bg-indigo-50 border border-indigo-200 rounded-lg">
+            <p className="text-xs text-indigo-700 flex items-center gap-2">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
+              {currentStep}
+            </p>
+          </div>
+        )}
+
+        {isLoading && !currentStep && (
+          <div className="mb-3 px-3 py-2 bg-indigo-50 border border-indigo-200 rounded-lg">
+            <p className="text-xs text-indigo-700 flex items-center gap-2">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
+              Agent 正在加载中，请稍候...
+            </p>
+          </div>
+        )}
+        {isWaitingForUser && !isLoading && (
           <div className="mb-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg">
             <p className="text-xs text-amber-700 flex items-center gap-2">
               <span>⏸️</span>

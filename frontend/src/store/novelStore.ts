@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage, type PersistOptions } from 'zustand/middleware';
 
-export type WorkspaceModule = 'novels' | 'agent-management' | 'story-assets' | 'skills' | 'settings' | 'recycle-bin' | 'performance';
+export type WorkspaceModule = 'novels' | 'agent-management' | 'story-assets' | 'skills' | 'settings' | 'recycle-bin' | 'memory';
 export type SidebarView = 'chapter' | 'outline';
 export type AssetCategory = 'characters' | 'worldbuilding' | 'factions' | 'locations' | 'timeline';
 

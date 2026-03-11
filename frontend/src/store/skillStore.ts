@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { API_BASE } from '@/lib/api';
 
 export type SkillCategoryType = 'system' | 'writing' | 'domain' | 'auditing';
 export type AgentType = 'writer' | 'editor' | 'planner' | 'conflict' | 'reader' | 'summary' | 'critic' | 'consistency';
@@ -100,8 +101,6 @@ interface SkillState {
   getFilteredSkills: () => Skill[];
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-
 export const useSkillStore = create<SkillState>((set, get) => ({
   categories: [],
   selectedCategoryId: null,
@@ -115,6 +114,7 @@ export const useSkillStore = create<SkillState>((set, get) => ({
   isTesting: false,
 
   fetchCategories: async () => {
+    set({ error: null });
     console.log('[SkillStore] fetchCategories called, API_BASE:', API_BASE);
     try {
       const url = `${API_BASE}/api/skills/categories`;
@@ -124,7 +124,7 @@ export const useSkillStore = create<SkillState>((set, get) => ({
       if (!response.ok) {
         const errorText = await response.text();
         console.error('[SkillStore] Failed to fetch categories:', errorText);
-        throw new Error(`Failed to fetch categories: ${response.status}`);
+        throw new Error(`获取分类失败 (${response.status}): ${errorText || response.statusText}`);
       }
       const data = await response.json();
       console.log('[SkillStore] Fetched categories:', data.length);
@@ -135,12 +135,19 @@ export const useSkillStore = create<SkillState>((set, get) => ({
         expandedCategories: rootCategoryIds
       });
     } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      const isNetworkError = typeof (err as any)?.name === 'string' && ((err as any).name === 'TypeError' || (err as any).name === 'Failed to fetch');
       console.error('[SkillStore] Error in fetchCategories:', err);
-      set({ error: err instanceof Error ? err.message : 'Unknown error' });
+      set({ 
+        error: isNetworkError 
+          ? '无法连接后端服务，请确认后端已启动 (http://127.0.0.1:8000)' 
+          : msg 
+      });
     }
   },
 
   fetchSkills: async () => {
+    set({ error: null });
     console.log('[SkillStore] fetchSkills called, API_BASE:', API_BASE);
     try {
       const url = `${API_BASE}/api/skills`;
@@ -150,14 +157,20 @@ export const useSkillStore = create<SkillState>((set, get) => ({
       if (!response.ok) {
         const errorText = await response.text();
         console.error('[SkillStore] Failed to fetch skills:', errorText);
-        throw new Error(`Failed to fetch skills: ${response.status}`);
+        throw new Error(`获取技能失败 (${response.status}): ${errorText || response.statusText}`);
       }
       const data = await response.json();
       console.log('[SkillStore] Fetched skills:', data.length);
       set({ skills: data });
     } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      const isNetworkError = typeof (err as any)?.name === 'string' && ((err as any).name === 'TypeError' || (err as any).name === 'Failed to fetch');
       console.error('[SkillStore] Error in fetchSkills:', err);
-      set({ error: err instanceof Error ? err.message : 'Unknown error' });
+      set({ 
+        error: isNetworkError 
+          ? '无法连接后端服务，请确认后端已启动 (http://127.0.0.1:8000)' 
+          : msg 
+      });
     }
   },
 

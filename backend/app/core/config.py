@@ -34,14 +34,12 @@ class Settings(BaseSettings):
 
     if PYDANTIC_V2:
         model_config = SettingsConfigDict(
-            env_file=".env",
             env_file_encoding="utf-8",
             env_prefix="",
             case_sensitive=False
         )
     else:
         class Config:
-            env_file = ".env"
             env_file_encoding = "utf-8"
 
 

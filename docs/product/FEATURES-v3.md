@@ -7,23 +7,31 @@
 
 - **功能特点**:
   - 多 Agent 实时讨论（Planner、Conflict、Writing、Consistency）
-  - WebSocket 实时通信
+  - WebSocket 实时通信（SSE 流式输出）
   - 共识度评估和自动判定
   - 人工干预（接受/拒绝/评论）
-  - Facilitator 动态发言调度
+  - 自动工作流生成 Story Bible 内容
   - Consistency Agent 高优先级插话
 
 - **使用方式**:
-  1. 在小说编辑页面右侧 "Agent Room" 面板
-  2. 输入消息触发 Agent 自动工作
-  3. 观察 Agent 们的讨论过程
-  4. 可随时人工干预
+ 1. 在小说编辑页面右侧 "Agent Room" 面板
+ 2. 输入消息触发 Agent 自动工作
+ 3. 观察 Agent 们的讨论过程（实时推送）
+ 4. 可随时人工干预
 
 - **API 端点**:
+  - `POST /api/agent/chat` - 聊天接口（HTTP）
+  - `POST /api/agent/chat/stream` - 流式聊天接口（SSE）
+  - `WebSocket /api/agent/ws/{story_id}` - WebSocket 实时通信
   - `POST /api/agent-room/discussion/start` - 开始讨论
   - `GET /api/agent-room/discussion/{id}/round/{round}` - 获取讨论轮次
+  - `GET /api/agent-room/discussion/{id}/consensus` - 获取共识结果
   - `POST /api/agent-room/discussion/{id}/intervene` - 人工干预
-  - `WebSocket /api/agent-room/ws/{id}` - 实时通信
+
+- **Engine 整合**:
+  - AgentDiscussionEngine - 讨论引擎与共识计算
+  - AuthorDecisionSystem - 作者决策系统
+  - NarrativeIntelligenceEngine - 叙事智能引擎
 
 ### 2. Story Bible 📚
 **故事设定管理中心**

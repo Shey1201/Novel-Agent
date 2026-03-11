@@ -149,16 +149,25 @@ const AgentConfigForm: React.FC<{
 };
 
 const AgentManagement: React.FC = () => {
-  const { agents, updateAgent, isLoading, loadAgents } = useSupabaseStore();
+  const { agents, updateAgent, loadAgents } = useSupabaseStore();
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [agentsLoading, setAgentsLoading] = useState(false);
+  const [agentsLoadDone, setAgentsLoadDone] = useState(false);
 
-  // 组件挂载时按需加载 agents
+  // 组件挂载时按需加载 agents，用本地状态避免被全局 isLoading 卡住
   useEffect(() => {
-    if (agents.length === 0) {
-      loadAgents();
+    if (agents.length > 0) {
+      setAgentsLoadDone(true);
+      return;
     }
-  }, [agents.length, loadAgents]);
+    if (agentsLoadDone) return;
+    setAgentsLoading(true);
+    loadAgents().finally(() => {
+      setAgentsLoading(false);
+      setAgentsLoadDone(true);
+    });
+  }, [agents.length, agentsLoadDone]);
   
   // 当agents数据加载完成后，设置默认选中的agent
   useEffect(() => {
@@ -197,7 +206,7 @@ const AgentManagement: React.FC = () => {
       <div className="flex-1 overflow-hidden flex">
         {/* 左侧 Agent 列表 */}
         <div className="w-64 border-r border-zinc-200 overflow-y-auto p-3">
-          {isLoading ? (
+          {agentsLoading ? (
             <div className="flex items-center justify-center h-32 text-zinc-400 text-sm">
               <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>

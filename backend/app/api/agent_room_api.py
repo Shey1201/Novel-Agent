@@ -160,7 +160,7 @@ async def get_consensus(discussion_id: str):
     try:
         engine = get_agent_discussion_engine()
         consensus = engine.get_consensus_result(discussion_id)
-        
+
         if consensus:
             return consensus
         else:
@@ -175,6 +175,49 @@ async def get_consensus(discussion_id: str):
                 "requires_author_decision": False,
                 "participating_agents": ["planner", "conflict", "writer", "editor", "reader"]
             }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class InterveneRequest(BaseModel):
+    discussion_id: str
+    intervention_type: str  # accept/reject/comment
+    content: str
+    target_message_id: Optional[str] = None
+
+
+@router.post("/discussion/{discussion_id}/intervene")
+async def intervene_discussion(discussion_id: str, request: InterveneRequest):
+    """人工干预讨论"""
+    try:
+        engine = get_agent_discussion_engine()
+
+        # 根据干预类型处理
+        if request.intervention_type == "accept":
+            return {
+                "type": "accept",
+                "message": "已接受建议，讨论将继续",
+                "discussion_id": discussion_id,
+                "status": "accepted"
+            }
+        elif request.intervention_type == "reject":
+            return {
+                "type": "reject",
+                "message": "已拒绝建议，讨论将继续",
+                "discussion_id": discussion_id,
+                "status": "rejected"
+            }
+        elif request.intervention_type == "comment":
+            return {
+                "type": "comment",
+                "message": f"评论已提交: {request.content}",
+                "discussion_id": discussion_id,
+                "status": "commented"
+            }
+        else:
+            raise HTTPException(status_code=400, detail="无效的干预类型")
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

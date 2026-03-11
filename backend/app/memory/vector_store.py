@@ -64,8 +64,15 @@ class VectorStore:
     def _init_qdrant(self):
         """初始化 Qdrant"""
         try:
-            # 尝试连接本地 Qdrant
-            self.client = QdrantClient(host="localhost", port=6333)
+            # 从环境变量获取 Qdrant 配置
+            qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
+            qdrant_api_key = os.getenv("QDRANT_API_KEY")
+            
+            # 连接 Qdrant
+            if qdrant_api_key:
+                self.client = QdrantClient(url=qdrant_url, api_key=qdrant_api_key)
+            else:
+                self.client = QdrantClient(url=qdrant_url)
             
             # 检查集合是否存在
             collections = self.client.get_collections().collections
@@ -79,6 +86,7 @@ class VectorStore:
                 )
             
             self.storage_type = "qdrant"
+            print(f"Connected to Qdrant at {qdrant_url}")
         except Exception as e:
             print(f"Qdrant connection failed: {e}, falling back to memory")
             self._init_memory()

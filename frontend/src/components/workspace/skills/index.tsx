@@ -42,6 +42,7 @@ const SkillsManagement: React.FC = () => {
     selectedSkillId,
     searchQuery,
     isLoading,
+    error: skillError,
     expandedCategories,
     fetchCategories,
     fetchSkills,
@@ -341,7 +342,20 @@ const SkillsManagement: React.FC = () => {
   }
 
   return (
-    <div className="h-full flex">
+    <div className="h-full flex flex-col">
+      {skillError && (
+        <div className="flex-shrink-0 px-4 py-2 bg-amber-50 border-b border-amber-200 text-amber-800 text-sm flex items-center justify-between">
+          <span>{skillError}</span>
+          <button
+            type="button"
+            onClick={() => { fetchCategories(); fetchSkills(); }}
+            className="text-amber-700 underline hover:no-underline"
+          >
+            重试
+          </button>
+        </div>
+      )}
+      <div className="h-full flex flex-1 min-h-0">
       {/* 左侧：分类树 */}
       <div className="w-56 bg-zinc-50/50 border-r border-zinc-200 flex flex-col">
         <div className="p-4 border-b border-zinc-200">
@@ -1021,6 +1035,7 @@ const SkillsManagement: React.FC = () => {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 };

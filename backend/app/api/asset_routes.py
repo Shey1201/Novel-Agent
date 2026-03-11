@@ -53,8 +53,8 @@ class AssetResponse(BaseModel):
     name: str
     type: str
     description: Optional[str]
-    source_novel_id: str
-    source_novel_name: str
+    source_novel_id: Optional[str]
+    source_novel_name: Optional[str]
     color: Optional[str]
     is_starred: bool
     mount_count: int
@@ -63,94 +63,52 @@ class AssetResponse(BaseModel):
     version_count: int
 
 
+def _asset_to_response(a) -> AssetResponse:
+    """将 Asset 对象转换为 AssetResponse"""
+    return AssetResponse(
+        id=a.id,
+        name=a.name,
+        type=a.type,
+        description=a.description,
+        source_novel_id=a.source_novel_id,
+        source_novel_name=getattr(a, 'source_novel_name', None),
+        color=a.color,
+        is_starred=a.is_starred,
+        mount_count=asset_manager.get_asset_mount_count(a.id),
+        created_at=a.created_at,
+        updated_at=a.updated_at,
+        version_count=len(a.versions) if hasattr(a, 'versions') else 0
+    )
+
+
 # ==================== API端点 ====================
 
 @router.get("/all", response_model=List[AssetResponse])
 async def get_all_assets():
     """获取所有全局资产"""
     assets = asset_manager.get_global_assets()
-    return [
-        AssetResponse(
-            id=a.id,
-            name=a.name,
-            type=a.type,
-            description=a.description,
-            source_novel_id=a.source_novel_id,
-            source_novel_name=a.source_novel_name,
-            color=a.color,
-            is_starred=a.is_starred,
-            mount_count=asset_manager.get_asset_mount_count(a.id),
-            created_at=a.created_at,
-            updated_at=a.updated_at,
-            version_count=len(a.versions)
-        ) for a in assets
-    ]
+    return [_asset_to_response(a) for a in assets]
 
 
 @router.get("/by-type/{asset_type}", response_model=List[AssetResponse])
 async def get_assets_by_type(asset_type: str):
     """按类型获取资产"""
     assets = asset_manager.get_assets_by_type(asset_type)
-    return [
-        AssetResponse(
-            id=a.id,
-            name=a.name,
-            type=a.type,
-            description=a.description,
-            source_novel_id=a.source_novel_id,
-            source_novel_name=a.source_novel_name,
-            color=a.color,
-            is_starred=a.is_starred,
-            mount_count=asset_manager.get_asset_mount_count(a.id),
-            created_at=a.created_at,
-            updated_at=a.updated_at,
-            version_count=len(a.versions)
-        ) for a in assets
-    ]
+    return [_asset_to_response(a) for a in assets]
 
 
 @router.get("/by-novel/{novel_id}", response_model=List[AssetResponse])
 async def get_assets_by_novel(novel_id: str):
     """按原生小说获取资产"""
     assets = asset_manager.get_assets_by_novel(novel_id)
-    return [
-        AssetResponse(
-            id=a.id,
-            name=a.name,
-            type=a.type,
-            description=a.description,
-            source_novel_id=a.source_novel_id,
-            source_novel_name=a.source_novel_name,
-            color=a.color,
-            is_starred=a.is_starred,
-            mount_count=asset_manager.get_asset_mount_count(a.id),
-            created_at=a.created_at,
-            updated_at=a.updated_at,
-            version_count=len(a.versions)
-        ) for a in assets
-    ]
+    return [_asset_to_response(a) for a in assets]
 
 
 @router.get("/novel/{novel_id}/mounted", response_model=List[AssetResponse])
 async def get_novel_mounted_assets(novel_id: str):
     """获取小说已挂载的资产"""
     assets = asset_manager.get_novel_assets(novel_id)
-    return [
-        AssetResponse(
-            id=a.id,
-            name=a.name,
-            type=a.type,
-            description=a.description,
-            source_novel_id=a.source_novel_id,
-            source_novel_name=a.source_novel_name,
-            color=a.color,
-            is_starred=a.is_starred,
-            mount_count=asset_manager.get_asset_mount_count(a.id),
-            created_at=a.created_at,
-            updated_at=a.updated_at,
-            version_count=len(a.versions)
-        ) for a in assets
-    ]
+    return [_asset_to_response(a) for a in assets]
 
 
 @router.post("/create", response_model=AssetResponse)
@@ -197,20 +155,7 @@ async def update_asset(asset_id: str, request: UpdateAssetRequest):
     if not updated:
         raise HTTPException(status_code=404, detail="Asset not found")
     
-    return AssetResponse(
-        id=updated.id,
-        name=updated.name,
-        type=updated.type,
-        description=updated.description,
-        source_novel_id=updated.source_novel_id,
-        source_novel_name=updated.source_novel_name,
-        color=updated.color,
-        is_starred=updated.is_starred,
-        mount_count=asset_manager.get_asset_mount_count(updated.id),
-        created_at=updated.created_at,
-        updated_at=updated.updated_at,
-        version_count=len(updated.versions)
-    )
+    return _asset_to_response(updated)
 
 
 @router.delete("/{asset_id}")
@@ -260,44 +205,14 @@ async def get_mount_status(asset_id: str, novel_id: str):
 async def search_assets(query: str):
     """搜索资产"""
     assets = asset_manager.search_assets(query)
-    return [
-        AssetResponse(
-            id=a.id,
-            name=a.name,
-            type=a.type,
-            description=a.description,
-            source_novel_id=a.source_novel_id,
-            source_novel_name=a.source_novel_name,
-            color=a.color,
-            is_starred=a.is_starred,
-            mount_count=asset_manager.get_asset_mount_count(a.id),
-            created_at=a.created_at,
-            updated_at=a.updated_at,
-            version_count=len(a.versions)
-        ) for a in assets
-    ]
+    return [_asset_to_response(a) for a in assets]
 
 
 @router.get("/starred", response_model=List[AssetResponse])
 async def get_starred_assets():
     """获取收藏的资产"""
     assets = asset_manager.get_starred_assets()
-    return [
-        AssetResponse(
-            id=a.id,
-            name=a.name,
-            type=a.type,
-            description=a.description,
-            source_novel_id=a.source_novel_id,
-            source_novel_name=a.source_novel_name,
-            color=a.color,
-            is_starred=a.is_starred,
-            mount_count=asset_manager.get_asset_mount_count(a.id),
-            created_at=a.created_at,
-            updated_at=a.updated_at,
-            version_count=len(a.versions)
-        ) for a in assets
-    ]
+    return [_asset_to_response(a) for a in assets]
 
 
 @router.post("/{asset_id}/toggle-star")
@@ -571,19 +486,4 @@ async def set_asset_category(asset_id: str, category_id: Optional[str] = None):
 async def get_assets_by_category(category_id: str):
     """获取指定分类下的所有资产"""
     assets = asset_manager.get_assets_by_category(category_id)
-    return [
-        AssetResponse(
-            id=a.id,
-            name=a.name,
-            type=a.type,
-            description=a.description,
-            source_novel_id=a.source_novel_id,
-            source_novel_name=a.source_novel_name,
-            color=a.color,
-            is_starred=a.is_starred,
-            mount_count=asset_manager.get_asset_mount_count(a.id),
-            created_at=a.created_at,
-            updated_at=a.updated_at,
-            version_count=len(a.versions)
-        ) for a in assets
-    ]
+    return [_asset_to_response(a) for a in assets]

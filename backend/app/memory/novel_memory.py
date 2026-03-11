@@ -142,6 +142,24 @@ class NovelMemory:
             import traceback
             traceback.print_exc()
         return []
+
+    def get_deleted_novels(self) -> List[Novel]:
+        """获取已删除的小说（回收站）"""
+        if not self.supabase:
+            return []
+        try:
+            response = (
+                self.supabase.table("novels")
+                .select("*")
+                .not_.is_("deleted_at", "null")
+                .order("deleted_at", desc=True)
+                .execute()
+            )
+            if response.data:
+                return [Novel(**d) for d in response.data]
+        except Exception as e:
+            print(f"[NovelMemory] Error fetching deleted novels: {e}")
+        return []
     
     def get_novel(self, novel_id: str) -> Optional[Novel]:
         """根据ID获取小说"""
@@ -199,8 +217,46 @@ class NovelMemory:
             print(f"NovelMemory: Error updating novel: {e}")
         return None
     
+    def soft_delete_novel(self, novel_id: str) -> bool:
+        """软删除小说（移入回收站：设置 deleted_at）"""
+        if not self.supabase:
+            return False
+        try:
+            now = datetime.now().isoformat()
+            response = (
+                self.supabase.table("novels")
+                .update({"deleted_at": now, "updated_at": now})
+                .eq("id", novel_id)
+                .execute()
+            )
+            if response.data:
+                cache_invalidate("novels")
+                return True
+        except Exception as e:
+            print(f"NovelMemory: Error soft-deleting novel: {e}")
+        return False
+
+    def restore_novel(self, novel_id: str) -> bool:
+        """从回收站恢复小说（清除 deleted_at）"""
+        if not self.supabase:
+            return False
+        try:
+            now = datetime.now().isoformat()
+            response = (
+                self.supabase.table("novels")
+                .update({"deleted_at": None, "updated_at": now})
+                .eq("id", novel_id)
+                .execute()
+            )
+            if response.data:
+                cache_invalidate("novels")
+                return True
+        except Exception as e:
+            print(f"NovelMemory: Error restoring novel: {e}")
+        return False
+
     def delete_novel(self, novel_id: str) -> bool:
-        """删除小说"""
+        """永久删除小说（真删）"""
         if not self.supabase:
             return False
         

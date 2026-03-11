@@ -1,12 +1,8 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useCallback } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { Collaboration } from "@tiptap/extension-collaboration";
-import { CollaborationCursor } from "@tiptap/extension-collaboration-cursor";
-import * as Y from "yjs";
-import { WebsocketProvider } from "y-websocket";
 
 interface CollaborativeEditorProps {
   documentId: string;
@@ -17,79 +13,21 @@ interface CollaborativeEditorProps {
   className?: string;
 }
 
-interface AwarenessState {
-  user: {
-    name: string;
-    color: string;
-  };
-}
-
 /**
- * 协同编辑器组件
- * 基于 Tiptap + Yjs 实现多人实时协作编辑
+ * 单人编辑器版本（本地 Tiptap，无协同/WebSocket）
  */
 export const CollaborativeEditor: React.FC<CollaborativeEditorProps> = ({
   documentId,
   userName,
   userColor = "#ff0000",
-  websocketUrl = "ws://localhost:1234",
+  websocketUrl, // 保留参数签名以兼容现有调用，但不再使用
   onContentChange,
   className = "",
 }) => {
-  const [ydoc] = useState(() => new Y.Doc());
-  const [provider, setProvider] = useState<WebsocketProvider | null>(null);
-  const [connected, setConnected] = useState(false);
-  const [users, setUsers] = useState<AwarenessState[]>([]);
-
-  // 初始化 WebSocket 连接
-  useEffect(() => {
-    const wsProvider = new WebsocketProvider(
-      websocketUrl,
-      documentId,
-      ydoc
-    );
-
-    // 设置用户 awareness
-    wsProvider.awareness.setLocalStateField("user", {
-      name: userName,
-      color: userColor,
-    });
-
-    // 监听连接状态
-    wsProvider.on("status", (event: { status: string }) => {
-      setConnected(event.status === "connected");
-    });
-
-    // 监听其他用户
-    wsProvider.awareness.on("change", () => {
-      const states = Array.from(wsProvider.awareness.getStates().values()) as AwarenessState[];
-      setUsers(states.filter((state) => state.user));
-    });
-
-    setProvider(wsProvider);
-
-    return () => {
-      wsProvider.destroy();
-    };
-  }, [documentId, userName, userColor, websocketUrl, ydoc]);
-
-  // 创建编辑器
+  // 创建本地编辑器
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({
-        // 历史记录由 Yjs 处理
-      }),
-      Collaboration.configure({
-        document: ydoc,
-      }),
-      CollaborationCursor.configure({
-        provider: provider || undefined,
-        user: {
-          name: userName,
-          color: userColor,
-        },
-      }),
-    ],
+      StarterKit.configure({}),
     editorProps: {
       attributes: {
         class:
@@ -125,38 +63,20 @@ export const CollaborativeEditor: React.FC<CollaborativeEditorProps> = ({
 
   return (
     <div className={`border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden ${className}`}>
-      {/* 工具栏 */}
+      {/* 顶部：当前用户 + 简单工具栏（无连接状态/在线用户） */}
       <div className="flex items-center justify-between px-4 py-2 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-        <div className="flex items-center space-x-4">
-          {/* 连接状态 */}
+        <div className="flex items-center space-x-2">
+          <span className="text-sm text-gray-500 dark:text-gray-400">
+            当前用户:
+          </span>
           <div className="flex items-center space-x-2">
             <div
-              className={`w-2 h-2 rounded-full ${
-                connected ? "bg-green-500" : "bg-red-500"
-              }`}
+              className="w-6 h-6 rounded-full border-2 border-white dark:border-gray-800"
+              style={{ backgroundColor: userColor }}
             />
-            <span className="text-sm text-gray-600 dark:text-gray-400">
-              {connected ? "已连接" : "连接中..."}
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
+              {userName}
             </span>
-          </div>
-
-          {/* 在线用户 */}
-          <div className="flex items-center space-x-2">
-            <span className="text-sm text-gray-500 dark:text-gray-500">
-              在线用户:
-            </span>
-            <div className="flex -space-x-2">
-              {users.map((user, index) => (
-                <div
-                  key={index}
-                  className="w-6 h-6 rounded-full flex items-center justify-center text-xs text-white font-medium border-2 border-white dark:border-gray-800"
-                  style={{ backgroundColor: user.user.color }}
-                  title={user.user.name}
-                >
-                  {user.user.name.charAt(0).toUpperCase()}
-                </div>
-              ))}
-            </div>
           </div>
         </div>
 

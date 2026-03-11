@@ -113,7 +113,7 @@ describe('NovelStore Types', () => {
         'skills',
         'settings',
         'recycle-bin',
-        'performance',
+        'memory',
       ];
 
       modules.forEach((module) => {

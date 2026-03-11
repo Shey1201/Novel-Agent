@@ -215,9 +215,21 @@ class AssetManager:
         if not self._ensure_connected():
             return 0
         try:
+            # 检查 asset_mounts 表是否存在
             response = self.supabase.table("asset_mounts").select("*", count="exact").eq("asset_id", asset_id).execute()
             return response.count if response.count is not None else 0
         except Exception as e:
+            error_msg = str(e)
+            # 如果表不存在，返回 0 但不打印错误（避免日志刷屏）
+            if "Could not find the table" in error_msg or "asset_mounts" in error_msg:
+                # 尝试从 assets 表的 novel_id 字段计算挂载数
+                try:
+                    asset = self.get_asset(asset_id)
+                    if asset and asset.novel_id:
+                        return 1
+                except:
+                    pass
+                return 0
             print(f"[AssetManager] Error getting mount count: {e}")
             return 0
 
@@ -251,6 +263,7 @@ class AssetManager:
         if not self._ensure_connected():
             return False
         try:
+            # 尝试使用 asset_mounts 表
             data = {
                 "asset_id": asset_id,
                 "novel_id": novel_id,
@@ -260,6 +273,15 @@ class AssetManager:
             response = self.supabase.table("asset_mounts").insert(data).execute()
             return len(response.data) > 0
         except Exception as e:
+            error_msg = str(e)
+            # 如果表不存在，回退到更新 assets 表的 novel_id 字段
+            if "Could not find the table" in error_msg or "asset_mounts" in error_msg:
+                print("[AssetManager] asset_mounts table not found, falling back to novel_id update")
+                try:
+                    return self.update_asset(asset_id, {"novel_id": novel_id})
+                except Exception as fallback_e:
+                    print(f"[AssetManager] Fallback mount failed: {fallback_e}")
+                    return False
             print(f"[AssetManager] Error mounting asset: {e}")
             return False
 
@@ -271,6 +293,18 @@ class AssetManager:
             response = self.supabase.table("asset_mounts").delete().eq("asset_id", asset_id).eq("novel_id", novel_id).execute()
             return len(response.data) > 0
         except Exception as e:
+            error_msg = str(e)
+            # 如果表不存在，回退到更新 assets 表
+            if "Could not find the table" in error_msg or "asset_mounts" in error_msg:
+                print("[AssetManager] asset_mounts table not found, falling back to novel_id clear")
+                try:
+                    asset = self.get_asset(asset_id)
+                    if asset and asset.novel_id == novel_id:
+                        return self.update_asset(asset_id, {"novel_id": None})
+                    return True
+                except Exception as fallback_e:
+                    print(f"[AssetManager] Fallback unmount failed: {fallback_e}")
+                    return False
             print(f"[AssetManager] Error unmounting asset: {e}")
             return False
 
@@ -284,6 +318,16 @@ class AssetManager:
                 return {"asset_id": asset_id, "novel_id": novel_id, "mounted": True, **response.data[0]}
             return None
         except Exception as e:
+            error_msg = str(e)
+            # 如果表不存在，回退到检查 assets 表的 novel_id 字段
+            if "Could not find the table" in error_msg or "asset_mounts" in error_msg:
+                try:
+                    asset = self.get_asset(asset_id)
+                    if asset and asset.novel_id == novel_id:
+                        return {"asset_id": asset_id, "novel_id": novel_id, "mounted": True, "reference_type": "linked"}
+                    return None
+                except:
+                    return None
             print(f"[AssetManager] Error getting mount info: {e}")
             return None
 
@@ -295,6 +339,14 @@ class AssetManager:
             response = self.supabase.table("asset_mounts").select("*").eq("asset_id", asset_id).eq("novel_id", novel_id).execute()
             return len(response.data) > 0
         except Exception as e:
+            error_msg = str(e)
+            # 如果表不存在，回退到检查 assets 表的 novel_id 字段
+            if "Could not find the table" in error_msg or "asset_mounts" in error_msg:
+                try:
+                    asset = self.get_asset(asset_id)
+                    return asset is not None and asset.novel_id == novel_id
+                except:
+                    return False
             print(f"[AssetManager] Error checking mount status: {e}")
             return False
 
@@ -320,12 +372,26 @@ class AssetManager:
             return []
 
         try:
-            query = self.supabase.table("asset_categories").select("*").is_("deleted_at", "null")
-            if user_id:
-                query = query.eq("user_id", user_id)
-            response = query.order("order").execute()
-            if response.data:
-                return response.data
+            # 尝试查询，如果 deleted_at 列不存在则忽略该条件
+            try:
+                query = self.supabase.table("asset_categories").select("*").is_("deleted_at", "null")
+                if user_id:
+                    query = query.eq("user_id", user_id)
+                response = query.order("order").execute()
+                if response.data:
+                    return response.data
+            except Exception as inner_e:
+                # 如果是因为 deleted_at 列不存在，尝试不带该条件的查询
+                if "deleted_at" in str(inner_e):
+                    print("[AssetManager] deleted_at column not found, querying without it")
+                    query = self.supabase.table("asset_categories").select("*")
+                    if user_id:
+                        query = query.eq("user_id", user_id)
+                    response = query.order("order").execute()
+                    if response.data:
+                        return response.data
+                else:
+                    raise inner_e
         except Exception as e:
             print(f"[AssetManager] Error fetching asset categories: {e}")
         return []

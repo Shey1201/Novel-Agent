@@ -1,6 +1,7 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import { supabase } from '@/lib/supabase';
+import { API_BASE, apiUrl } from '@/lib/api';
 import type { User } from '@supabase/supabase-js';
 import type {
   WorkspaceModule,
@@ -19,9 +20,6 @@ import type {
   TraceItem,
 } from './novelStore';
 
-// API 基础URL
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
-
 // 匿名用户ID，用于没有登录系统的情况
 // 使用随机生成的UUID，避免与真实用户ID冲突
 const ANONYMOUS_USER_ID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
@@ -30,6 +28,40 @@ const ANONYMOUS_USER_ID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
 let isCreatingDefaultAgents = false;
 // 防止重复加载数据的标志
 let isLoadingData = false;
+
+const FETCH_TIMEOUT_MS = 15000; // 15 秒超时，避免请求挂死导致一直 loading
+function fetchWithTimeout(url: string, options?: RequestInit): Promise<Response> {
+  const ctrl = new AbortController();
+  const id = setTimeout(
+    () => ctrl.abort(new DOMException('Request timeout', 'AbortError')),
+    FETCH_TIMEOUT_MS
+  );
+  return fetch(url, { ...options, signal: ctrl.signal }).finally(() => clearTimeout(id));
+}
+
+function isAbortError(err: unknown): boolean {
+  return err instanceof Error && err.name === 'AbortError';
+}
+
+// 仅在浏览器环境可用时使用 localStorage，避免 SSR/存储不可用时报错
+function getPersistStorage() {
+  if (typeof window === 'undefined') {
+    return {
+      getItem: () => null,
+      setItem: () => {},
+      removeItem: () => {},
+    };
+  }
+  try {
+    return localStorage;
+  } catch {
+    return {
+      getItem: () => null,
+      setItem: () => {},
+      removeItem: () => {},
+    };
+  }
+}
 
 // 重新导出类型
 export type {
@@ -119,6 +151,7 @@ interface NovelState {
 
   // 消息方法
   addMessage: (message: Message) => void;
+  loadMessages: () => Promise<void>;
   clearMessages: () => void;
 
   // 写作模式
@@ -299,15 +332,12 @@ export const useSupabaseStore = create<NovelState>()(
           currentNovelId: state.currentNovelId === id ? null : state.currentNovelId,
         }));
         
-        // 同步到 Supabase：标记为已删除
+        // 通过后端 API 软删除（移入回收站），避免前端直连 Supabase 导致 401
         try {
-          const { error } = await supabase
-            .from('novels')
-            .update({ deleted_at: new Date().toISOString() })
-            .eq('id', id);
-          
-          if (error) {
-            console.error('Failed to mark novel as deleted:', error);
+          const response = await fetch(`${API_BASE}/api/novels/${id}/trash`, { method: 'POST' });
+          if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            console.error('Failed to mark novel as deleted:', err);
           }
         } catch (err) {
           console.error('Error marking novel as deleted:', err);
@@ -325,15 +355,12 @@ export const useSupabaseStore = create<NovelState>()(
           novels: [...state.novels, rest],
         }));
         
-        // 同步到 Supabase：恢复小说
+        // 通过后端 API 恢复
         try {
-          const { error } = await supabase
-            .from('novels')
-            .update({ deleted_at: null })
-            .eq('id', id);
-          
-          if (error) {
-            console.error('Failed to restore novel:', error);
+          const response = await fetch(`${API_BASE}/api/novels/${id}/restore`, { method: 'POST' });
+          if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            console.error('Failed to restore novel:', err);
           }
         } catch (err) {
           console.error('Error restoring novel:', err);
@@ -345,15 +372,12 @@ export const useSupabaseStore = create<NovelState>()(
           deletedNovels: state.deletedNovels.filter((n) => n.id !== id),
         }));
         
-        // 同步到 Supabase：真正删除
+        // 通过后端 API 永久删除
         try {
-          const { error } = await supabase
-            .from('novels')
-            .delete()
-            .eq('id', id);
-          
-          if (error) {
-            console.error('Failed to permanently delete novel:', error);
+          const response = await fetch(`${API_BASE}/api/novels/${id}`, { method: 'DELETE' });
+          if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            console.error('Failed to permanently delete novel:', err);
           } else {
             console.log(`Novel ${id} permanently deleted`);
           }
@@ -364,10 +388,13 @@ export const useSupabaseStore = create<NovelState>()(
       clearRecycleBin: async () => {
         const deletedNovels = get().deletedNovels;
         
-        // 同步到 Supabase：删除所有回收站中的小说
+        // 通过后端 API 永久删除回收站中的每部小说
         for (const novel of deletedNovels) {
           try {
-            await supabase.from('novels').delete().eq('id', novel.id);
+            const response = await fetch(`${API_BASE}/api/novels/${novel.id}`, { method: 'DELETE' });
+            if (!response.ok) {
+              console.error('Error deleting novel from recycle bin:', novel.id);
+            }
           } catch (err) {
             console.error('Error deleting novel from recycle bin:', err);
           }
@@ -762,54 +789,69 @@ export const useSupabaseStore = create<NovelState>()(
         }
       },
 
-      // 消息方法
+      // 消息方法：先乐观更新 UI（立即显示），再通过后端 API 同步，避免等待接口才显示
       addMessage: async (message) => {
-        // 同步到 Supabase - 不指定ID，让数据库自动生成UUID
+        const tempId = (message as any).id || `temp-${Date.now()}`;
+        const optimistic = { ...message, id: tempId };
+        set((state) => ({ messages: [...state.messages, optimistic] }));
+
         try {
-          // 确保 timestamp 是有效的 ISO 字符串
           let timestamp = (message as any).timestamp;
           if (!timestamp || typeof timestamp !== 'string' || !timestamp.includes('T')) {
             timestamp = new Date().toISOString();
           }
-          
-          const { data, error } = await supabase.from('messages').insert({
-            user_id: ANONYMOUS_USER_ID,
-            role: message.role,
-            content: message.content,
-            agent_id: (message as any).agentId || null,
-            agent_name: (message as any).agentName || null,
-            timestamp: timestamp,
-            created_at: new Date().toISOString(),
-          }).select('id').single();
-
-          if (error) {
-            console.error('Failed to create message in Supabase:', error);
+          const res = await fetch(apiUrl('/api/messages'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              role: message.role,
+              content: message.content,
+              agent_id: (message as any).agentId ?? null,
+              agent_name: (message as any).agentName ?? null,
+              timestamp,
+            }),
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            console.error('Failed to create message:', err);
             return;
           }
-          
-          // 使用数据库返回的ID更新本地状态
-          const messageWithDbId = { ...message, id: data.id };
+          const data = await res.json();
           set((state) => ({
-            messages: [...state.messages, messageWithDbId],
+            messages: state.messages.map((m) => (m.id === tempId ? { ...m, id: data.id } : m)),
           }));
-          console.log('Message created in Supabase:', data.id);
         } catch (err) {
           console.error('Error creating message:', err);
         }
       },
-      clearMessages: async () => {
-        // 先更新本地状态
-        set({ messages: [] });
-        
-        // 同步到 Supabase - 删除所有消息
+      loadMessages: async () => {
         try {
-          const { error } = await supabase
-            .from('messages')
-            .delete()
-            .neq('id', '00000000-0000-0000-0000-000000000000'); // 删除所有记录
-          
-          if (error) {
-            console.error('Failed to clear messages in Supabase:', error);
+          const res = await fetchWithTimeout(apiUrl('/api/messages'));
+          if (!res.ok) {
+            console.error('Failed to load messages:', res.status);
+            return;
+          }
+          const data = await res.json();
+          const list = (data.messages || []) as Array<{ id: string; role: string; content: string; agent_id?: string; agent_name?: string; timestamp?: string; created_at?: string }>;
+          const mapped: Message[] = list.map((m, i) => ({
+            id: m.id,
+            sender: m.agent_name || (m.role === 'user' ? 'User' : 'Agent'),
+            role: (m.role === 'user' ? 'user' : 'agent') as 'user' | 'agent',
+            content: m.content || '',
+            timestamp: typeof m.timestamp === 'string' ? Date.parse(m.timestamp) || i : (m.timestamp ?? i),
+          }));
+          set({ messages: mapped });
+        } catch (err) {
+          console.error('Error loading messages:', err);
+        }
+      },
+      clearMessages: async () => {
+        set({ messages: [] });
+        try {
+          const res = await fetch(apiUrl('/api/messages'), { method: 'DELETE' });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            console.error('Failed to clear messages:', err);
           }
         } catch (err) {
           console.error('Error clearing messages:', err);
@@ -1072,8 +1114,8 @@ export const useSupabaseStore = create<NovelState>()(
         try {
           set({ isLoading: true });
 
-          // 通过后端API加载小说列表（包含章节）
-          const response = await fetch(`${API_BASE}/api/novels/with-chapters`);
+          // 通过后端API加载小说列表（含章节）
+          const response = await fetchWithTimeout(`${API_BASE}/api/novels/with-chapters`);
           if (!response.ok) {
             const error = await response.json();
             console.error('Failed to load novels from API:', error);
@@ -1109,29 +1151,28 @@ export const useSupabaseStore = create<NovelState>()(
             }
           }
 
-          // 加载已删除的小说（回收站）- 暂时仍使用Supabase直连
-          // TODO: 添加后端API支持
-          const { data: deletedNovelsData, error: deletedError } = await supabase
-            .from('novels')
-            .select('*')
-            .not('deleted_at', 'is', null)
-            .order('deleted_at', { ascending: false });
-
-          if (deletedError) {
-            console.error('Failed to load deleted novels:', deletedError);
-          } else if (deletedNovelsData && deletedNovelsData.length > 0) {
-            const deletedNovels = deletedNovelsData.map((novel: any) => ({
-              id: novel.id,
-              title: novel.title,
-              outline: novel.outline || '',
-              locked: novel.locked || false,
-              createdAt: new Date(novel.created_at).getTime(),
-              updatedAt: new Date(novel.updated_at).getTime(),
-              chapters: [],
-              deletedAt: new Date(novel.deleted_at).getTime(),
-            }));
-            set({ deletedNovels });
-            console.log(`Loaded ${deletedNovels.length} deleted novels from Supabase`);
+          // 加载已删除的小说（回收站）- 通过后端 API，避免前端直连 Supabase 导致 401
+          try {
+            const deletedRes = await fetch(`${API_BASE}/api/novels/deleted`);
+            if (deletedRes.ok) {
+              const deletedNovelsData = await deletedRes.json();
+              if (deletedNovelsData && deletedNovelsData.length > 0) {
+                const deletedNovels = deletedNovelsData.map((novel: any) => ({
+                  id: novel.id,
+                  title: novel.title,
+                  outline: '',
+                  locked: novel.locked || false,
+                  createdAt: new Date(novel.created_at).getTime(),
+                  updatedAt: new Date(novel.updated_at).getTime(),
+                  chapters: [],
+                  deletedAt: new Date(novel.deleted_at).getTime(),
+                }));
+                set({ deletedNovels });
+                console.log(`Loaded ${deletedNovels.length} deleted novels from API`);
+              }
+            }
+          } catch (e) {
+            console.warn('Recycle bin (deleted novels) load skipped:', e);
           }
 
           // 加载分类 - 使用后端API
@@ -1244,7 +1285,9 @@ export const useSupabaseStore = create<NovelState>()(
 
           console.log('Data loaded successfully');
         } catch (err) {
-          console.error('Error loading data:', err);
+          if (!isAbortError(err)) {
+            console.error('Error loading data:', err);
+          }
         } finally {
           set({ isLoading: false });
           isLoadingData = false;
@@ -1257,7 +1300,7 @@ export const useSupabaseStore = create<NovelState>()(
           set({ isLoading: true });
           
           // 加载 Agent 配置 - 使用后端API
-          const agentResponse = await fetch(`${API_BASE}/api/agents/configs`);
+          const agentResponse = await fetchWithTimeout(`${API_BASE}/api/agents/configs`);
           if (agentResponse.ok) {
             const agentConfigs = await agentResponse.json();
             if (agentConfigs && agentConfigs.length > 0) {
@@ -1282,7 +1325,9 @@ export const useSupabaseStore = create<NovelState>()(
             }
           }
         } catch (err) {
-          console.error('Error loading agents:', err);
+          if (!isAbortError(err)) {
+            console.error('Error loading agents:', err);
+          }
         } finally {
           set({ isLoading: false });
         }
@@ -1290,6 +1335,7 @@ export const useSupabaseStore = create<NovelState>()(
     }),
     {
       name: 'novel-supabase-store',
+      storage: createJSONStorage(getPersistStorage),
       partialize: (state) => ({
         // 只持久化 UI 状态，数据将从 Supabase 加载
         workspaceModule: state.workspaceModule,

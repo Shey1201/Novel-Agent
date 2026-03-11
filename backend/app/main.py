@@ -12,9 +12,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import novel_routes, generate_chapter, world_routes, agent_routes, asset_routes, skills, system_settings_api, novel_management, agent_management, category_management
-from app.api import stream_api, collaboration_api, cache_api, analysis_api, analytics_api, advanced_features_api, agent_room_api, download_api
-from app.core.performance_monitor import performance_middleware
+from app.api import novel_routes, generate_chapter, world_routes, agent_routes, asset_routes, skills, system_settings_api, novel_management, agent_management, category_management, messages_routes
+from app.api import stream_api, cache_api, analysis_api, analytics_api, advanced_features_api, agent_room_api, download_api, memory_api
 from app.core.logging_config import setup_logging
 
 # 配置日志
@@ -61,8 +60,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 添加性能监控中间件
-app.middleware("http")(performance_middleware)
 
 
 @app.get("/api/health")
@@ -81,31 +78,6 @@ async def debug_env():
         "next_public_supabase_anon_key_set": bool(os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY")),
         "supabase_url_preview": os.getenv("SUPABASE_URL", "")[:30] + "..." if os.getenv("SUPABASE_URL") else "Not set",
     }
-
-
-@app.get("/api/debug/performance")
-async def debug_performance():
-    """调试端点：获取性能统计"""
-    from app.core.performance_monitor import get_performance_monitor
-    monitor = get_performance_monitor()
-    return monitor.get_all_stats()
-
-
-@app.get("/api/debug/performance/{path:path}")
-async def debug_performance_path(path: str):
-    """调试端点：获取指定路径的性能统计"""
-    from app.core.performance_monitor import get_performance_monitor
-    monitor = get_performance_monitor()
-    return monitor.get_stats(path)
-
-
-@app.delete("/api/debug/performance")
-async def clear_performance_stats():
-    """调试端点：清除性能统计"""
-    from app.core.performance_monitor import get_performance_monitor
-    monitor = get_performance_monitor()
-    monitor.clear_stats()
-    return {"message": "Performance stats cleared"}
 
 
 @app.get("/api/debug/errors")
@@ -184,13 +156,14 @@ app.include_router(category_management.router)
 
 # v3 新功能
 app.include_router(stream_api.router)
-app.include_router(collaboration_api.router)
 app.include_router(cache_api.router)
 app.include_router(analysis_api.router)
 app.include_router(analytics_api.router)
 app.include_router(advanced_features_api.router)
 app.include_router(agent_room_api.router)
+app.include_router(messages_routes.router)
 app.include_router(download_api.router)
+app.include_router(memory_api.router)
 
 
 # ============ 全局异常处理 ============

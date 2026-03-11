@@ -53,6 +53,16 @@ class NovelResponse(BaseModel):
     updated_at: str
 
 
+class DeletedNovelResponse(BaseModel):
+    id: str
+    title: str
+    locked: bool
+    category_id: Optional[str]
+    created_at: str
+    updated_at: str
+    deleted_at: str
+
+
 class ChapterResponse(BaseModel):
     id: str
     novel_id: str
@@ -81,7 +91,7 @@ class NovelWithChaptersResponse(BaseModel):
 
 @router.get("", response_model=List[NovelResponse])
 async def get_novels():
-    """获取所有小说"""
+    """获取所有小说（不含回收站）"""
     novels = novel_memory.get_all_novels()
     return [
         NovelResponse(
@@ -91,6 +101,24 @@ async def get_novels():
             category_id=n.category_id,
             created_at=n.created_at,
             updated_at=n.updated_at
+        )
+        for n in novels
+    ]
+
+
+@router.get("/deleted", response_model=List[DeletedNovelResponse])
+async def get_deleted_novels():
+    """获取回收站中的已删除小说"""
+    novels = novel_memory.get_deleted_novels()
+    return [
+        DeletedNovelResponse(
+            id=n.id,
+            title=n.title,
+            locked=n.locked,
+            category_id=n.category_id,
+            created_at=n.created_at,
+            updated_at=n.updated_at,
+            deleted_at=n.deleted_at or ""
         )
         for n in novels
     ]
@@ -202,9 +230,37 @@ async def update_novel(novel_id: str, request: NovelUpdateRequest):
         raise HTTPException(status_code=500, detail=f"Failed to update novel: {str(e)}")
 
 
+@router.post("/{novel_id}/trash")
+async def soft_delete_novel(novel_id: str):
+    """软删除小说（移入回收站）"""
+    try:
+        success = novel_memory.soft_delete_novel(novel_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Novel not found")
+        return {"message": "Novel moved to recycle bin"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to move novel to recycle bin: {str(e)}")
+
+
+@router.post("/{novel_id}/restore")
+async def restore_novel(novel_id: str):
+    """从回收站恢复小说"""
+    try:
+        success = novel_memory.restore_novel(novel_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Novel not found")
+        return {"message": "Novel restored"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to restore novel: {str(e)}")
+
+
 @router.delete("/{novel_id}")
 async def delete_novel(novel_id: str):
-    """删除小说"""
+    """永久删除小说（从回收站彻底删除）"""
     try:
         success = novel_memory.delete_novel(novel_id)
         if not success:
