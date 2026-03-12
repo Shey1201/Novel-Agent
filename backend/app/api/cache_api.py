@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from app.core.cache_manager import get_cache_manager, CacheManager
 from app.memory.rag_optimizer import get_rag_optimizer
+from app.core.context_pool import get_context_pool
 
 
 router = APIRouter(prefix="/api/cache", tags=["cache"])
@@ -46,6 +47,22 @@ async def get_cache_stats():
     cm = get_cache_manager()
     stats = cm.get_stats()
     return CacheStats(**stats)
+
+
+@router.get("/context-pool/stats")
+async def get_context_pool_stats():
+    """获取上下文缓存池统计信息"""
+    pool = get_context_pool()
+    stats = pool.get_stats()
+    return {"context_pool": stats}
+
+
+@router.post("/context-pool/clear")
+async def clear_context_pool():
+    """清空上下文缓存池"""
+    pool = get_context_pool()
+    pool.clear_all()
+    return {"message": "Context pool cleared"}
 
 
 @router.post("/clear")

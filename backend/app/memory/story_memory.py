@@ -188,3 +188,4 @@ class StoryMemory(BaseModel):
     timeline: List[TimelineEvent] = Field(default_factory=list)
     chapter_summaries: List[ChapterSummary] = Field(default_factory=list)
     world_locked: bool = False
+    unresolved_clues: List[Dict[str, Any]] = Field(default_factory=list)  # 未回收伏笔，供 MemoryManager 使用

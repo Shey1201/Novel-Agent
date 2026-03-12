@@ -6,6 +6,13 @@ import StarterKit from "@tiptap/starter-kit";
 import * as Y from "yjs";
 import { WebsocketProvider } from "y-websocket";
 
+interface AwarenessState {
+  user?: {
+    name: string;
+    color?: string;
+  };
+}
+
 interface CollaborativeEditorProps {
   documentId: string;
   userName: string;
@@ -209,7 +216,7 @@ export function useCollaborativeEditor(
 
     wsProvider.awareness.on("change", () => {
       const states = Array.from(wsProvider.awareness.getStates().values()) as AwarenessState[];
-      setUsers(states.filter((state) => state.user).map((state) => state.user.name));
+      setUsers(states.filter((state) => state.user).map((state) => state.user!.name));
     });
 
     setProvider(wsProvider);

@@ -2,6 +2,7 @@ from typing import Any, Callable, Dict, List, Optional
 import random
 import json
 import time
+import os
 from datetime import datetime
 
 from app.agents.critic_agent import CriticAgent
@@ -17,52 +18,111 @@ from app.memory.skill_memory import skill_memory
 from app.services.chapter_service import load_memory, save_memory
 from app.services.world_service import WorldDebateRequest, WorldService
 from app.core.ai_config import get_llm_with_fallback
-from app.core.token_budget_manager import TokenBudgetManager, AgentType
-from app.core.agent_cache import AgentCache, CacheConfig
+from app.memory.agent_memory import agent_memory, AgentConfig
+from app.core.token_budget_manager import AgentType, get_token_budget_manager
+from app.core.agent_cache import CacheConfig, get_agent_cache
 from app.core.agent_discussion_engine import get_agent_discussion_engine, DiscussionContext
+from app.core.discussion_controller import get_discussion_controller
 from app.core.author_decision_system import get_author_decision_system, QuestionType, QuestionPriority
 from app.core.narrative_intelligence_engine import get_narrative_intelligence_engine
+from app.memory.system_settings import get_system_settings_manager
+from app.core.streaming_writer import StreamingConfig, get_streaming_writer, get_reader_scheduler
+from app.core.context_pool import get_context_pool
 
 # 尝试导入 langchain，如果失败则在运行时处理
 try:
-    from langchain.schema import HumanMessage, SystemMessage
+    from langchain_core.messages import HumanMessage, SystemMessage
     LANGCHAIN_AVAILABLE = True
 except ImportError:
-    LANGCHAIN_AVAILABLE = False
-    HumanMessage = None
-    SystemMessage = None
+    try:
+        from langchain.schema import HumanMessage, SystemMessage
+        LANGCHAIN_AVAILABLE = True
+    except ImportError:
+        LANGCHAIN_AVAILABLE = False
+        HumanMessage = None
+        SystemMessage = None
 
 
 class AgentChatService:
     def __init__(self, llm: Any = None):
         # 如果没有传入 llm，仅从数据库 AI 配置获取
         self.llm = llm or get_llm_with_fallback()
-        self.strategist = StrategistAgent(llm=self.llm)
-        self.writer = WritingAgent(llm=self.llm)
-        self.editor = EditorAgent(llm=self.llm)
-        self.critic = CriticAgent(llm=self.llm)
-        self.reader = ReaderAgent(llm=self.llm)
-        self.consistency = ConsistencyAgent(llm=self.llm)
-        self.memory = MemoryAgent(llm=self.llm)
-        self.world = WorldService(llm=self.llm)
+
+        # 读取数据库中的 Agent 配置（temperature/prompt/enabled）
+        self._agent_configs: Dict[str, AgentConfig] = {}
+        try:
+            for cfg in (agent_memory.get_all_configs() or []):
+                self._agent_configs[cfg.agent_id] = cfg
+        except Exception as e:
+            print(f"[AgentChatService] Failed to load agent configs: {e}")
+
+        # 为每个 agent_id 构造独立 LLM（用于 temperature 生效）
+        self._llm_by_agent_id: Dict[str, Any] = {}
+
+        self.strategist = StrategistAgent(llm=self._llm_for_agent("planner"))
+        self.writer = WritingAgent(llm=self._llm_for_agent("writer"))
+        self.editor = EditorAgent(llm=self._llm_for_agent("editor"))
+        self.critic = CriticAgent(llm=self._llm_for_agent("critic"))
+        self.reader = ReaderAgent(llm=self._llm_for_agent("reader"))
+        self.consistency = ConsistencyAgent(llm=self._llm_for_agent("consistency"))
+        self.memory = MemoryAgent(llm=self._llm_for_agent("summary"))
+        self.world = WorldService(llm=self._llm_for_agent("planner"))
 
         # 初始化讨论引擎、作者决策系统、叙事智能引擎
         self.discussion_engine = get_agent_discussion_engine()
         self.author_decision = get_author_decision_system()
         self.narrative_engine = get_narrative_intelligence_engine()
 
-        # 初始化 Token 预算管理器
-        self.token_budget_manager = TokenBudgetManager()
-        
-        # 初始化缓存
-        cache_config = CacheConfig(
-            max_size=1000,
-            ttl_hours=24,
-            enable_planner_cache=True,
-            enable_conflict_cache=True,
-            enable_consistency_cache=True
-        )
-        self.agent_cache = AgentCache(config=cache_config)
+        # 读取系统设置（从数据库）
+        system_settings = None
+        try:
+            system_settings = get_system_settings_manager().get_settings()
+        except Exception as e:
+            print(f"[AgentChatService] Failed to load system settings: {e}")
+
+        # 将 settings 应用到全局单例（确保前端修改后立刻生效）
+        # TokenBudgetManager
+        self.token_budget_manager = get_token_budget_manager()
+        if system_settings and system_settings.token.enabled:
+            self.token_budget_manager.set_daily_limit(system_settings.token.daily_limit)
+        else:
+            self.token_budget_manager.set_daily_limit(None)
+
+        # AgentCache
+        self.agent_cache = get_agent_cache()
+        if system_settings:
+            self.agent_cache.config = CacheConfig(
+                max_size=self.agent_cache.config.max_size,
+                ttl_hours=system_settings.cache.ttl_hours,
+                enable_planner_cache=system_settings.cache.enable_planner_cache,
+                enable_conflict_cache=system_settings.cache.enable_conflict_cache,
+                enable_consistency_cache=system_settings.cache.enable_consistency_cache,
+            )
+
+        # DiscussionController
+        try:
+            dc = get_discussion_controller()
+            if system_settings:
+                dc.default_config.max_rounds = system_settings.discussion.max_rounds
+                dc.default_config.max_tokens_per_response = system_settings.discussion.max_tokens_per_response
+                dc.default_config.enable_short_mode = system_settings.discussion.enable_short_mode
+        except Exception as e:
+            print(f"[AgentChatService] Failed to apply discussion settings: {e}")
+
+        # StreamingWriter / ReaderScheduler
+        try:
+            sw = get_streaming_writer()
+            rs = get_reader_scheduler()
+            if system_settings:
+                sw.config = StreamingConfig(
+                    paragraph_length=system_settings.generation.paragraph_length,
+                    max_paragraphs=sw.config.max_paragraphs,
+                    overlap_sentences=sw.config.overlap_sentences,
+                    enable_streaming=system_settings.generation.enable_streaming,
+                )
+                rs.interval = system_settings.generation.reader_interval
+        except Exception as e:
+            print(f"[AgentChatService] Failed to apply generation settings: {e}")
         
         # 性能监控数据
         self.performance_stats = {
@@ -70,6 +130,127 @@ class AgentChatService:
             "total_tokens": 0,
             "start_time": None
         }
+
+        # 上下文缓存池 - 减少重复 I/O 和 Token 消耗
+        self.context_pool = get_context_pool()
+
+        # 快速模式：仍由环境变量控制（避免和 UI 设置语义混淆）
+        self.fast_mode = os.getenv("AGENT_ROOM_FAST_MODE", "1") != "0"
+
+    def _agent_id_for(self, agent_name: str) -> str:
+        """
+        将内部 agent 名称映射到配置/skills 使用的 agent_id。
+        这些 agent_id 与前端保存到 supabase 的 agents.agent_id 保持一致。
+        """
+        mapping = {
+            "StrategistAgent": "planner",
+            "WritingAgent": "writer",
+            "EditorAgent": "editor",
+            "CriticAgent": "critic",
+            "ReaderAgent": "reader",
+            "ConsistencyAgent": "consistency",
+            "MemoryAgent": "summary",
+            "WorldService": "planner",
+        }
+        return mapping.get(agent_name, agent_name)
+
+    def _get_agent_config(self, agent_id: str) -> Optional[AgentConfig]:
+        return self._agent_configs.get(agent_id)
+
+    def _llm_for_agent(self, agent_id: str):
+        """
+        基于基础 llm 克隆一个带 temperature 的实例。
+        如果无法克隆或没有配置，则回退到 self.llm。
+        """
+        if self.llm is None:
+            return None
+
+        if agent_id in self._llm_by_agent_id:
+            return self._llm_by_agent_id[agent_id]
+
+        cfg = self._get_agent_config(agent_id)
+        target_temp = cfg.temperature if cfg and cfg.temperature is not None else None
+
+        # 如果没有特殊 temperature，直接复用 base llm
+        if target_temp is None:
+            self._llm_by_agent_id[agent_id] = self.llm
+            return self.llm
+
+        try:
+            from langchain_openai import ChatOpenAI
+
+            # 尝试从现有 llm 提取连接信息
+            model = getattr(self.llm, "model_name", None) or getattr(self.llm, "model", None)
+            api_key = getattr(self.llm, "openai_api_key", None)
+            base_url = getattr(self.llm, "openai_api_base", None)
+
+            # openai_api_key 可能是 SecretStr
+            if hasattr(api_key, "get_secret_value"):
+                api_key = api_key.get_secret_value()
+
+            llm_kwargs = {
+                "model": model,
+                "temperature": float(target_temp),
+                # 避免模型端或网络异常导致阻塞
+                "max_retries": 2,
+                "timeout": 30,
+                "request_timeout": 30,
+            }
+            if api_key:
+                llm_kwargs["api_key"] = api_key
+            if base_url:
+                llm_kwargs["base_url"] = base_url
+
+            try:
+                cloned = ChatOpenAI(**llm_kwargs)
+            except TypeError:
+                fallback_kwargs = dict(llm_kwargs)
+                fallback_kwargs.pop("request_timeout", None)
+                fallback_kwargs.pop("timeout", None)
+                fallback_kwargs.pop("max_retries", None)
+                cloned = ChatOpenAI(**fallback_kwargs)
+            self._llm_by_agent_id[agent_id] = cloned
+            return cloned
+        except Exception as e:
+            print(f"[AgentChatService] Failed to clone LLM for {agent_id}: {e}")
+            self._llm_by_agent_id[agent_id] = self.llm
+            return self.llm
+
+    def _build_constraints_prefix(self, story_id: str, agent_id: str) -> str:
+        """
+        汇总“Agent 配置 prompt” + “挂载 skills 约束”并作为前缀注入 prompt。
+        """
+        parts: List[str] = []
+        cfg = self._get_agent_config(agent_id)
+        if cfg:
+            if not cfg.enabled:
+                # 由调用方处理禁用逻辑，这里仅提供信息
+                pass
+            if cfg.prompt:
+                parts.append(cfg.prompt.strip())
+
+        try:
+            skill_prompt = skill_memory.build_agent_prompt(story_id, agent_id)
+            if skill_prompt:
+                parts.append(skill_prompt.strip())
+        except Exception as e:
+            print(f"[AgentChatService] build_agent_prompt failed: {e}")
+
+        if not parts:
+            return ""
+        return "\n\n".join(parts).strip() + "\n\n"
+
+    def _inject_constraints(self, story_id: str, agent_id: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        prefix = self._build_constraints_prefix(story_id, agent_id)
+        if not prefix:
+            return input_data
+
+        patched = dict(input_data)
+        for key in ("text", "draft_text", "plan"):
+            val = patched.get(key)
+            if isinstance(val, str) and val.strip():
+                patched[key] = prefix + val
+        return patched
 
     def _record_agent_call(self, agent_name: str, start_time: float, tokens_used: int = 0):
         """记录 Agent 调用性能数据"""
@@ -132,6 +313,18 @@ class AgentChatService:
             Agent 执行结果
         """
         start_time = time.time()
+
+        story_id = (cache_context or {}).get("story_id") or ""
+        agent_id = self._agent_id_for(agent_name)
+        cfg = self._get_agent_config(agent_id)
+        if cfg and cfg.enabled is False:
+            return {
+                "error": f"{agent_id} disabled",
+                "feedback": f"⚠️ {agent_id} 已在设置中禁用，已跳过。"
+            }
+
+        if story_id:
+            input_data = self._inject_constraints(story_id, agent_id, input_data)
         
         # 检查 Token 预算
         if chapter_id and agent_type:
@@ -177,17 +370,42 @@ class AgentChatService:
                 "feedback": f"⚠️ {agent_name} 执行失败: {str(e)}"
             }
 
-    def _recent_summaries(self, story_id: str, n: int = 3) -> List[str]:
-        memory = load_memory(story_id)
+    def _recent_summaries(
+        self, story_id: str, n: int = 3, memory: Optional[StoryMemory] = None
+    ) -> List[str]:
+        """近期章节摘要。传入 memory 可避免重复 load，减少 I/O 与 token 构建次数。"""
+        if memory is None:
+            # 尝试从缓存获取
+            cached = self.context_pool.get_memory(story_id)
+            if cached:
+                memory = cached
+            else:
+                memory = load_memory(story_id)
+                if memory:
+                    self.context_pool.set_memory(story_id, memory)
         if not memory or not memory.chapter_summaries:
             return []
         return [f"{c.chapter_id}: {c.summary}" for c in memory.chapter_summaries[-n:]]
 
-    def _build_room_context(self, story_id: str) -> Dict[str, Any]:
+    def _build_room_context(
+        self, story_id: str, memory: Optional[StoryMemory] = None
+    ) -> Dict[str, Any]:
+        """构建房间上下文。传入 memory 时直接使用，避免重复 load_memory / get_world。"""
+        if memory is not None:
+            bible = memory.bible
+            recent = self._recent_summaries(story_id, n=3, memory=memory)
+            rules_text = ""
+            if bible.world_rules:
+                rules_text = "\n".join([f"- {r.name}: {r.description}" for r in bible.world_rules])
+            return {
+                "world": bible.world_view or "",
+                "rules": rules_text,
+                "recent_summaries": recent,
+                "world_approved": memory.world_locked,
+            }
         world_info = self.world.get_world(story_id)
         bible = StoryBible.model_validate(world_info.get("world_bible", {}))
         recent = self._recent_summaries(story_id)
-        # 获取世界规则文本（world_rules 是列表，需要转换为文本）
         rules_text = ""
         if bible.world_rules:
             rules_text = "\n".join([f"- {rule.name}: {rule.description}" for rule in bible.world_rules])
@@ -554,311 +772,33 @@ class AgentChatService:
                 "message": "⚠️ AI 配置不可用",
                 "content": "当前无法调用大模型。请前往“系统设置 / AI 配置”确认已填写 API Key、模型，并开启启用开关后重试。"
             }]
-        
-        # 开场：使用 LLM 生成启动消息
-        startup_prompt = f"""作为系统，宣布 Agent Room 启动并说明当前任务：
 
-任务：{topic}
-类型：{workflow_type}
-
-请用第一人称宣布启动，简洁专业。"""
-        
-        startup_content = self._call_llm(startup_prompt, "你是 Agent Room 的系统管理员。")
-        
+        # 为了性能：不再为“流程日志”额外调用 LLM（这些调用会显著拖慢响应）
         logs.append({
             "agent": "system",
+            "agent_name": "系统",
             "message": "🎬 Agent Room 启动",
-            "content": startup_content
+            "content": f"收到任务：{topic}\n类型：{workflow_type}\n将按当前 Agent 配置与挂载 Skills 执行。"
         })
-        
-        # Step 1: 策划师分析需求（使用 LLM）
-        strategist_prompt = f"""作为策划师，分析以下创作任务：
 
-任务：{topic}
-类型：{workflow_type}
-
-请分析：
-1. 任务的核心需求是什么
-2. 关键约束条件
-3. 执行策略建议
-
-用第一人称回答，简洁专业。"""
-        
-        strategist_analysis = self._call_llm(strategist_prompt, "你是一位专业的策划师，擅长分析创作需求并制定策略。")
-        
-        logs.append({
-            "agent": "strategist",
-            "agent_name": "策划师",
-            "message": "📋 任务分析",
-            "content": strategist_analysis
-        })
-        
-        # Step 2: 检查 Story Bible 完整性并自动补充
-        check_prompt = f"""作为系统，宣布正在检查 Story Bible 完整性：
-
-任务：{topic}
-
-请用第一人称说明正在进行的检查工作，简洁专业。"""
-        
-        check_content = self._call_llm(check_prompt, "你是 Agent Room 的系统管理员。")
-        
-        logs.append({
-            "agent": "system",
-            "message": "🔍 检查 Story Bible",
-            "content": check_content
-        })
-        
+        # 简单的 Story Bible 完整性提示（不自动补全，避免额外 LLM 调用）
         completeness = self._check_story_bible_completeness(context)
-        missing_count = sum(1 for v in completeness.values() if not v)
-        
-        if missing_count > 0:
-            missing_prompt = f"""作为策划师，宣布发现 Story Bible 有 {missing_count} 个部分需要补充：
-
-任务：{topic}
-缺失部分数：{missing_count}
-
-请用第一人称说明发现的问题和接下来的行动计划，简洁专业。"""
-            
-            missing_content = self._call_llm(missing_prompt, "你是一位专业的策划师。")
-            
+        missing = [k for k, ok in completeness.items() if not ok]
+        if missing:
             logs.append({
                 "agent": "strategist",
                 "agent_name": "策划师",
-                "message": "⚠️ 发现缺失",
-                "content": missing_content
-            })
-            
-            # 自动生成缺失内容（通过 LLM）
-            auto_fill_logs = self._generate_story_bible_content(topic, completeness)
-            logs.extend(auto_fill_logs)
-            
-            # 询问用户是否保存生成的内容
-            save_summary = []
-            for log in auto_fill_logs:
-                auto_fill = log.get("auto_fill", {})
-                content_type = auto_fill.get("type", "")
-                if content_type == "worldbuilding":
-                    save_summary.append("世界观")
-                elif content_type == "characters":
-                    items = auto_fill.get("items", [])
-                    save_summary.append(f"角色({len(items)}个)")
-                elif content_type == "outline":
-                    save_summary.append("大纲")
-                elif content_type == "factions":
-                    items = auto_fill.get("items", [])
-                    save_summary.append(f"势力({len(items)}个)")
-            
-            if save_summary:
-                # 将生成的内容暂存到 conversation_state，等待用户确认
-                conversation_state["pending_save"] = {
-                    "story_id": story_id,
-                    "logs": auto_fill_logs,
-                    "summary": save_summary
-                }
-                conversation_state["waiting_for_user"] = True
-                conversation_state["stage"] = "waiting_save_confirmation"
-                
-                logs.append({
-                    "agent": "system",
-                    "agent_name": "系统",
-                    "message": "💾 保存确认",
-                    "content": f"已生成以下内容：{', '.join(save_summary)}\n\n是否保存到数据库？\n- 回复「确认」保存所有内容\n- 回复「取消」不保存\n- 回复「修改」并提供意见进行调整",
-                    "requires_user_input": True
-                })
-            
-            complete_prompt = f"""作为系统，宣布 Story Bible 补充完成：
-
-任务：{topic}
-
-请用第一人称说明补充工作已完成，简洁专业。"""
-            
-            complete_content = self._call_llm(complete_prompt, "你是 Agent Room 的系统管理员。")
-            
-            logs.append({
-                "agent": "system",
-                "message": "✅ 补充完成",
-                "content": complete_content
+                "message": "🔍 设定检查",
+                "content": f"检测到设定可能不完整：{', '.join(missing)}。将继续按现有信息执行（如需补全请用户明确提出）。"
             })
         else:
-            complete_prompt = f"""作为策划师，宣布 Story Bible 内容完整：
-
-任务：{topic}
-
-请用第一人称说明设定完整，可以直接开始创作，简洁专业。"""
-            
-            complete_content = self._call_llm(complete_prompt, "你是一位专业的策划师。")
-            
             logs.append({
                 "agent": "strategist",
                 "agent_name": "策划师",
-                "message": "✓ 设定完整",
-                "content": complete_content
+                "message": "🔍 设定检查",
+                "content": "设定信息看起来足够，可以直接进入执行。"
             })
-        
-        # Step 3: 评论家提出潜在问题（使用 LLM）
-        critic_prompt = f"""作为评论家，评估以下创作任务可能存在的风险：
 
-任务：{topic}
-类型：{workflow_type}
-
-请分析：
-1. 潜在的创作风险
-2. 需要注意的问题
-3. 对用户的建议
-
-用第一人称回答，简洁专业。"""
-        
-        critic_analysis = self._call_llm(critic_prompt, "你是一位专业的评论家，擅长发现创作中的潜在问题。")
-        
-        logs.append({
-            "agent": "critic",
-            "agent_name": "评论家",
-            "message": "⚠️ 风险评估",
-            "content": critic_analysis
-        })
-        
-        # Step 4: 编辑建议流程（使用 LLM）
-        editor_prompt = f"""作为编辑，为以下创作任务建议执行流程：
-
-任务：{topic}
-类型：{workflow_type}
-
-请建议：
-1. 推荐的执行步骤
-2. 关键检查点
-3. 质量把控要点
-
-用第一人称回答，简洁专业。"""
-        
-        editor_suggestion = self._call_llm(editor_prompt, "你是一位专业的编辑，擅长规划创作流程。")
-        
-        logs.append({
-            "agent": "editor",
-            "agent_name": "编辑",
-            "message": "📝 流程建议",
-            "content": editor_suggestion
-        })
-        
-        # Step 5: 团队内部讨论（使用 LLM 生成专业讨论）
-        discuss_prompt = f"""作为系统，宣布 Agent 们正在进行团队内部讨论：
-
-任务：{topic}
-类型：{workflow_type}
-
-请用第一人称说明讨论正在进行，简洁专业。"""
-        
-        discuss_content = self._call_llm(discuss_prompt, "你是 Agent Room 的系统管理员。")
-        
-        logs.append({
-            "agent": "system",
-            "message": "💬 团队内部讨论",
-            "content": discuss_content
-        })
-        
-        # 根据任务类型进行专业讨论（使用 LLM）
-        if workflow_type == "write":
-            discussion_prompt = f"""模拟一个专业的小说创作团队讨论如何写作以下内容：
-
-写作任务：{topic}
-
-团队成员：
-- 策划师：负责整体规划
-- 作家：负责具体写作
-- 评论家：负责质量把控
-
-请生成一段团队讨论，每个人从自己的专业角度提出建议，最后达成共识。
-用对话形式呈现，每个人说2-3句话。"""
-            
-            discussion_content = self._call_llm(discussion_prompt, "你是一位专业的小说创作团队成员，正在进行团队讨论。")
-            
-            # 解析讨论内容并分配给不同 Agent
-            # 简单处理：将 LLM 生成的内容作为策划师的总结
-            logs.append({
-                "agent": "strategist",
-                "agent_name": "策划师",
-                "message": "💡 方案提议",
-                "content": discussion_content
-            })
-            
-        elif workflow_type == "outline":
-            outline_prompt = f"""作为策划师，为以下主题设计故事大纲结构：
-
-主题：{topic}
-
-请提供：
-1. 推荐的故事结构
-2. 关键情节点规划
-3. 节奏控制建议
-
-用第一人称回答，简洁专业。"""
-            
-            outline_analysis = self._call_llm(outline_prompt, "你是一位专业的故事结构设计师。")
-            
-            logs.append({
-                "agent": "strategist",
-                "agent_name": "策划师",
-                "message": "📊 结构规划",
-                "content": outline_analysis
-            })
-            
-        elif workflow_type == "world_building":
-            world_prompt = f"""作为世界观设计师，为以下主题设计世界观框架：
-
-主题：{topic}
-
-请提供：
-1. 世界观核心要素
-2. 与故事的关联
-3. 呈现方式建议
-
-用第一人称回答，简洁专业。"""
-            
-            world_analysis = self._call_llm(world_prompt, "你是一位专业的世界观设计师。")
-            
-            logs.append({
-                "agent": "strategist",
-                "agent_name": "策划师",
-                "message": "🌍 世界观框架",
-                "content": world_analysis
-            })
-        
-        # Step 6: 达成共识（使用 LLM 生成总结）
-        summary_prompt = f"""作为策划师，总结团队对以下任务的执行计划：
-
-任务：{topic}
-类型：{workflow_type}
-
-请总结：
-1. 确定的执行方案
-2. 各 Agent 的分工
-3. 下一步行动
-
-用第一人称回答，简洁专业。"""
-        
-        summary_content = self._call_llm(summary_prompt, "你是一位专业的策划师，正在总结团队共识。")
-        
-        consensus_prompt = f"""作为系统，宣布 Agent 团队已达成共识：
-
-任务：{topic}
-类型：{workflow_type}
-
-请用第一人称宣布共识已达成，准备执行，简洁专业。"""
-        
-        consensus_content = self._call_llm(consensus_prompt, "你是 Agent Room 的系统管理员。")
-        
-        logs.append({
-            "agent": "system",
-            "message": "✅ 方案确定",
-            "content": consensus_content
-        })
-        
-        logs.append({
-            "agent": "strategist",
-            "agent_name": "策划师",
-            "message": "📋 执行计划",
-            "content": summary_content
-        })
-        
         return logs
 
     def _generate_decision_point(self, workflow_type: str, stage: str, topic: str = "") -> Dict[str, Any]:
@@ -975,6 +915,7 @@ class AgentChatService:
         }
 
     def chat(self, message: str, story_id: str = "demo-story", chapter_id: str = None, chapter_name: str = None, word_count_range: Dict[str, int] = None, conversation_state: Dict[str, Any] = None, story_name: str = None) -> Dict[str, Any]:
+        print(f"[CHAT] Received message: {message[:50]}...")
         """
         主聊天接口
         支持 Agent 自主流程 + 关键点询问用户
@@ -1012,41 +953,10 @@ class AgentChatService:
         if chapter_name:
             conversation_state["chapter_name"] = chapter_name
 
-        # 检查并确认 story_id 和 chapter_id
+        # 不再预设「确认上下文」步骤，直接根据用户消息处理（agents 只响应用户发送的内容）
         if conversation_state["stage"] == "initial" and not conversation_state.get("context_confirmed"):
-            # 使用 story_name 显示给用户，如果没传则显示 story_id
-            display_name = story_name or story_id
-            # 使用 chapter_name 显示给用户，如果没传则显示 chapter_id
-            display_chapter = chapter_name or chapter_id or '未指定'
-            confirm_prompt = f"""作为系统，向用户确认当前工作上下文：
-
-检测到的工作上下文：
-- 小说名称: {display_name}
-- 章节名称: {display_chapter}
-
-请用第一人称询问用户是否在这个上下文下继续工作，简洁友好。"""
-            
-            confirm_content = self._call_llm(confirm_prompt, "你是 Agent Room 的系统管理员。")
-            
-            logs.append({
-                "agent": "system",
-                "agent_name": "系统",
-                "message": "📍 确认上下文",
-                "content": confirm_content,
-                "requires_user_input": True
-            })
-            
-            conversation_state["waiting_for_user"] = True
             conversation_state["context_confirmed"] = True
-            
-            return {
-                "agent_logs": logs,
-                "final_text": "",
-                "final_agent": "system",
-                "conversation_state": conversation_state,
-                "requires_user_input": True
-            }
-        
+
         # 如果正在等待用户输入，处理用户反馈
         if conversation_state.get("waiting_for_user") and conversation_state.get("stage") != "initial":
             # 检查是否是保存确认阶段
@@ -1205,9 +1115,18 @@ class AgentChatService:
         intent = self._analyze_intent(msg)
         workflow_type = intent["type"]
         conversation_state["workflow_type"] = workflow_type
+        # 调试日志：确认意图识别结果
+        print(f"[DEBUG] Intent detection: msg='{msg}' -> type='{workflow_type}'")
         
+        # 请求内记忆池：一次加载，多处复用，减少 I/O 与重复构建
+        # 优先从缓存获取
+        request_memory = self.context_pool.get_memory(story_id)
+        if not request_memory:
+            request_memory = load_memory(story_id)
+            if request_memory:
+                self.context_pool.set_memory(story_id, request_memory)
         # 构建上下文
-        context = self._build_room_context(story_id)
+        context = self._build_room_context(story_id, memory=request_memory)
         
         # 生成自主工作流程（传入 conversation_state 供内部写入 pending_save 等）
         workflow_logs = self._generate_autonomous_workflow(msg, context, intent, story_id, conversation_state)
@@ -1218,17 +1137,14 @@ class AgentChatService:
         final_agent_name = ""
         
         if workflow_type == "write":
-            # 写作任务：先询问关键信息，再生成
-            if conversation_state["stage"] == "initial" or conversation_state["stage"] == "waiting_for_details":
-                decision = self._generate_decision_point("write", "after_outline", msg)
-                logs.append(decision)
-                conversation_state["waiting_for_user"] = True
-                conversation_state["stage"] = "waiting_for_details"
-                final_text = "等待用户确认写作细节..."
-                final_agent_name = "策划师"
-            else:
-                # 执行写作流程 - 使用安全的 Agent 调用
-                cache_context = {"story_id": story_id, "chapter_id": chapter_id, "workflow": "write"}
+            # 写作任务：不再进入“先确认再执行”的预设流程，收到用户消息即直接执行
+            conversation_state["waiting_for_user"] = False
+            conversation_state["stage"] = "executing"
+
+            # 执行写作流程 - 使用安全的 Agent 调用
+            cache_context = {"story_id": story_id, "chapter_id": chapter_id, "workflow": "write"}
+            # 说明：此处使用包裹块，避免大段代码因缩进调整产生语法问题
+            if True:
                 
                 # Step 1: 使用 StrategistAgent 制定计划
                 plan_result = self._safe_agent_call(
@@ -1255,21 +1171,22 @@ class AgentChatService:
                         "message": "📋 写作计划",
                         "content": plan_text
                     })
-                    
-                    # Step 2: 使用 CriticAgent 分析冲突
-                    critic_result = self._safe_agent_call(
-                        "CriticAgent", self.critic, {"text": plan_text, "plan": plan_text},
-                        chapter_id, AgentType.CONFLICT,
-                        use_cache=False, cache_context=cache_context
-                    )
-                    critic_feedback = critic_result.get("feedback", "") if "error" not in critic_result else "冲突分析跳过"
-                    
-                    logs.append({
-                        "agent": "critic",
-                        "agent_name": "评论家",
-                        "message": "⚠️ 冲突分析",
-                        "content": critic_feedback
-                    })
+
+                    # Step 2: 冲突分析（快速模式默认跳过以提升速度）
+                    critic_feedback = ""
+                    if not self.fast_mode:
+                        critic_result = self._safe_agent_call(
+                            "CriticAgent", self.critic, {"text": plan_text, "plan": plan_text},
+                            chapter_id, AgentType.CONFLICT,
+                            use_cache=False, cache_context=cache_context
+                        )
+                        critic_feedback = critic_result.get("feedback", "") if "error" not in critic_result else "冲突分析跳过"
+                        logs.append({
+                            "agent": "critic",
+                            "agent_name": "评论家",
+                            "message": "⚠️ 冲突分析",
+                            "content": critic_feedback
+                        })
                     
                     # Step 3: 执行写作
                     write_input = {
@@ -1306,179 +1223,71 @@ class AgentChatService:
                             "revisions": ["Initial draft generated"]
                         })
                         
-                        # Step 4: 使用 ConsistencyAgent 检查一致性
-                        consistency_result = self._safe_agent_call(
-                            "ConsistencyAgent", self.consistency,
-                            {
-                                "text": final_text,
-                                "story_bible": context,
-                                "check_type": "all"
-                            },
-                            chapter_id, AgentType.CONSISTENCY,
-                            use_cache=False, cache_context=cache_context
-                        )
-                        
-                        if "error" not in consistency_result and consistency_result.get("has_issues"):
-                            logs.append({
-                                "agent": "consistency",
-                                "agent_name": "一致性检查",
-                                "message": f"⚠️ 发现 {consistency_result.get('issues_count', 0)} 个问题",
-                                "content": consistency_result.get("formatted_issues", "")
-                            })
-                        
-                        # Step 5: 使用 EditorAgent 润色
-                        editor_result = self._safe_agent_call(
-                            "EditorAgent", self.editor, {"draft_text": final_text},
-                            chapter_id, AgentType.EDITOR,
-                            use_cache=False, cache_context=cache_context
-                        )
-                        
-                        if "error" not in editor_result:
-                            edited_text = editor_result.get("edited_text", final_text)
-                            
-                            if edited_text != final_text:
-                                final_text = edited_text
-                                trace_data[-1]["revisions"].append("Edited by EditorAgent")
-                                
+                        # Step 4+: 一致性/润色/读者反馈/总结等（快速模式默认跳过）
+                        if not self.fast_mode:
+                            consistency_result = self._safe_agent_call(
+                                "ConsistencyAgent", self.consistency,
+                                {"text": final_text, "story_bible": context, "check_type": "all"},
+                                chapter_id, AgentType.CONSISTENCY,
+                                use_cache=False, cache_context=cache_context
+                            )
+                            if "error" not in consistency_result and consistency_result.get("has_issues"):
                                 logs.append({
-                                    "agent": "editor",
-                                    "agent_name": "编辑",
-                                    "message": "✅ 润色完成",
-                                    "content": "已完成文本润色，改进表达流畅度"
+                                    "agent": "consistency",
+                                    "agent_name": "一致性检查",
+                                    "message": f"⚠️ 发现 {consistency_result.get('issues_count', 0)} 个问题",
+                                    "content": consistency_result.get("formatted_issues", "")
+                                })
+
+                            editor_result = self._safe_agent_call(
+                                "EditorAgent", self.editor, {"draft_text": final_text},
+                                chapter_id, AgentType.EDITOR,
+                                use_cache=False, cache_context=cache_context
+                            )
+                            if "error" not in editor_result:
+                                edited_text = editor_result.get("edited_text", final_text)
+                                if edited_text != final_text:
+                                    final_text = edited_text
+                                    trace_data[-1]["revisions"].append("Edited by EditorAgent")
+                                    logs.append({
+                                        "agent": "editor",
+                                        "agent_name": "编辑",
+                                        "message": "✅ 润色完成",
+                                        "content": "已完成文本润色，改进表达流畅度"
+                                    })
+
+                            reader_result = self._safe_agent_call(
+                                "ReaderAgent", self.reader, {"text": final_text},
+                                chapter_id, AgentType.READER,
+                                use_cache=False, cache_context=cache_context
+                            )
+                            if "error" not in reader_result:
+                                reader_feedback = reader_result.get("feedback", "")
+                                logs.append({
+                                    "agent": "reader",
+                                    "agent_name": "读者",
+                                    "message": "👁️ 读者反馈",
+                                    "content": reader_feedback
                                 })
                         
-                        # Step 6: 使用 ReaderAgent 提供反馈
-                        reader_result = self._safe_agent_call(
-                            "ReaderAgent", self.reader, {"text": final_text},
-                            chapter_id, AgentType.READER,
-                            use_cache=False, cache_context=cache_context
-                        )
-                        
-                        if "error" not in reader_result:
-                            reader_feedback = reader_result.get("feedback", "")
-                            
-                            logs.append({
-                                "agent": "reader",
-                                "agent_name": "读者",
-                                "message": "👁️ 读者反馈",
-                                "content": reader_feedback
-                            })
-                        
-                        # Step 7: 生成写作完成消息
-                        complete_prompt = f"""作为作家，宣布写作完成：
-
-创作字数：{len(final_text)}
-内容预览：{final_text[:200]}...
-
-请用第一人称宣布写作完成，并简要总结创作内容，简洁专业。"""
-                        
-                        complete_content = self._call_llm(complete_prompt, "你是一位专业的作家。")
-                        
-                        logs.append({
-                            "agent": "writer",
-                            "agent_name": "作家",
-                            "message": "✅ 写作完成",
-                            "content": complete_content
-                        })
-                        
-                        # Step 8: 生成章节总结并保存 Story Memory
-                        if chapter_id:
-                            try:
-                                # 生成总结
-                                summary_prompt = f"""请为以下章节内容生成简洁的总结：
-
-章节内容：
-{final_text[:1000]}...
-
-请生成：
-1. 章节摘要（100字以内）
-2. 关键事件
-3. 出场的角色
-4. 时间线进展
-
-格式：
-摘要：xxx
-关键事件：xxx
-角色：xxx
-时间线：xxx"""
-                                
-                                summary_result = self._call_llm(summary_prompt, "你是一位专业的编辑，擅长总结章节内容。")
-                                
-                                # 保存到 Story Memory
-                                memory = load_memory(story_id)
-                                if memory is None:
-                                    memory = StoryMemory(story_id=story_id, bible=StoryBible())
-                                
-                                # 添加章节总结
-                                memory.chapter_summaries.append(
-                                    ChapterSummary(
-                                        chapter_id=chapter_id,
-                                        title=f"章节 {chapter_id}",
-                                        summary=summary_result[:200]
-                                    )
-                                )
-                                
-                                # 保存 memory
-                                save_memory(memory)
-                                
-                                logs.append({
-                                    "agent": "memory",
-                                    "agent_name": "记忆",
-                                    "message": "💾 保存总结",
-                                    "content": f"已保存章节 {chapter_id} 的总结到 Story Memory"
-                                })
-                            except Exception as e:
-                                error_msg = f"保存 Story Memory 失败: {str(e)}"
-                                print(error_msg)
-                                logs.append({
-                                    "agent": "memory",
-                                    "agent_name": "记忆",
-                                    "message": "⚠️ 保存失败",
-                                    "content": error_msg
-                                })
-                        
-                        # Step 9: Agent 讨论章节管理操作
-                        # 使用 chapter_name 显示，如果没传则用 chapter_id
-                        display_chapter = chapter_name or chapter_id or '未指定'
-                        chapter_mgmt_prompt = f"""作为策划师，讨论章节管理：
-
-当前章节：{display_chapter}
-写作状态：已完成
-字数：{len(final_text)}
-
-请用第一人称：
-1. 说明当前章节状态
-2. 建议下一步操作（保存草稿、标记完成、继续下一章等）
-3. 询问用户意见
-
-简洁专业。"""
-                        
-                        chapter_mgmt_content = self._call_llm(chapter_mgmt_prompt, "你是一位专业的策划师。")
-                        
-                        logs.append({
-                            "agent": "strategist",
-                            "agent_name": "策划师",
-                            "message": "📁 章节管理",
-                            "content": chapter_mgmt_content,
-                            "requires_user_input": True
-                        })
-                        conversation_state["waiting_for_user"] = True
+                        # 不再追加“章节管理询问”这类预设交互，保持一次请求一次响应
+                        conversation_state["waiting_for_user"] = False
                         conversation_state["stage"] = "completed"
                 
         elif workflow_type == "outline":
-            # 大纲任务
-            if conversation_state["stage"] == "initial":
-                decision = self._generate_decision_point("outline", "after_proposal", msg)
-                logs.append(decision)
-                conversation_state["waiting_for_user"] = True
-                conversation_state["stage"] = "waiting_for_details"
-                final_text = "等待用户确认大纲框架..."
-                final_agent_name = "策划师"
-            else:
-                # 使用 StrategistAgent 生成大纲
-                result = self.strategist.run({"text": msg})
-                final_text = result.get("plan_text", "")
-                final_agent_name = "策划师"
+            # 大纲任务：直接生成（不进入预设确认流程）
+            conversation_state["waiting_for_user"] = False
+            conversation_state["stage"] = "executing"
+
+            result = self._safe_agent_call(
+                "StrategistAgent", self.strategist, {"text": msg},
+                chapter_id, AgentType.PLANNER,
+                use_cache=True, cache_context={"story_id": story_id, "chapter_id": chapter_id, "workflow": "outline"}
+            )
+            final_text = result.get("plan_text", "")
+            final_agent_name = "策划师"
+            # 兼容既有缩进结构
+            if True:
                 
                 # 使用 CriticAgent 评估大纲
                 critic_result = self.critic.run({"text": final_text})
@@ -1508,20 +1317,14 @@ class AgentChatService:
                 })
                 
         elif workflow_type == "world_building":
-            # 世界观任务
-            if conversation_state["stage"] == "initial":
-                decision = self._generate_decision_point("world_building", "after_framework", msg)
-                logs.append(decision)
-                conversation_state["waiting_for_user"] = True
-                conversation_state["stage"] = "waiting_for_details"
-                final_text = "等待用户确认世界观框架..."
-                final_agent_name = "策划师"
-            else:
-                # 生成世界观
-                debate = self.world.debate(WorldDebateRequest(prompt=msg, story_id=story_id, max_rounds=1))
-                logs.extend(debate.agent_logs)
-                final_text = debate.world_bible.world_view or ""
-                final_agent_name = "策划师"
+            # 世界观任务：直接生成（不进入预设确认流程）
+            conversation_state["waiting_for_user"] = False
+            conversation_state["stage"] = "executing"
+
+            debate = self.world.debate(WorldDebateRequest(prompt=msg, story_id=story_id, max_rounds=1))
+            logs.extend(debate.agent_logs)
+            final_text = debate.world_bible.world_view or ""
+            final_agent_name = "策划师"
                 
         elif workflow_type == "edit":
             # 编辑任务
@@ -1561,6 +1364,45 @@ class AgentChatService:
             result = self.strategist.run({"text": msg})
             final_text = result.get("plan_text", "")
             final_agent_name = "策划师"
+
+        # 记忆落盘：非流式 chat() 也需要保存章节总结，否则记忆只在 chat_with_callback/工作流中更新
+        if workflow_type == "write" and chapter_id and final_text:
+            try:
+                summary_prompt = f"""请为以下章节内容生成简洁的总结：
+
+章节内容：
+{final_text[:1000]}...
+
+请生成：
+1. 章节摘要（100字以内）
+2. 关键事件
+3. 出场的角色
+4. 时间线进展
+
+格式：
+摘要：xxx
+关键事件：xxx
+角色：xxx
+时间线：xxx"""
+
+                summary_result = self._call_llm(summary_prompt, "你是一位专业的编辑，擅长总结章节内容。")
+
+                # 复用请求内记忆池，避免再次 load_memory
+                memory = request_memory if request_memory is not None else StoryMemory(story_id=story_id, bible=StoryBible())
+                if request_memory is None:
+                    request_memory = memory
+                memory.chapter_summaries.append(
+                    ChapterSummary(
+                        chapter_id=chapter_id,
+                        title=f"章节 {chapter_id}",
+                        summary=summary_result[:200],
+                    )
+                )
+                save_memory(memory)
+                # 保存后使缓存失效，下次请求会重新加载
+                self.context_pool.invalidate_memory(story_id)
+            except Exception as e:
+                print(f"[AgentChatService] Failed to save chapter summary: {e}")
         
         return {
             "agent_logs": logs,
@@ -1632,40 +1474,9 @@ class AgentChatService:
         if chapter_name:
             conversation_state["chapter_name"] = chapter_name
 
-        # 检查并确认 story_id 和 chapter_id
+        # 不再预设「确认上下文」步骤，直接根据用户消息处理
         if conversation_state["stage"] == "initial" and not conversation_state.get("context_confirmed"):
-            display_name = story_name or story_id
-            # 使用 chapter_name 显示给用户，如果没传则显示 chapter_id
-            display_chapter = chapter_name or chapter_id or '未指定'
-            confirm_prompt = f"""作为系统，向用户确认当前工作上下文：
-
-检测到的工作上下文：
-- 小说名称: {display_name}
-- 章节名称: {display_chapter}
-
-请用第一人称询问用户是否在这个上下文下继续工作，简洁友好。"""
-
-            confirm_content = self._call_llm(confirm_prompt, "你是 Agent Room 的系统管理员。")
-
-            log = {
-                "agent": "system",
-                "agent_name": "系统",
-                "message": "📍 确认上下文",
-                "content": confirm_content,
-                "requires_user_input": True
-            }
-            await add_log_with_callback(log, "user_input_required")
-
-            conversation_state["waiting_for_user"] = True
             conversation_state["context_confirmed"] = True
-
-            return {
-                "agent_logs": logs,
-                "final_text": "",
-                "final_agent": "system",
-                "conversation_state": conversation_state,
-                "requires_user_input": True
-            }
 
         # 如果正在等待用户输入，处理用户反馈
         if conversation_state.get("waiting_for_user") and conversation_state.get("stage") != "initial":
@@ -1823,9 +1634,18 @@ class AgentChatService:
         intent = self._analyze_intent(msg)
         workflow_type = intent["type"]
         conversation_state["workflow_type"] = workflow_type
+        # 调试日志：确认意图识别结果
+        print(f"[DEBUG] Intent detection: msg='{msg}' -> type='{workflow_type}'")
 
+        # 请求内记忆池：一次加载，多处复用
+        # 优先从缓存获取
+        request_memory = self.context_pool.get_memory(story_id)
+        if not request_memory:
+            request_memory = load_memory(story_id)
+            if request_memory:
+                self.context_pool.set_memory(story_id, request_memory)
         # 构建上下文
-        context = self._build_room_context(story_id)
+        context = self._build_room_context(story_id, memory=request_memory)
 
         # 生成自主工作流程（传入 conversation_state 供内部写入 pending_save 等）
         workflow_logs = self._generate_autonomous_workflow(msg, context, intent, story_id, conversation_state)
@@ -1845,15 +1665,12 @@ class AgentChatService:
         final_agent_name = ""
 
         if workflow_type == "write":
-            if conversation_state["stage"] == "initial" or conversation_state["stage"] == "waiting_for_details":
-                decision = self._generate_decision_point("write", "after_outline", msg)
-                await add_log_with_callback(decision, "user_input_required")
-                conversation_state["waiting_for_user"] = True
-                conversation_state["stage"] = "waiting_for_details"
-                final_text = "等待用户确认写作细节..."
-                final_agent_name = "策划师"
-            else:
-                cache_context = {"story_id": story_id, "chapter_id": chapter_id, "workflow": "write"}
+            # 写作任务：不进入预设确认流程，直接执行
+            conversation_state["waiting_for_user"] = False
+            conversation_state["stage"] = "executing"
+
+            cache_context = {"story_id": story_id, "chapter_id": chapter_id, "workflow": "write"}
+            if True:
 
                 # Step 1: 策划师制定计划
                 await stream_callback("progress_update", {"step": "planning", "message": "策划师正在制定计划..."})
@@ -1884,22 +1701,23 @@ class AgentChatService:
                     }
                     await add_log_with_callback(log)
 
-                    # Step 2: 评论家分析冲突
-                    await stream_callback("progress_update", {"step": "conflict_analysis", "message": "评论家正在分析冲突..."})
-                    critic_result = self._safe_agent_call(
-                        "CriticAgent", self.critic, {"text": plan_text, "plan": plan_text},
-                        chapter_id, AgentType.CONFLICT,
-                        use_cache=False, cache_context=cache_context
-                    )
-                    critic_feedback = critic_result.get("feedback", "") if "error" not in critic_result else "冲突分析跳过"
-
-                    log = {
-                        "agent": "critic",
-                        "agent_name": "评论家",
-                        "message": "⚠️ 冲突分析",
-                        "content": critic_feedback
-                    }
-                    await add_log_with_callback(log)
+                    # Step 2: 评论家分析冲突（快速模式默认跳过）
+                    critic_feedback = ""
+                    if not self.fast_mode:
+                        await stream_callback("progress_update", {"step": "conflict_analysis", "message": "评论家正在分析冲突..."})
+                        critic_result = self._safe_agent_call(
+                            "CriticAgent", self.critic, {"text": plan_text, "plan": plan_text},
+                            chapter_id, AgentType.CONFLICT,
+                            use_cache=False, cache_context=cache_context
+                        )
+                        critic_feedback = critic_result.get("feedback", "") if "error" not in critic_result else "冲突分析跳过"
+                        log = {
+                            "agent": "critic",
+                            "agent_name": "评论家",
+                            "message": "⚠️ 冲突分析",
+                            "content": critic_feedback
+                        }
+                        await add_log_with_callback(log)
 
                     # Step 3: 执行写作
                     await stream_callback("progress_update", {"step": "writing", "message": "作家正在创作内容..."})
@@ -1937,87 +1755,58 @@ class AgentChatService:
                             "revisions": ["Initial draft generated"]
                         })
 
-                        # Step 4: 一致性检查
-                        await stream_callback("progress_update", {"step": "consistency_check", "message": "正在进行一致性检查..."})
-                        consistency_result = self._safe_agent_call(
-                            "ConsistencyAgent", self.consistency,
-                            {
-                                "text": final_text,
-                                "story_bible": context,
-                                "check_type": "all"
-                            },
-                            chapter_id, AgentType.CONSISTENCY,
-                            use_cache=False, cache_context=cache_context
-                        )
-
-                        if "error" not in consistency_result and consistency_result.get("has_issues"):
-                            log = {
-                                "agent": "consistency",
-                                "agent_name": "一致性检查",
-                                "message": f"⚠️ 发现 {consistency_result.get('issues_count', 0)} 个问题",
-                                "content": consistency_result.get("formatted_issues", "")
-                            }
-                            await add_log_with_callback(log)
-
-                        # Step 5: 润色
-                        await stream_callback("progress_update", {"step": "editing", "message": "编辑正在润色内容..."})
-                        editor_result = self._safe_agent_call(
-                            "EditorAgent", self.editor, {"draft_text": final_text},
-                            chapter_id, AgentType.EDITOR,
-                            use_cache=False, cache_context=cache_context
-                        )
-
-                        if "error" not in editor_result:
-                            edited_text = editor_result.get("edited_text", final_text)
-
-                            if edited_text != final_text:
-                                final_text = edited_text
-                                trace_data[-1]["revisions"].append("Edited by EditorAgent")
-
+                        # Step 4+: 一致性/润色/读者反馈/总结（快速模式默认跳过）
+                        if not self.fast_mode:
+                            await stream_callback("progress_update", {"step": "consistency_check", "message": "正在进行一致性检查..."})
+                            consistency_result = self._safe_agent_call(
+                                "ConsistencyAgent", self.consistency,
+                                {"text": final_text, "story_bible": context, "check_type": "all"},
+                                chapter_id, AgentType.CONSISTENCY,
+                                use_cache=False, cache_context=cache_context
+                            )
+                            if "error" not in consistency_result and consistency_result.get("has_issues"):
                                 log = {
-                                    "agent": "editor",
-                                    "agent_name": "编辑",
-                                    "message": "✅ 润色完成",
-                                    "content": "已完成文本润色，改进表达流畅度"
+                                    "agent": "consistency",
+                                    "agent_name": "一致性检查",
+                                    "message": f"⚠️ 发现 {consistency_result.get('issues_count', 0)} 个问题",
+                                    "content": consistency_result.get("formatted_issues", "")
                                 }
                                 await add_log_with_callback(log)
 
-                        # Step 6: 读者反馈
-                        await stream_callback("progress_update", {"step": "reader_feedback", "message": "读者正在提供反馈..."})
-                        reader_result = self._safe_agent_call(
-                            "ReaderAgent", self.reader, {"text": final_text},
-                            chapter_id, AgentType.READER,
-                            use_cache=False, cache_context=cache_context
-                        )
+                            await stream_callback("progress_update", {"step": "editing", "message": "编辑正在润色内容..."})
+                            editor_result = self._safe_agent_call(
+                                "EditorAgent", self.editor, {"draft_text": final_text},
+                                chapter_id, AgentType.EDITOR,
+                                use_cache=False, cache_context=cache_context
+                            )
+                            if "error" not in editor_result:
+                                edited_text = editor_result.get("edited_text", final_text)
+                                if edited_text != final_text:
+                                    final_text = edited_text
+                                    trace_data[-1]["revisions"].append("Edited by EditorAgent")
+                                    log = {
+                                        "agent": "editor",
+                                        "agent_name": "编辑",
+                                        "message": "✅ 润色完成",
+                                        "content": "已完成文本润色，改进表达流畅度"
+                                    }
+                                    await add_log_with_callback(log)
 
-                        if "error" not in reader_result:
-                            reader_feedback = reader_result.get("feedback", "")
-
-                            log = {
-                                "agent": "reader",
-                                "agent_name": "读者",
-                                "message": "👁️ 读者反馈",
-                                "content": reader_feedback
-                            }
-                            await add_log_with_callback(log)
-
-                        # Step 7: 写作完成
-                        complete_prompt = f"""作为作家，宣布写作完成：
-
-创作字数：{len(final_text)}
-内容预览：{final_text[:200]}...
-
-请用第一人称宣布写作完成，并简要总结创作内容，简洁专业。"""
-
-                        complete_content = self._call_llm(complete_prompt, "你是一位专业的作家。")
-
-                        log = {
-                            "agent": "writer",
-                            "agent_name": "作家",
-                            "message": "✅ 写作完成",
-                            "content": complete_content
-                        }
-                        await add_log_with_callback(log)
+                            await stream_callback("progress_update", {"step": "reader_feedback", "message": "读者正在提供反馈..."})
+                            reader_result = self._safe_agent_call(
+                                "ReaderAgent", self.reader, {"text": final_text},
+                                chapter_id, AgentType.READER,
+                                use_cache=False, cache_context=cache_context
+                            )
+                            if "error" not in reader_result:
+                                reader_feedback = reader_result.get("feedback", "")
+                                log = {
+                                    "agent": "reader",
+                                    "agent_name": "读者",
+                                    "message": "👁️ 读者反馈",
+                                    "content": reader_feedback
+                                }
+                                await add_log_with_callback(log)
 
                         # Step 8: 保存章节总结
                         if chapter_id:
@@ -2041,10 +1830,10 @@ class AgentChatService:
 
                                 summary_result = self._call_llm(summary_prompt, "你是一位专业的编辑，擅长总结章节内容。")
 
-                                memory = load_memory(story_id)
-                                if memory is None:
-                                    memory = StoryMemory(story_id=story_id, bible=StoryBible())
-
+                                # 复用请求内记忆池
+                                memory = request_memory if request_memory is not None else StoryMemory(story_id=story_id, bible=StoryBible())
+                                if request_memory is None:
+                                    request_memory = memory
                                 memory.chapter_summaries.append(
                                     ChapterSummary(
                                         chapter_id=chapter_id,
@@ -2052,8 +1841,9 @@ class AgentChatService:
                                         summary=summary_result[:200]
                                     )
                                 )
-
                                 save_memory(memory)
+                                # 保存后使缓存失效，下次请求会重新加载
+                                self.context_pool.invalidate_memory(story_id)
 
                                 log = {
                                     "agent": "memory",
@@ -2103,17 +1893,18 @@ class AgentChatService:
                         conversation_state["stage"] = "completed"
 
         elif workflow_type == "outline":
-            if conversation_state["stage"] == "initial":
-                decision = self._generate_decision_point("outline", "after_proposal", msg)
-                await add_log_with_callback(decision, "user_input_required")
-                conversation_state["waiting_for_user"] = True
-                conversation_state["stage"] = "waiting_for_details"
-                final_text = "等待用户确认大纲框架..."
-                final_agent_name = "策划师"
-            else:
-                result = self.strategist.run({"text": msg})
-                final_text = result.get("plan_text", "")
-                final_agent_name = "策划师"
+            # 大纲任务：直接生成
+            conversation_state["waiting_for_user"] = False
+            conversation_state["stage"] = "executing"
+
+            result = self._safe_agent_call(
+                "StrategistAgent", self.strategist, {"text": msg},
+                chapter_id, AgentType.PLANNER,
+                use_cache=True, cache_context={"story_id": story_id, "chapter_id": chapter_id, "workflow": "outline"}
+            )
+            final_text = result.get("plan_text", "")
+            final_agent_name = "策划师"
+            if True:
 
                 critic_result = self.critic.run({"text": final_text})
                 critic_feedback = critic_result.get("feedback", "")
@@ -2143,20 +1934,16 @@ class AgentChatService:
                 await add_log_with_callback(log)
 
         elif workflow_type == "world_building":
-            if conversation_state["stage"] == "initial":
-                decision = self._generate_decision_point("world_building", "after_framework", msg)
-                await add_log_with_callback(decision, "user_input_required")
-                conversation_state["waiting_for_user"] = True
-                conversation_state["stage"] = "waiting_for_details"
-                final_text = "等待用户确认世界观框架..."
-                final_agent_name = "策划师"
-            else:
-                await stream_callback("progress_update", {"step": "world_building", "message": "正在生成世界观..."})
-                debate = self.world.debate(WorldDebateRequest(prompt=msg, story_id=story_id, max_rounds=1))
-                for debate_log in debate.agent_logs:
-                    await add_log_with_callback(debate_log)
-                final_text = debate.world_bible.world_view or ""
-                final_agent_name = "策划师"
+            # 世界观任务：直接生成
+            conversation_state["waiting_for_user"] = False
+            conversation_state["stage"] = "executing"
+
+            await stream_callback("progress_update", {"step": "world_building", "message": "正在生成世界观..."})
+            debate = self.world.debate(WorldDebateRequest(prompt=msg, story_id=story_id, max_rounds=1))
+            for debate_log in debate.agent_logs:
+                await add_log_with_callback(debate_log)
+            final_text = debate.world_bible.world_view or ""
+            final_agent_name = "策划师"
 
         elif workflow_type == "edit":
             await stream_callback("progress_update", {"step": "editing", "message": "正在润色内容..."})

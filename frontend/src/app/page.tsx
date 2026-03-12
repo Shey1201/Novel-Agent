@@ -36,6 +36,13 @@ export default function Home() {
     updateAgent,
   } = useSupabaseStore();
 
+  // 客户端挂载时从后端加载小说列表，确保数据库内容能正确显示
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      useSupabaseStore.getState().loadFromSupabase();
+    }
+  }, []);
+
   const currentNovel = novels.find((n) => n.id === currentNovelId);
   const currentChapter = currentNovel?.chapters.find((c) => c.id === currentChapterId);
 

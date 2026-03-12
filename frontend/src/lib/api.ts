@@ -76,9 +76,11 @@ export class AgentRoomWebSocket {
         };
 
         this.ws.onerror = (error) => {
-          console.error('[AgentRoomWebSocket] Error:', error);
-          // WebSocket 错误不立即 reject，等待重连机制处理
-          // 这样可以避免初始连接失败时抛出错误
+          // WebSocket 错误可能是由于连接关闭或其他原因，不一定影响功能
+          // 只在连接未建立时记录错误
+          if (this.ws?.readyState !== WebSocket.OPEN) {
+            console.log('[AgentRoomWebSocket] Connection not established, will retry');
+          }
         };
 
         this.ws.onclose = () => {

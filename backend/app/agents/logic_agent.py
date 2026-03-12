@@ -1,6 +1,7 @@
 from typing import Any, Dict, List
 
 from app.agents.base_agent import BaseAgent
+from langchain.schema import HumanMessage
 
 
 class LogicAgent(BaseAgent):
@@ -13,9 +14,13 @@ class LogicAgent(BaseAgent):
         world_draft = input_data.get("world_draft", "")
 
         issues: List[str]
-        if callable(self.llm):
-            result = self.llm(world_draft)
-            issues = [str(result)]
+        if self.llm is not None:
+            # 必须传 LangChain 消息对象列表，不能直接传字符串
+            try:
+                result = self.llm.invoke([HumanMessage(content=world_draft)])
+                issues = [str(result.content)] if hasattr(result, 'content') else [str(result)]
+            except Exception as e:
+                issues = [f"LLM 调用失败: {str(e)}"]
         else:
             issues = [
                 "若设定为人人都可修炼，需要解释为何仍存在明显阶层分化。",

@@ -87,7 +87,9 @@ def create_streaming_callback(story_id: str) -> Callable:
 def get_chat_service():
     """每次请求动态创建 AgentChatService，确保读取最新 AI 配置。"""
     ai_config = get_ai_config_from_db()
+    print(f"[DEBUG] get_chat_service: ai_config = {ai_config}")
     llm = create_llm_from_config(ai_config)
+    print(f"[DEBUG] get_chat_service: llm = {llm}")
     return AgentChatService(llm=llm)
 
 
@@ -124,14 +126,17 @@ async def agent_chat(payload: AgentChatRequest) -> Dict[str, Any]:
         # 获取 chat_service（会自动使用数据库中的 AI 配置）
         service = get_chat_service()
 
-        result = service.chat(
+        # 注意：当前是 async endpoint，但 service.chat 是同步阻塞调用。
+        # 必须放到线程池，否则会阻塞事件循环导致请求卡住/超时。
+        result = await asyncio.to_thread(
+            service.chat,
             payload.message,
             payload.story_id or "demo-story",
-            chapter_id=payload.chapter_id,
-            chapter_name=payload.chapter_name,
-            word_count_range=word_count_dict,
-            conversation_state=state_dict,
-            story_name=payload.story_name,  # 传递小说名称
+            payload.chapter_id,
+            payload.chapter_name,
+            word_count_dict,
+            state_dict,
+            payload.story_name,
         )
         return result
     except Exception as e:
@@ -176,7 +181,7 @@ async def generate_chat_stream(payload: AgentChatRequest):
         })
 
         # 执行聊天（传入回调）
-        result = service.chat_with_callback(
+        result = await service.chat_with_callback(
             payload.message,
             story_id,
             chapter_id=payload.chapter_id,
@@ -260,7 +265,7 @@ async def agent_room_websocket(websocket: WebSocket, story_id: str):
                     service = get_chat_service()
 
                     # 处理消息
-                    result = service.chat_with_callback(
+                    result = await service.chat_with_callback(
                         message,
                         story_id,
                         chapter_id=msg_data.get("chapter_id"),

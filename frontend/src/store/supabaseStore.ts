@@ -863,24 +863,31 @@ export const useSupabaseStore = create<NovelState>()(
 
       // 世界设定
       setWorldBible: async (worldBible) => {
+        const currentNovelId = get().currentNovelId;
+        
         // 先更新本地状态
         set({ worldBible });
         
-        // 同步到 Supabase
-        try {
-          const { error } = await supabase
-            .from('world_bibles')
-            .upsert({
-              id: (worldBible as any).id || crypto.randomUUID(),
-              content: worldBible,
-              updated_at: new Date().toISOString(),
-            }, { onConflict: 'id' });
-          
-          if (error) {
-            console.error('Failed to sync world bible to Supabase:', error);
+        // 如果有当前小说，同步到 Supabase
+        if (currentNovelId) {
+          try {
+            const { error } = await supabase
+              .from('world_bibles')
+              .upsert({
+                id: currentNovelId,  // 使用小说 ID 作为 world_bible 的 ID
+                novel_id: currentNovelId,
+                content: worldBible,
+                updated_at: new Date().toISOString(),
+              }, { onConflict: 'id' });
+            
+            if (error) {
+              console.error('Failed to sync world bible to Supabase:', error);
+            } else {
+              console.log('[setWorldBible] Saved to Supabase for novel:', currentNovelId);
+            }
+          } catch (err) {
+            console.error('Error syncing world bible:', err);
           }
-        } catch (err) {
-          console.error('Error syncing world bible:', err);
         }
       },
       setWorldApproved: (approved) => set({ worldApproved: approved }),
@@ -1117,38 +1124,45 @@ export const useSupabaseStore = create<NovelState>()(
           // 通过后端API加载小说列表（含章节）
           const response = await fetchWithTimeout(`${API_BASE}/api/novels/with-chapters`);
           if (!response.ok) {
-            const error = await response.json();
+            const error = await response.json().catch(() => ({}));
             console.error('Failed to load novels from API:', error);
+            set({ novels: [] });
           } else {
             const novelsData = await response.json();
-            
-            if (novelsData && novelsData.length > 0) {
-              const novelsWithChapters = novelsData.map((novel: any) => ({
-                id: novel.id,
-                title: novel.title,
-                outline: novel.outline || '',
-                locked: novel.locked || false,
-                categoryId: novel.category_id || null,  // 添加分类ID映射
-                createdAt: new Date(novel.created_at).getTime(),
-                updatedAt: new Date(novel.updated_at).getTime(),
-                chapters: (novel.chapters || []).map((ch: any) => ({
-                  id: ch.id,
-                  title: ch.title,
-                  content: ch.content || '',
-                  order: ch.order || 0,
-                  summary: '',
-                  wordCount: 0,
-                  status: ch.status || 'draft',
-                  volumeName: ch.volume_name || '未分卷',
-                  volumeOrder: ch.volume_order || 0,
-                  createdAt: new Date(ch.created_at).getTime(),
-                  updatedAt: new Date(ch.updated_at).getTime(),
-                })),
-              }));
-
-              set({ novels: novelsWithChapters });
-              console.log(`Loaded ${novelsWithChapters.length} novels from API`);
-            }
+            const list = Array.isArray(novelsData) ? novelsData : [];
+            const novelsWithChapters = list.length > 0
+              ? list.map((novel: any) => ({
+                  id: novel.id,
+                  title: novel.title,
+                  outline: novel.outline || '',
+                  locked: novel.locked || false,
+                  categoryId: novel.category_id || null,
+                  createdAt: new Date(novel.created_at).getTime(),
+                  updatedAt: new Date(novel.updated_at).getTime(),
+                  assetRefs: {
+                    characters: [],
+                    worldbuilding: [],
+                    factions: [],
+                    locations: [],
+                    timeline: [],
+                  },
+                  chapters: (novel.chapters || []).map((ch: any) => ({
+                    id: ch.id,
+                    title: ch.title,
+                    content: ch.content || '',
+                    order: ch.order ?? ch.order_index ?? 0,
+                    summary: '',
+                    wordCount: 0,
+                    status: ch.status || 'draft',
+                    volumeName: ch.volume_name || '未分卷',
+                    volumeOrder: ch.volume_order || 0,
+                    createdAt: new Date(ch.created_at).getTime(),
+                    updatedAt: new Date(ch.updated_at).getTime(),
+                  })),
+                }))
+              : [];
+            set({ novels: novelsWithChapters });
+            console.log(`Loaded ${novelsWithChapters.length} novels from API`);
           }
 
           // 加载已删除的小说（回收站）- 通过后端 API，避免前端直连 Supabase 导致 401
@@ -1165,6 +1179,13 @@ export const useSupabaseStore = create<NovelState>()(
                   createdAt: new Date(novel.created_at).getTime(),
                   updatedAt: new Date(novel.updated_at).getTime(),
                   chapters: [],
+                  assetRefs: {
+                    characters: [],
+                    worldbuilding: [],
+                    factions: [],
+                    locations: [],
+                    timeline: [],
+                  },
                   deletedAt: new Date(novel.deleted_at).getTime(),
                 }));
                 set({ deletedNovels });

@@ -5,6 +5,7 @@ import { useSupabaseStore } from "@/store/supabaseStore";
 import { apiUrl, AgentRoomWebSocket, fetchAgentChatStream, AgentStreamCallbacks } from "@/lib/api";
 
 interface ChatResponse {
+  error?: string;
   final_text?: string;
   world_bible?: { world_view?: string; rules?: string; themes?: string[] };
   approved?: boolean;
@@ -48,7 +49,7 @@ const WORD_COUNT_OPTIONS = [
 ];
 
 export const AgentPanel: React.FC = () => {
-  const { messages, addMessage, loadMessages, currentNovelId, currentChapterId, updateChapterContent, setWorldBible, setWorldApproved, updateNovel, updateChapter, novels, addStoryAsset } =
+  const { messages, addMessage, loadMessages, clearMessages, currentNovelId, currentChapterId, updateChapterContent, setWorldBible, setWorldApproved, updateNovel, updateChapter, novels, addStoryAsset } =
     useSupabaseStore();
 
   // 根据 currentNovelId 获取当前小说名称
@@ -133,6 +134,11 @@ export const AgentPanel: React.FC = () => {
 
   // 处理错误
   const handleAgentError = useCallback((data: any) => {
+    // 忽略空的错误数据（可能是 WebSocket 连接超时）
+    if (!data || !data.error || data.error === '{}') {
+      console.log('[AgentPanel] WebSocket connection status:', wsRef.current?.isConnected() ? 'connected' : 'disconnected');
+      return;
+    }
     setIsLoading(false);
     setCurrentStep('');
     push("system", "agent", `❌ Agent 错误: ${data.error || JSON.stringify(data)}`);
@@ -142,7 +148,7 @@ export const AgentPanel: React.FC = () => {
   useEffect(() => {
     const storyId = currentNovelId || 'demo-story';
     const callbacks: AgentStreamCallbacks = {
-      onAgentStart: () => setIsLoading(true),
+      onAgentStart: () => {}, // WebSocket 连接时不显示加载，等待用户发送消息后才显示
       onAgentMessage: handleAgentMessage,
       onProgressUpdate: handleProgressUpdate,
       onConsensusUpdate: handleConsensusUpdate,
@@ -178,6 +184,9 @@ export const AgentPanel: React.FC = () => {
     setEditValue("");
     setIsLoading(true);
 
+    const controller = new AbortController();
+    let timeoutId: ReturnType<typeof setTimeout> | undefined = setTimeout(() => controller.abort(), 120000); // 120 秒超时
+
     try {
       const res = await fetch(apiUrl("/api/agent/chat"), {
         method: "POST",
@@ -185,21 +194,23 @@ export const AgentPanel: React.FC = () => {
         body: JSON.stringify({
           message,
           story_id: currentNovelId || "demo-story",
-          story_name: currentNovelName,  // 传入小说名称供 AI 使用
+          story_name: currentNovelName,
           chapter_id: currentChapterId,
-          chapter_name: currentChapterName,  // 传入章节名称供 AI 显示
+          chapter_name: currentChapterName,
           word_count_range: {
             min: selectedWordCount.min,
             max: selectedWordCount.max
           },
           conversation_state: conversationState
         }),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
       const data = (await res.json()) as ChatResponse;
 
       if (data.error) {
         push("system", "agent", `❌ Agent 处理失败: ${data.error}`);
-        setIsLoading(false);  // 错误时也要结束加载状态
+        return;
       }
 
       // 保存对话状态
@@ -353,10 +364,18 @@ export const AgentPanel: React.FC = () => {
           push("system", "agent", "✅ 已自动保存到小说大纲");
         }
         
-        // 5. 更新设定/世界观 - 保存到 Story Bible > World
+        // 5. 更新设定/世界观 - 保存到编辑器世界观 + Story Bible > World
         else if (lowerMsg.includes('设定') || lowerMsg.includes('世界观') || lowerMsg.includes('背景') ||
                  lowerMsg.includes('world') || lowerMsg.includes('setting') || lowerMsg.includes('规则')) {
-          // 同时保存到 outline 和 Story Bible
+          // 保存到编辑器世界观（通过 setWorldBible 保存到 world_bibles 表）
+          const currentWorldBible = {
+            world_view: data.final_text,
+            rules: '',
+            themes: [],
+          };
+          setWorldBible(currentWorldBible);
+          
+          // 同时保存到 outline
           const currentNovel = novels.find(n => n.id === currentNovelId);
           const existingOutline = currentNovel?.outline || '';
           const worldBuildingSection = `\n\n【世界观设定】\n${data.final_text}`;
@@ -373,7 +392,7 @@ export const AgentPanel: React.FC = () => {
             });
           }
           
-          push("system", "agent", "✅ 已自动保存到小说大纲和 Story Bible > World");
+          push("system", "agent", "✅ 已自动保存到编辑器世界观、小说大纲和 Story Bible > World");
         }
         
         // 6. 更新角色设定 - 保存到 Story Bible > Characters
@@ -492,11 +511,17 @@ export const AgentPanel: React.FC = () => {
         }
       }
     } catch (error) {
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
+      const isAbort = error instanceof Error && error.name === "AbortError";
       const msg = error instanceof Error ? error.message : String(error);
       const isNetwork = msg.includes("fetch") || msg.includes("Failed to fetch") || msg.includes("NetworkError");
-      push("system", "agent", isNetwork
-        ? "❌ 网络请求失败，请确认后端服务已启动（如 http://127.0.0.1:8000）且 CORS 已配置。"
-        : `Agent Room 请求失败: ${msg}`);
+      if (isAbort) {
+        push("system", "agent", "❌ 请求超时（120 秒），请稍后重试或简化请求。");
+      } else {
+        push("system", "agent", isNetwork
+          ? "❌ 网络请求失败，请确认后端服务已启动（如 http://127.0.0.1:8000）且 CORS 已配置。"
+          : `Agent Room 请求失败: ${msg}`);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -507,16 +532,32 @@ export const AgentPanel: React.FC = () => {
       <div className="p-4 border-b border-zinc-200 bg-white shrink-0">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-bold text-zinc-800">Agent Room</h2>
-          <button
-            onClick={() => setShowSettings(!showSettings)}
-            className="p-1.5 text-zinc-400 hover:text-indigo-600 hover:bg-zinc-100 rounded-lg transition-colors"
-            title="生成设置"
-          >
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => {
+                clearMessages?.();
+                setConversationState(null);
+              }}
+              className="p-1.5 text-zinc-400 hover:text-red-600 hover:bg-zinc-100 rounded-lg transition-colors"
+              title="清空聊天记录"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 6h18"/>
+                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+              </svg>
+            </button>
+            <button
+              onClick={() => setShowSettings(!showSettings)}
+              className="p-1.5 text-zinc-400 hover:text-indigo-600 hover:bg-zinc-100 rounded-lg transition-colors"
+              title="生成设置"
+            >
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
               <circle cx="12" cy="12" r="3"/>
             </svg>
           </button>
+          </div>
         </div>
         <p className="mt-1.5 text-[10px] text-zinc-400">找找灵感来 battle 一下吧</p>
         

@@ -1,13 +1,15 @@
 """
 Memory API - 历史记忆侧边栏后端接口
 提供 StoryMemory 的读取和编辑功能
+与 chapter_service 统一使用 story_memory.json，避免双文件不同步。
 """
 
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-import json
-from pathlib import Path
+
+from app.services.chapter_service import load_memory, save_memory
+from app.memory.story_memory import StoryMemory, StoryBible, Character, ChapterSummary, TimelineEvent
 
 router = APIRouter(prefix="/api/memory", tags=["memory"])
 
@@ -46,48 +48,51 @@ class MemoryResponse(BaseModel):
     data: Optional[Dict[str, Any]] = None
 
 
-# ==================== 工具函数 ====================
-
-def get_story_data_dir(story_id: str) -> Path:
-    """获取故事数据目录"""
-    data_dir = Path("backend/data") / story_id
-    data_dir.mkdir(parents=True, exist_ok=True)
-    return data_dir
-
+# ==================== 工具函数（统一使用 story_memory.json）====================
 
 def load_story_memory(story_id: str) -> Dict[str, Any]:
-    """加载故事记忆"""
-    memory_file = get_story_data_dir(story_id) / "memory.json"
-    
-    if memory_file.exists():
-        with open(memory_file, "r", encoding="utf-8") as f:
-            return json.load(f)
-    
-    # 返回默认空记忆
+    """加载故事记忆为 API 用 Dict，来源：story_memory.json（与 agent/写作链路一致）"""
+    memory = load_memory(story_id)
+    if memory is None:
+        return _default_memory_dict(story_id)
+    data = memory.model_dump()
+    # 兼容前端可能使用的字段
+    data.setdefault("unresolved_clues", [])
+    return data
+
+
+def _default_memory_dict(story_id: str) -> Dict[str, Any]:
+    """默认空记忆 Dict"""
     return {
         "story_id": story_id,
-        "bible": {
-            "title": "",
-            "genre": "",
-            "world_view": "",
-            "themes": [],
-            "world_rules": [],
-            "locations": [],
-            "factions": []
-        },
+        "bible": StoryBible().model_dump(),
         "characters": [],
         "timeline": [],
         "chapter_summaries": [],
         "world_locked": False,
-        "unresolved_clues": []
+        "unresolved_clues": [],
     }
 
 
 def save_story_memory(story_id: str, memory_data: Dict[str, Any]):
-    """保存故事记忆"""
-    memory_file = get_story_data_dir(story_id) / "memory.json"
-    with open(memory_file, "w", encoding="utf-8") as f:
-        json.dump(memory_data, f, ensure_ascii=False, indent=2)
+    """保存故事记忆：写入 story_memory.json（与 chapter_service 一致）"""
+    memory = load_memory(story_id)
+    if memory is None:
+        memory = StoryMemory(story_id=story_id, bible=StoryBible())
+    # 只更新 API 允许的字段，避免覆盖未传字段
+    if "bible" in memory_data and memory_data["bible"]:
+        memory.bible = StoryBible.model_validate(memory_data["bible"])
+    if "characters" in memory_data:
+        memory.characters = [Character.model_validate(c) for c in memory_data["characters"]]
+    if "timeline" in memory_data:
+        memory.timeline = [TimelineEvent.model_validate(t) for t in memory_data["timeline"]]
+    if "chapter_summaries" in memory_data:
+        memory.chapter_summaries = [ChapterSummary.model_validate(s) for s in memory_data["chapter_summaries"]]
+    if "world_locked" in memory_data:
+        memory.world_locked = bool(memory_data["world_locked"])
+    if "unresolved_clues" in memory_data:
+        memory.unresolved_clues = list(memory_data["unresolved_clues"])
+    save_memory(memory)
 
 
 # ==================== API Endpoints ====================
@@ -352,7 +357,7 @@ async def get_memory_status(story_id: str) -> MemoryResponse:
                 "chapter_summary_count": len(memory_data.get("chapter_summaries", [])),
                 "timeline_event_count": len(memory_data.get("timeline", [])),
                 "world_locked": memory_data.get("world_locked", False),
-                "storage_type": "memory"  # 当前使用内存模式
+                "storage_type": "story_memory"  # 统一使用 story_memory.json
             }
         )
     except Exception as e:

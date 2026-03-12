@@ -65,13 +65,20 @@ class AssetResponse(BaseModel):
 
 def _asset_to_response(a) -> AssetResponse:
     """将 Asset 对象转换为 AssetResponse"""
+    # 兼容处理：Asset 模型可能没有 source_novel_name 字段
+    # Pydantic v2 中 getattr 对不存在字段仍会抛 AttributeError
+    def _get_field(model, field_name: str, default=None):
+        if hasattr(model, 'model_fields') and field_name not in model.model_fields:
+            return default
+        return getattr(model, field_name, default)
+
     return AssetResponse(
         id=a.id,
         name=a.name,
         type=a.type,
         description=a.description,
-        source_novel_id=a.source_novel_id,
-        source_novel_name=getattr(a, 'source_novel_name', None),
+        source_novel_id=_get_field(a, 'source_novel_id'),
+        source_novel_name=_get_field(a, 'source_novel_name'),
         color=a.color,
         is_starred=a.is_starred,
         mount_count=asset_manager.get_asset_mount_count(a.id),
