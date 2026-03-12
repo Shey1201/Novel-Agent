@@ -140,7 +140,7 @@ export const useSkillStore = create<SkillState>((set, get) => ({
       console.error('[SkillStore] Error in fetchCategories:', err);
       set({ 
         error: isNetworkError 
-          ? '无法连接后端服务，请确认后端已启动 (http://127.0.0.1:8000)' 
+          ? `无法连接后端服务，请确认后端已启动 (${API_BASE})` 
           : msg 
       });
     }
@@ -168,7 +168,7 @@ export const useSkillStore = create<SkillState>((set, get) => ({
       console.error('[SkillStore] Error in fetchSkills:', err);
       set({ 
         error: isNetworkError 
-          ? '无法连接后端服务，请确认后端已启动 (http://127.0.0.1:8000)' 
+          ? `无法连接后端服务，请确认后端已启动 (${API_BASE})` 
           : msg 
       });
     }

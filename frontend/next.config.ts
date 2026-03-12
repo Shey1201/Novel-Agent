@@ -7,8 +7,9 @@ const nextConfig: NextConfig = {
   },
   // 禁用 trailing slash
   trailingSlash: false,
-  // 代理 API 请求到后端
+  // 仅本地开发时代理 /api 到本地后端，线上由 NEXT_PUBLIC_API_URL 指向真实后端
   async rewrites() {
+    if (process.env.NODE_ENV !== 'development') return [];
     return [
       {
         source: '/api/:path*',

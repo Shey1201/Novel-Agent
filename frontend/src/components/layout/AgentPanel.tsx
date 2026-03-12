@@ -519,7 +519,7 @@ export const AgentPanel: React.FC = () => {
         push("system", "agent", "❌ 请求超时（120 秒），请稍后重试或简化请求。");
       } else {
         push("system", "agent", isNetwork
-          ? "❌ 网络请求失败，请确认后端服务已启动（如 http://127.0.0.1:8000）且 CORS 已配置。"
+          ? `❌ 网络请求失败，请确认后端服务已启动（${apiUrl("")}）且 CORS 已配置。`
           : `Agent Room 请求失败: ${msg}`);
       }
     } finally {
