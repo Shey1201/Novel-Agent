@@ -423,8 +423,12 @@ async def get_ai_config():
     try:
         from app.memory.system_settings import supabase
         
-        # 获取设置
-        result = supabase.table("settings").select("ai_chat_model, ai_api_key, ai_base_url, ai_is_active").limit(1).execute()
+        # 获取设置（过滤已删除的记录）
+        try:
+            result = supabase.table("settings").select("ai_chat_model, ai_api_key, ai_base_url, ai_is_active").is_("deleted_at", "null").limit(1).execute()
+        except Exception:
+            # 如果字段不存在，直接查询
+            result = supabase.table("settings").select("ai_chat_model, ai_api_key, ai_base_url, ai_is_active").limit(1).execute()
         
         if result.data and len(result.data) > 0:
             data = result.data[0]
@@ -467,18 +471,21 @@ async def update_ai_config(request: AIConfigRequest):
             update_data["ai_base_url"] = request.base_url
         if request.is_active is not None:
             update_data["ai_is_active"] = request.is_active
-        
-        # 检查是否已有设置记录
-        result = supabase.table("settings").select("id").limit(1).execute()
-        
+
+        # 检查是否已有设置记录（过滤已删除的记录）
+        try:
+            result = supabase.table("settings").select("id").is_("deleted_at", "null").limit(1).execute()
+        except Exception:
+            result = supabase.table("settings").select("id").limit(1).execute()
+
         if result.data and len(result.data) > 0:
-            # 更新现有记录
+            # 更新现有记录（确保只更新未删除的记录）
             setting_id = result.data[0]["id"]
-            supabase.table("settings").update(update_data).eq("id", setting_id).execute()
+            supabase.table("settings").update(update_data).eq("id", setting_id).is_("deleted_at", "null").execute()
         else:
             # 创建新记录
             supabase.table("settings").insert(update_data).execute()
-        
+
         return {"message": "AI 配置已更新"}
     except Exception as e:
         print(f"更新 AI 配置失败: {e}")

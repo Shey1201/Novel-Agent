@@ -18,8 +18,12 @@ def get_ai_config_from_db() -> Optional[Dict[str, Any]]:
             query = supabase.table(table_name).select(
                 "ai_chat_model, ai_api_key, ai_base_url, ai_is_active"
             )
-            if table_name == "settings":
-                query = query.is_("deleted_at", "null")
+            # 尝试添加 deleted_at 过滤（表可能没有此字段）
+            try:
+                if table_name == "settings":
+                    query = query.is_("deleted_at", "null")
+            except Exception:
+                pass  # 如果字段不存在，跳过过滤
 
             result = query.limit(1).execute()
             if not result.data:
@@ -28,6 +32,7 @@ def get_ai_config_from_db() -> Optional[Dict[str, Any]]:
             data = result.data[0]
             is_active = bool(data.get("ai_is_active", False))
             api_key = data.get("ai_api_key")
+            print(f"[DEBUG] _read_from_table({table_name}): is_active={is_active}, has_api_key={bool(api_key)}")
             if is_active and api_key:
                 return {
                     "model": data.get("ai_chat_model", "gpt-4o-mini"),
@@ -62,17 +67,31 @@ def create_llm_from_config(config: Optional[Dict[str, Any]] = None):
     try:
         from langchain_openai import ChatOpenAI
         
-        llm_kwargs = {
+        llm_kwargs: Dict[str, Any] = {
             "api_key": config["api_key"],
             "model": config.get("model", "gpt-4o-mini"),
             "temperature": 0.7,
         }
+
+        # 避免网络/模型端异常导致请求无限期卡住
+        # 不同版本的 langchain_openai 可能使用不同参数名，这里做兼容尝试
+        llm_kwargs.setdefault("max_retries", 2)
+        llm_kwargs.setdefault("timeout", 30)
+        llm_kwargs.setdefault("request_timeout", 30)
         
         # 如果提供了 base_url，则使用它
         if config.get("base_url"):
             llm_kwargs["base_url"] = config["base_url"]
         
-        return ChatOpenAI(**llm_kwargs)
+        try:
+            return ChatOpenAI(**llm_kwargs)
+        except TypeError:
+            # 回退：移除不兼容的参数名
+            fallback_kwargs = dict(llm_kwargs)
+            fallback_kwargs.pop("request_timeout", None)
+            fallback_kwargs.pop("timeout", None)
+            fallback_kwargs.pop("max_retries", None)
+            return ChatOpenAI(**fallback_kwargs)
     except Exception as e:
         print(f"创建 LLM 实例失败: {e}")
         return None
