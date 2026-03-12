@@ -1,6 +1,6 @@
 # Railway 环境变量配置
 
-> ⚠️ **重要**：Railway 部署时必须在 Variables 中设置 `PORT = 8000`（否则后端会默认监听 8000 端口，但 Railway 无法正确路由外部请求）。
+> ⚠️ **端口**：后端已改为通过 `backend/start_railway.py` 从环境变量 `PORT` 启动（Railway 会自动注入）。部署后日志应显示 `Starting uvicorn on 0.0.0.0:XXXX`（XXXX 为 Railway 分配的端口），而不是固定的 8000。若仍显示 8000，请在 Railway 服务 Settings → Deploy 中确认未覆盖 Start Command，或手动设为：`cd backend && pip install -r requirements.txt && python start_railway.py`。
 
 后端需要以下环境变量才能连接 Supabase 数据库：
 
