@@ -1,5 +1,7 @@
 # Railway 环境变量配置
 
+> ⚠️ **重要**：Railway 部署时必须在 Variables 中设置 `PORT = 8000`（否则后端会默认监听 8000 端口，但 Railway 无法正确路由外部请求）。
+
 后端需要以下环境变量才能连接 Supabase 数据库：
 
 ## 必需的环境变量
@@ -61,4 +63,10 @@ SUPABASE_SERVICE_KEY=your_service_key_here
    - 若打不开或超时，说明后端未启动、崩溃或冷启动中；可查看 Railway 的 Deployments / Logs 排查。
 
 4. **冷启动**  
-   Railway 免费档在闲置一段时间后会休眠，首次请求可能超时。前端已对首屏请求做一次自动重试；若仍失败，可稍等几秒后刷新页面再试。
+   Railway 免费档在闲置一段时间后会休眠，首次请求可能超时。前端已对首屏请求做多次自动重试；若仍失败，可等待 10～30 秒后刷新页面再试。
+
+5. **ERR_CONNECTION_CLOSED 但请求地址正确**  
+   若控制台里请求已发往正确的 Railway 地址（如 `https://xxx.cn.railway.app`）仍报 `ERR_CONNECTION_CLOSED`，说明后端未响应。请：
+   - 浏览器直接打开：`https://你的Railway域名/api/health`，看是否返回 `{"status":"ok"}`；
+   - 在 Railway Dashboard 查看该服务的 **Deployments / Logs**，确认无启动报错、无崩溃；
+   - 若使用 `cn.railway.app`，确认该区域服务可被你的网络访问（如无防火墙/策略拦截）。

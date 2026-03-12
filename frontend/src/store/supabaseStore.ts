@@ -49,15 +49,16 @@ function isNetworkError(err: unknown): boolean {
   return false;
 }
 
-/** 带超时和一次重试的 fetch（应对 Railway 冷启动等） */
-async function fetchWithTimeoutAndRetry(url: string, options?: RequestInit): Promise<Response> {
+/** 带超时和最多两次重试的 fetch（应对 Railway 冷启动等） */
+async function fetchWithTimeoutAndRetry(url: string, options?: RequestInit, retriesLeft = 2): Promise<Response> {
   try {
     return await fetchWithTimeout(url, options);
   } catch (e) {
-    if (!isNetworkError(e)) throw e;
-    console.warn('[API] Network error, retrying in 2.5s...', e);
-    await new Promise((r) => setTimeout(r, 2500));
-    return fetchWithTimeout(url, options);
+    if (!isNetworkError(e) || retriesLeft <= 0) throw e;
+    const delay = 3000;
+    console.warn(`[API] Network error, retrying in ${delay / 1000}s... (${retriesLeft} left)`, url, e);
+    await new Promise((r) => setTimeout(r, delay));
+    return fetchWithTimeoutAndRetry(url, options, retriesLeft - 1);
   }
 }
 
@@ -1330,7 +1331,7 @@ export const useSupabaseStore = create<NovelState>()(
             const msg = err instanceof Error ? err.message : String(err);
             if (msg.includes('fetch') || msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
               console.error(
-                '[loadFromSupabase] 无法连接后端服务。线上环境请在构建前设置 NEXT_PUBLIC_API_URL 为后端地址，并确保后端服务可访问。'
+                `[loadFromSupabase] 无法连接后端服务 (${API_BASE})。请确认：1) 后端已启动 2) 浏览器可访问 ${API_BASE}/api/health 3) 线上环境已设置 NEXT_PUBLIC_API_URL 并重新部署。`
               );
             }
           }
