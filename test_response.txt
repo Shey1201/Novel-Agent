@@ -1,0 +1,2 @@
+data: {"agent_logs": [{"agent": "system", "agent_name": "系统", "message": "📍 确认上下文", "content": "你好，我是 Agent Room 系统。检测到你正在处理小说《test-story》，但章节尚未指定。请问是否要在这个上下文中继续工作呢？", "requires_user_input": true}], "final_text": "", "final_agent": "system", "conversation_state": {"stage": "initial", "workflow_type": null, "waiting_for_user": true, "accumulated_content": [], "story_id": "test-story", "story_name": null, "chapter_id": null, "context_confirmed": true}, "requires_user_input": true}
+
