@@ -43,6 +43,24 @@ function isAbortError(err: unknown): boolean {
   return err instanceof Error && err.name === 'AbortError';
 }
 
+function isNetworkError(err: unknown): boolean {
+  if (err instanceof TypeError && err.message === 'Failed to fetch') return true;
+  if (err instanceof Error && (err.message.includes('fetch') || err.message.includes('NetworkError') || err.message.includes('Connection'))) return true;
+  return false;
+}
+
+/** 带超时和一次重试的 fetch（应对 Railway 冷启动等） */
+async function fetchWithTimeoutAndRetry(url: string, options?: RequestInit): Promise<Response> {
+  try {
+    return await fetchWithTimeout(url, options);
+  } catch (e) {
+    if (!isNetworkError(e)) throw e;
+    console.warn('[API] Network error, retrying in 2.5s...', e);
+    await new Promise((r) => setTimeout(r, 2500));
+    return fetchWithTimeout(url, options);
+  }
+}
+
 // 仅在浏览器环境可用时使用 localStorage，避免 SSR/存储不可用时报错
 function getPersistStorage() {
   if (typeof window === 'undefined') {
@@ -1121,8 +1139,8 @@ export const useSupabaseStore = create<NovelState>()(
         try {
           set({ isLoading: true });
 
-          // 通过后端API加载小说列表（含章节）
-          const response = await fetchWithTimeout(`${API_BASE}/api/novels/with-chapters`);
+          // 通过后端API加载小说列表（含章节）（网络失败时自动重试一次，应对冷启动）
+          const response = await fetchWithTimeoutAndRetry(`${API_BASE}/api/novels/with-chapters`);
           if (!response.ok) {
             const error = await response.json().catch(() => ({}));
             console.error('Failed to load novels from API:', error);
@@ -1327,8 +1345,8 @@ export const useSupabaseStore = create<NovelState>()(
         try {
           set({ isLoading: true });
           
-          // 加载 Agent 配置 - 使用后端API
-          const agentResponse = await fetchWithTimeout(`${API_BASE}/api/agents/configs`);
+          // 加载 Agent 配置 - 使用后端API（网络失败时自动重试一次）
+          const agentResponse = await fetchWithTimeoutAndRetry(`${API_BASE}/api/agents/configs`);
           if (agentResponse.ok) {
             const agentConfigs = await agentResponse.json();
             if (agentConfigs && agentConfigs.length > 0) {

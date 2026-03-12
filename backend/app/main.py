@@ -52,12 +52,17 @@ additional_origins = os.getenv("CORS_ORIGINS", "")
 if additional_origins:
     origins.extend([o.strip() for o in additional_origins.split(",") if o.strip()])
 
+# 允许任意 *.vercel.app 预览/生产域名
+allow_origin_regex = r"https://[a-z0-9-]+\.vercel\.app"
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
+    allow_origin_regex=allow_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 

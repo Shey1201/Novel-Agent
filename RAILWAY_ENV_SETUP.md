@@ -37,3 +37,28 @@ SUPABASE_SERVICE_KEY=your_service_key_here
 ```
 
 如果没有看到这条日志，说明连接失败，数据无法加载。
+
+---
+
+## 线上不显示数据 / Failed to fetch / ERR_CONNECTION_CLOSED
+
+**现象**：Vercel 前端打开后「暂无 Agent 数据」、控制台报 `TypeError: Failed to fetch` 或 `net::ERR_CONNECTION_CLOSED`。
+
+**排查步骤**：
+
+1. **Vercel 环境变量**  
+   在 Vercel 项目 → Settings → Environment Variables 中必须设置：
+   - `NEXT_PUBLIC_API_URL` = 你的 Railway 后端地址（如 `https://xxx.up.railway.app`）  
+   修改后需重新部署（Redeploy）一次。
+
+2. **Railway 环境变量**  
+   在 Railway 服务 → Variables 中确认：
+   - `SUPABASE_URL`、`SUPABASE_SERVICE_KEY` 已正确填写  
+   否则后端连不上 Supabase，接口会返回空数据或 500。
+
+3. **Railway 服务是否正常**  
+   - 浏览器直接访问：`https://你的Railway域名/api/health`，应返回 `{"status":"ok"}`。  
+   - 若打不开或超时，说明后端未启动、崩溃或冷启动中；可查看 Railway 的 Deployments / Logs 排查。
+
+4. **冷启动**  
+   Railway 免费档在闲置一段时间后会休眠，首次请求可能超时。前端已对首屏请求做一次自动重试；若仍失败，可稍等几秒后刷新页面再试。
