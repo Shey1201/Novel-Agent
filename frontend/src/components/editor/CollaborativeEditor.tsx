@@ -28,16 +28,29 @@ export const CollaborativeEditor: React.FC<CollaborativeEditorProps> = ({
   const editor = useEditor({
     extensions: [
       StarterKit.configure({}),
+    ],
     editorProps: {
       attributes: {
         class:
           "prose dark:prose-invert max-w-none focus:outline-none min-h-[300px] p-4",
       },
     },
-    onUpdate: ({ editor }) => {
-      onContentChange?.(editor.getHTML());
-    },
   });
+
+  // 处理内容变化的回调
+  const handleUpdate = useCallback(() => {
+    onContentChange?.(editor?.getHTML() || "");
+  }, [editor, onContentChange]);
+
+  // 监听内容变化
+  React.useEffect(() => {
+    if (editor) {
+      editor.on("update", handleUpdate);
+      return () => {
+        editor.off("update", handleUpdate);
+      };
+    }
+  }, [editor, handleUpdate]);
 
   // 导出内容
   const exportContent = useCallback(() => {
