@@ -3,6 +3,8 @@
 import React, { useCallback, useState, useEffect } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
+import * as Y from "yjs";
+import { WebsocketProvider } from "y-websocket";
 
 interface CollaborativeEditorProps {
   documentId: string;
