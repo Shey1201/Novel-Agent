@@ -2,13 +2,17 @@ from typing import Any, Dict, List
 
 from app.agents.base_agent import BaseAgent
 
-# 尝试导入 langchain，如果失败则在运行时处理
+# 尝试导入 langchain，兼容新旧版本
 try:
-    from langchain.schema import HumanMessage
+    from langchain_core.messages import HumanMessage
     LANGCHAIN_AVAILABLE = True
 except ImportError:
-    LANGCHAIN_AVAILABLE = False
-    HumanMessage = None
+    try:
+        from langchain.schema import HumanMessage
+        LANGCHAIN_AVAILABLE = True
+    except ImportError:
+        LANGCHAIN_AVAILABLE = False
+        HumanMessage = None
 
 
 class ConflictAgent(BaseAgent):

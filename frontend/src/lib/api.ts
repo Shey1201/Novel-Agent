@@ -1,10 +1,18 @@
 /**
  * API 配置
  * 根据环境自动选择 API 基础 URL
+ * 线上部署时必须在构建前设置 NEXT_PUBLIC_API_URL 为实际后端地址，否则会请求到 localhost 导致 Failed to fetch / ERR_CONNECTION_CLOSED
  */
 
 // API 基础 URL - 从环境变量读取，本地开发默认连后端 8000 端口
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+
+// 运行时检测：线上环境若仍为 localhost，提示配置错误（仅浏览器环境）
+if (typeof window !== 'undefined' && API_BASE.includes('127.0.0.1') && !window.location.hostname.includes('localhost')) {
+  console.warn(
+    '[API] 当前为线上环境但 API 指向 127.0.0.1，请求会失败。请在构建时设置环境变量 NEXT_PUBLIC_API_URL 为后端实际地址。'
+  );
+}
 
 // 构建完整 API URL
 export function apiUrl(path: string): string {

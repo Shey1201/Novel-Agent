@@ -80,7 +80,7 @@ BACKEND_HOST=0.0.0.0
 BACKEND_PORT=8000
 BACKEND_WORKERS=4
 
-# 前端配置
+# 前端配置（构建前端时必须设置，否则线上会出现 Failed to fetch / ERR_CONNECTION_CLOSED）
 NEXT_PUBLIC_API_URL=https://api.yourdomain.com
 
 # 数据目录
@@ -230,6 +230,22 @@ server {
 sudo nginx -t
 sudo systemctl restart nginx
 ```
+
+### 4. 线上环境报错排查（Failed to fetch / ERR_CONNECTION_CLOSED）
+
+若线上打开页面后控制台出现 **Failed to load resource: net::ERR_CONNECTION_CLOSED** 或 **TypeError: Failed to fetch**，且与 `loadFromSupabase` 相关，通常是前端请求不到后端导致的，请按下面检查：
+
+1. **构建时是否设置了后端地址**  
+   前端在 **构建时** 会读入 `NEXT_PUBLIC_API_URL` 并写进产物。未设置时默认为 `http://127.0.0.1:8000`，浏览器会去连用户本机，必然失败。  
+   在构建前设置环境变量并再构建，例如：
+   ```bash
+   export NEXT_PUBLIC_API_URL=https://你的域名或后端地址
+   npm run build
+   ```
+2. **后端是否可被浏览器访问**  
+   确认后端服务已启动，且该地址在用户浏览器中可直接访问（无防火墙/跨域拦截）。
+3. **与 Nginx 同机部署时**  
+   若前端与后端同域且由 Nginx 反代后端，可将 `NEXT_PUBLIC_API_URL` 设为前端同域地址（如 `https://yourdomain.com`），这样 `/api/*` 会走 Nginx 转发到后端。
 
 ## Docker部署
 

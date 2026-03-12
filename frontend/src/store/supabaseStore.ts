@@ -1308,6 +1308,13 @@ export const useSupabaseStore = create<NovelState>()(
         } catch (err) {
           if (!isAbortError(err)) {
             console.error('Error loading data:', err);
+            // 网络/连接错误时给出线上环境配置提示
+            const msg = err instanceof Error ? err.message : String(err);
+            if (msg.includes('fetch') || msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
+              console.error(
+                '[loadFromSupabase] 无法连接后端服务。线上环境请在构建前设置 NEXT_PUBLIC_API_URL 为后端地址，并确保后端服务可访问。'
+              );
+            }
           }
         } finally {
           set({ isLoading: false });
