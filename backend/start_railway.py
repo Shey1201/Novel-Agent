@@ -6,6 +6,10 @@ import os
 import uvicorn
 
 if __name__ == "__main__":
+    # 读取 Railway 提供的 PORT 环境变量
     port = int(os.environ.get("PORT", "8000"))
-    print(f"[Railway] Starting uvicorn on 0.0.0.0:{port} (PORT={os.environ.get('PORT', 'not set')})")
+    
+    print(f"[Railway] Starting uvicorn on 0.0.0.0:{port}", flush=True)
+    
+    # 使用 0.0.0.0 监听所有接口
     uvicorn.run("app.main:app", host="0.0.0.0", port=port)
