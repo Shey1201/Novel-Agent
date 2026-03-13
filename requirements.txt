@@ -29,7 +29,7 @@ langgraph-sdk==0.2.9
 langsmith==0.3.15
 openai==2.24.0
 ormsgpack==1.11.0
-packaging==25.0
+packaging==24.2
 pydantic==2.12.5
 pydantic_core==2.41.5
 python-docx==1.1.2
