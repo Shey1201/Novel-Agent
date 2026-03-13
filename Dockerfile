@@ -14,5 +14,5 @@ COPY backend/ .
 # 暴露端口
 EXPOSE 8000
 
-# 启动命令
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# 启动命令 - 使用 start_railway.py 以支持 Railway 的 PORT 环境变量
+CMD ["python", "start_railway.py"]
