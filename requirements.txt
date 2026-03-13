@@ -2,6 +2,7 @@ annotated-doc==0.0.4
 annotated-types==0.7.0
 anyio==4.12.1
 numpy==1.26.4
+supabase==2.15.0
 certifi==2026.2.25
 charset-normalizer==3.4.4
 click==8.1.8
@@ -48,7 +49,7 @@ urllib3==2.6.3
 uuid_utils==0.14.1
 uvicorn==0.39.0
 watchfiles==1.1.1
-websockets==15.0.1
+websockets>=11,<15
 xxhash==3.6.0
 zstandard==0.25.0
 qdrant-client==1.12.0
