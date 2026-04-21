@@ -4,7 +4,7 @@ System Settings - 系统设置管理 (Supabase 版本)
 """
 
 import os
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, asdict
 
 # 尝试导入 supabase
@@ -61,6 +61,19 @@ class DiscussionSettings:
 
 
 @dataclass
+class DebateSettings:
+    """Debate/辩论模式设置"""
+    enabled: bool = True            # 是否启用 debate 模式
+    max_rounds: int = 2            # 最大辩论轮数
+    agents_to_debate: List[str] = None  # 参与辩论的 Agent 列表
+    
+    def __post_init__(self):
+        if self.agents_to_debate is None:
+            # 默认：Writer 完成后，多个 Agent 进行辩论
+            self.agents_to_debate = ["reader", "critic", "editor", "summary"]
+
+
+@dataclass
 class CacheSettings:
     """缓存相关设置"""
     enable_planner_cache: bool = True
@@ -84,6 +97,7 @@ class SystemSettings:
     discussion: DiscussionSettings = None
     cache: CacheSettings = None
     generation: GenerationSettings = None
+    debate: DebateSettings = None
     
     def __post_init__(self):
         if self.token is None:
@@ -94,6 +108,8 @@ class SystemSettings:
             self.cache = CacheSettings()
         if self.generation is None:
             self.generation = GenerationSettings()
+        if self.debate is None:
+            self.debate = DebateSettings()
 
 
 class SystemSettingsManager:
@@ -172,6 +188,10 @@ class SystemSettingsManager:
                 "cache_enable_planner": True,
                 "cache_enable_conflict": True,
                 "cache_enable_consistency": True,
+                # Debate 设置
+                "debate_enabled": True,
+                "debate_max_rounds": 2,
+                "debate_agents": ["reader", "critic", "editor", "summary"],
                 "deleted_at": None,  # 新表结构添加的字段
             }
 
@@ -240,6 +260,11 @@ class SystemSettingsManager:
                 paragraph_length=data.get('generation_paragraph_length', 500),
                 reader_interval=data.get('generation_reader_interval', 3),
                 enable_streaming=data.get('generation_enable_streaming', True)
+            ),
+            debate=DebateSettings(
+                enabled=data.get('debate_enabled', True),
+                max_rounds=data.get('debate_max_rounds', 2),
+                agents_to_debate=data.get('debate_agents', ["reader", "critic", "editor", "summary"])
             )
         )
     
@@ -261,6 +286,9 @@ class SystemSettingsManager:
             'generation_paragraph_length': settings.generation.paragraph_length,
             'generation_reader_interval': settings.generation.reader_interval,
             'generation_enable_streaming': settings.generation.enable_streaming,
+            'debate_enabled': settings.debate.enabled,
+            'debate_max_rounds': settings.debate.max_rounds,
+            'debate_agents': settings.debate.agents_to_debate,
         }
     
     def get_settings(self) -> SystemSettings:
@@ -298,6 +326,18 @@ class SystemSettingsManager:
                 setattr(self.settings.generation, key, value)
         self._save()
         return self.settings.generation
+    
+    def update_debate_settings(self, **kwargs) -> DebateSettings:
+        """更新 Debate 设置"""
+        for key, value in kwargs.items():
+            if hasattr(self.settings.debate, key):
+                setattr(self.settings.debate, key, value)
+        self._save()
+        return self.settings.debate
+    
+    def get_debate_settings(self) -> DebateSettings:
+        """获取 Debate 设置"""
+        return self.settings.debate
     
     def get_token_budget_manager_config(self) -> Dict[str, Any]:
         """获取 Token Budget Manager 配置"""

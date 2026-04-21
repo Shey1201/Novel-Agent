@@ -2,14 +2,36 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 import uuid
+import re
 
 from app.services.pipeline_service import NovelPipelineService
+from app.services.pipeline_service_db import run_with_db_agents
 from app.memory.novel_memory import novel_memory
 
 router = APIRouter(prefix="/api", tags=["generate_chapter"])
 
 # 存储进行中的生成任务
 active_generations: Dict[str, Dict[str, Any]] = {}
+
+
+def _count_words(text: str) -> int:
+    """计算字数（中英文混合）"""
+    if not text:
+        return 0
+    chinese = len(re.findall(r'[\u4e00-\u9fff]', text))
+    english = len(re.findall(r'[a-zA-Z]', text))
+    return chinese + english
+
+
+def _get_word_counts(results: Dict[str, Any]) -> Dict[str, int]:
+    """获取各阶段字数统计"""
+    return {
+        "input": _count_words(results.get("input_text", "")),
+        "plan": _count_words(results.get("plan_text", "")),
+        "draft": _count_words(results.get("draft_text", "")),
+        "edited": _count_words(results.get("edited_text", "")),
+        "final": _count_words(results.get("final_text", "")),
+    }
 
 
 class GenerateChapterRequest(BaseModel):
@@ -36,6 +58,8 @@ class GenerateChapterResponse(BaseModel):
     agent_logs: List[Dict[str, Any]]
     trace_data: List[Dict[str, Any]]
     story_id: str
+    # 新增：字数统计
+    word_count: Optional[Dict[str, int]] = None
 
 
 class GenerationStepResponse(BaseModel):
@@ -47,6 +71,8 @@ class GenerationStepResponse(BaseModel):
     message: str
     requires_confirmation: bool
     next_step: Optional[str] = None
+    # 新增：当前步骤的字数
+    word_count: Optional[int] = None
 
 
 class ConfirmStepRequest(BaseModel):
@@ -141,7 +167,8 @@ async def start_generation(payload: GenerateChapterRequest) -> GenerationStepRes
                 content=final_state.get("plan_text", ""),
                 message="📋 大纲已生成，请确认或提供修改意见",
                 requires_confirmation=True,
-                next_step="draft"
+                next_step="draft",
+                word_count=_count_words(final_state.get("plan_text", "")),
             )
         else:
             # 自动确认，继续到下一步
@@ -156,7 +183,8 @@ async def start_generation(payload: GenerateChapterRequest) -> GenerationStepRes
                     content=final_state.get("final_text", ""),
                     message="✅ 章节已完成生成，请确认最终内容",
                     requires_confirmation=True,
-                    next_step=None
+                    next_step=None,
+                    word_count=_count_words(final_state.get("final_text", "")),
                 )
             else:
                 # 全部完成
@@ -168,7 +196,8 @@ async def start_generation(payload: GenerateChapterRequest) -> GenerationStepRes
                     content=final_state.get("final_text", ""),
                     message="✅ 章节生成完成",
                     requires_confirmation=False,
-                    next_step=None
+                    next_step=None,
+                    word_count=_count_words(final_state.get("final_text", "")),
                 )
                 
     except Exception as e:
@@ -232,7 +261,8 @@ async def confirm_step(payload: ConfirmStepRequest) -> GenerationStepResponse:
                 content=generation["results"].get("final_text", ""),
                 message="✅ 章节生成完成",
                 requires_confirmation=False,
-                next_step=None
+                next_step=None,
+                word_count=_count_words(generation["results"].get("final_text", "")),
             )
     
     elif payload.step == "final":
@@ -244,7 +274,8 @@ async def confirm_step(payload: ConfirmStepRequest) -> GenerationStepResponse:
             content=generation["results"].get("final_text", ""),
             message="✅ 章节生成完成并已保存",
             requires_confirmation=False,
-            next_step=None
+            next_step=None,
+            word_count=_count_words(generation["results"].get("final_text", "")),
         )
     
     return GenerationStepResponse(
@@ -252,7 +283,8 @@ async def confirm_step(payload: ConfirmStepRequest) -> GenerationStepResponse:
         step=payload.step,
         status="completed",
         message="✅ 步骤已确认",
-        requires_confirmation=False
+        requires_confirmation=False,
+        word_count=0,
     )
 
 
@@ -278,6 +310,7 @@ async def get_generation_result(generation_id: str) -> GenerateChapterResponse:
         agent_logs=results.get("agent_logs", []),
         trace_data=results.get("trace_data", []),
         story_id=payload.get("story_id", "demo-story"),
+        word_count=_get_word_counts(results),
     )
 
 
@@ -308,4 +341,5 @@ async def generate_chapter_api(payload: GenerateChapterRequest) -> GenerateChapt
         agent_logs=final_state.get("agent_logs", []),
         trace_data=final_state.get("trace_data", []),
         story_id=payload.story_id or "demo-story",
+        word_count=_get_word_counts(final_state),
     )

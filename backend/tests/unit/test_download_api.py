@@ -106,7 +106,7 @@ class TestDownloadAPI:
             ]
         }
         
-        response = client.post("/download/novel", json=request_data)
+        response = client.post("/api/download/novel", json=request_data)
         
         assert response.status_code == 200
         assert response.headers["content-type"] == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -124,7 +124,7 @@ class TestDownloadAPI:
             ]
         }
         
-        response = client.post("/download/novel", json=request_data)
+        response = client.post("/api/download/novel", json=request_data)
         
         assert response.status_code == 200
         assert response.headers["content-type"] == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -143,7 +143,7 @@ class TestDownloadAPI:
             ]
         }
         
-        response = client.post("/download/novel", json=request_data)
+        response = client.post("/api/download/novel", json=request_data)
         
         assert response.status_code == 200
     
@@ -157,7 +157,7 @@ class TestDownloadAPI:
             ]
         }
         
-        response = client.post("/download/novel", json=request_data)
+        response = client.post("/api/download/novel", json=request_data)
         
         assert response.status_code == 400
         assert "章节ID" in response.json()["detail"] or "chapter" in response.json()["detail"].lower()
@@ -174,7 +174,7 @@ class TestDownloadAPI:
             ]
         }
         
-        response = client.post("/download/novel", json=request_data)
+        response = client.post("/api/download/novel", json=request_data)
         
         assert response.status_code == 400
     
@@ -186,7 +186,7 @@ class TestDownloadAPI:
             "chapters": []
         }
         
-        response = client.post("/download/novel", json=request_data)
+        response = client.post("/api/download/novel", json=request_data)
         
         assert response.status_code == 400
         assert "没有可下载" in response.json()["detail"]
@@ -201,7 +201,7 @@ class TestDownloadAPI:
             ]
         }
         
-        response = client.post("/download/novel", json=request_data)
+        response = client.post("/api/download/novel", json=request_data)
         
         assert response.status_code == 400
         assert "无效" in response.json()["detail"] or "invalid" in response.json()["detail"].lower()
@@ -220,7 +220,7 @@ class TestDownloadWithSpecialCharacters:
             ]
         }
         
-        response = client.post("/download/novel", json=request_data)
+        response = client.post("/api/download/novel", json=request_data)
         
         assert response.status_code == 200
     
@@ -234,7 +234,7 @@ class TestDownloadWithSpecialCharacters:
             ]
         }
         
-        response = client.post("/download/novel", json=request_data)
+        response = client.post("/api/download/novel", json=request_data)
         
         # 应该能处理或给出合适的错误
         assert response.status_code in [200, 500]

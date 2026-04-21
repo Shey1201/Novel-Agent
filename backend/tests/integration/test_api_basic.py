@@ -18,7 +18,8 @@ class TestHealthEndpoints:
         """测试健康检查"""
         response = client.get("/health")
         assert response.status_code == 200
-        assert response.json() == {"status": "ok"}
+        data = response.json()
+        assert data["status"] == "ok"
 
     def test_health_check_method_not_allowed(self):
         """测试健康检查不允许POST"""

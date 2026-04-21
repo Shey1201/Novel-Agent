@@ -2,11 +2,14 @@ import os
 from pathlib import Path
 
 # 加载 .env 文件（如果在本地开发环境）
-env_path = Path(__file__).parent.parent.parent / ".env"
-if env_path.exists():
-    from dotenv import load_dotenv
-    load_dotenv(dotenv_path=env_path)
-    print(f"Loaded environment from {env_path}")
+backend_root = Path(__file__).parent.parent
+project_root = backend_root.parent
+for env_path in (backend_root / ".env", project_root / ".env"):
+    if env_path.exists():
+        from dotenv import load_dotenv
+        load_dotenv(dotenv_path=env_path)
+        print(f"Loaded environment from {env_path}")
+        break
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

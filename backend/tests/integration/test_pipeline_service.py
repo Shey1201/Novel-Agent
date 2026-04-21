@@ -60,7 +60,7 @@ class TestGenerateChapterAPI:
             "outline": "测试大纲：一个英雄冒险的故事",
             "story_id": "test-story"
         }
-        response = client.post("/generate_chapter", json=payload)
+        response = client.post("/api/generate_chapter", json=payload)
         # 可能成功或失败，但不应返回 404（端点不存在）
         assert response.status_code != 404
 
@@ -70,7 +70,7 @@ class TestGenerateChapterAPI:
         payload = {
             "story_id": "test-story"
         }
-        response = client.post("/generate_chapter", json=payload)
+        response = client.post("/api/generate_chapter", json=payload)
         assert response.status_code in [400, 422]
 
     def test_generate_chapter_response_fields(self):
@@ -80,7 +80,7 @@ class TestGenerateChapterAPI:
             "story_id": "test-story",
             "chapter_id": "chapter-001"
         }
-        response = client.post("/generate_chapter", json=payload)
+        response = client.post("/api/generate_chapter", json=payload)
 
         if response.status_code == 200:
             data = response.json()
@@ -93,6 +93,7 @@ class TestGenerateChapterAPI:
             assert "trace_data" in data
             assert "story_id" in data
 
+    @pytest.mark.skip(reason="需要LLM调用，运行时间过长")
     def test_generate_chapter_with_llm_config(self):
         """测试带 LLM 配置的请求"""
         payload = {
@@ -104,7 +105,7 @@ class TestGenerateChapterAPI:
                 "temperature": 0.7
             }
         }
-        response = client.post("/generate_chapter", json=payload)
+        response = client.post("/api/generate_chapter", json=payload)
         # 不应因为 llm_config 格式错误而失败
         assert response.status_code in [200, 422, 500]
 
@@ -143,7 +144,7 @@ class TestAgentLogs:
             "outline": "测试大纲",
             "story_id": "test-story"
         }
-        response = client.post("/generate_chapter", json=payload)
+        response = client.post("/api/generate_chapter", json=payload)
 
         if response.status_code == 200:
             data = response.json()
@@ -163,7 +164,7 @@ class TestTraceData:
             "outline": "测试大纲",
             "story_id": "test-story"
         }
-        response = client.post("/generate_chapter", json=payload)
+        response = client.post("/api/generate_chapter", json=payload)
 
         if response.status_code == 200:
             data = response.json()

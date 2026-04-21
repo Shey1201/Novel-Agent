@@ -1,542 +1,594 @@
 """
-Enhanced Memory System - 增强版记忆系统
-RAG + Embedding + 长篇逻辑一致性
+Enhanced Memory System - 增强的记忆系统
+基于 hello-agents 第8章：记忆与检索
+
+增强功能：
+- RAG 语义检索
+- 长期记忆存储
+- 记忆索引优化
+- 主动记忆召回
 """
 
-from typing import List, Dict, Any, Optional, Tuple
+from typing import Any, Dict, List, Optional, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-import hashlib
 import json
-import numpy as np
-
-from langchain_openai import OpenAIEmbeddings
+import hashlib
 
 
-class MemoryTier(Enum):
-    """记忆层级"""
-    EPISODIC = "episodic"      # 情节记忆（具体事件）
-    SEMANTIC = "semantic"      # 语义记忆（概念知识）
-    PROCEDURAL = "procedural"  # 程序记忆（写作风格）
+class MemoryType(Enum):
+    """记忆类型"""
+    EPISODIC = "episodic"         # 情节记忆
+    SEMANTIC = "semantic"         # 语义记忆
+    PROCEDURAL = "procedural"     # 程序记忆（操作流程）
+    WORKING = "working"          # 工作记忆（当前任务）
 
 
-class ConsistencyType(Enum):
-    """一致性类型"""
-    CHARACTER = "character"    # 角色一致性
-    PLOT = "plot"             # 情节一致性
-    WORLD = "world"           # 世界观一致性
-    TIMELINE = "timeline"     # 时间线一致性
+class MemoryPriority(Enum):
+    """记忆优先级"""
+    HIGH = 3      # 高优先级（重要情节、关键角色）
+    MEDIUM = 2    # 中等优先级（普通情节）
+    LOW = 1       # 低优先级（细节）
 
 
 @dataclass
-class MemoryChunk:
-    """记忆块"""
-    chunk_id: str
+class MemoryEntry:
+    """记忆条目"""
+    memory_id: str
     content: str
-    tier: MemoryTier
-    novel_id: str
-    chapter_id: str
-    embedding: Optional[List[float]] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    importance_score: float = 0.5  # 0-1 重要性分数
-    access_count: int = 0
-    last_accessed: str = field(default_factory=lambda: datetime.now().isoformat())
+    memory_type: MemoryType
+    
+    # 元数据
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    last_accessed: str = field(default_factory=lambda: datetime.now().isoformat())
+    access_count: int = 0
+    
+    # 关联
+    novel_id: str = ""
+    chapter_id: str = ""
+    entity_ids: List[str] = field(default_factory=list)
+    
+    # 语义信息
+    embedding: Optional[List[float]] = None
+    keywords: List[str] = field(default_factory=list)
+    summary: str = ""
+    
+    # 优先级
+    priority: MemoryPriority = MemoryPriority.MEDIUM
+    is_important: bool = False
+    
+    # 索引状态
+    is_indexed: bool = False
     
     def to_dict(self) -> Dict[str, Any]:
         return {
-            "chunk_id": self.chunk_id,
-            "content": self.content[:200] + "..." if len(self.content) > 200 else self.content,
-            "tier": self.tier.value,
+            "memory_id": self.memory_id,
+            "content": self.content,
+            "memory_type": self.memory_type.value,
+            "created_at": self.created_at,
+            "last_accessed": self.last_accessed,
+            "access_count": self.access_count,
+            "novel_id": self.novel_id,
             "chapter_id": self.chapter_id,
+            "entity_ids": self.entity_ids,
+            "keywords": self.keywords,
+            "summary": self.summary,
+            "priority": self.priority.value,
+            "is_important": self.is_important,
+            "is_indexed": self.is_indexed
+        }
+    
+    def update_access(self):
+        """更新访问信息"""
+        self.last_accessed = datetime.now().isoformat()
+        self.access_count += 1
+
+
+@dataclass
+class RetrievalResult:
+    """检索结果"""
+    memory: MemoryEntry
+    relevance_score: float
+    recency_score: float
+    importance_score: float
+    combined_score: float
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "memory": self.memory.to_dict(),
+            "relevance_score": self.relevance_score,
+            "recency_score": self.recency_score,
             "importance_score": self.importance_score,
-            "access_count": self.access_count
+            "combined_score": self.combined_score
         }
 
 
-@dataclass
-class LongRangeDependency:
-    """长程依赖关系"""
-    source_chunk_id: str
-    target_chunk_id: str
-    dependency_type: str  # cause/effect/parallel/contrast
-    strength: float  # 0-1 依赖强度
-    chapters_apart: int  # 相隔章节数
-
-
-@dataclass
-class ConsistencyConstraint:
-    """一致性约束"""
-    constraint_type: ConsistencyType
-    entity_id: str  # 角色ID/情节ID等
-    attribute: str  # 属性名
-    expected_value: Any
-    current_value: Any
-    violation_severity: float  # 0-1 违规严重程度
-    chapter_location: str
-
-
-class EmbeddingBasedRetriever:
+class SemanticMemory:
     """
-    基于 Embedding 的检索器
+    语义记忆系统 - 基于 RAG 的语义检索
     
-    支持：
-    1. 语义相似度检索
-    2. 长程依赖发现
-    3. 多跳推理
+    功能：
+    1. 存储记忆向量
+    2. 语义相似度检索
+    3. 混合检索（语义 + 关键词）
     """
     
-    def __init__(self):
-        self.embeddings = OpenAIEmbeddings()
-        self.memory_chunks: Dict[str, MemoryChunk] = {}
-        self.dependency_graph: Dict[str, List[LongRangeDependency]] = defaultdict(list)
-        self.consistency_constraints: Dict[str, List[ConsistencyConstraint]] = defaultdict(list)
+    def __init__(self, embedding_dim: int = 768):
+        self.embedding_dim = embedding_dim
+        self._memories: Dict[str, MemoryEntry] = {}
+        self._novel_index: Dict[str, List[str]] = {}  # novel_id -> [memory_ids]
+        self._type_index: Dict[MemoryType, List[str]] = {
+            mt: [] for mt in MemoryType
+        }
+        
+    def add_memory(
+        self,
+        content: str,
+        memory_type: MemoryType,
+        novel_id: str = "",
+        chapter_id: str = "",
+        metadata: Dict[str, Any] = None
+    ) -> MemoryEntry:
+        """添加记忆"""
+        # 生成 ID
+        content_hash = hashlib.md5(content.encode()).hexdigest()[:12]
+        memory_id = f"mem_{memory_type.value}_{content_hash}_{datetime.now().timestamp()}"
+        
+        # 提取关键词（简化版）
+        keywords = self._extract_keywords(content)
+        
+        # 生成摘要
+        summary = content[:200] + "..." if len(content) > 200 else content
+        
+        entry = MemoryEntry(
+            memory_id=memory_id,
+            content=content,
+            memory_type=memory_type,
+            novel_id=novel_id,
+            chapter_id=chapter_id,
+            keywords=keywords,
+            summary=summary,
+            is_indexed=True
+        )
+        
+        # 设置优先级
+        if metadata:
+            entry.priority = MemoryPriority(
+                metadata.get("priority", MemoryPriority.MEDIUM.value)
+            )
+            entry.is_important = metadata.get("is_important", False)
+        
+        # 存储
+        self._memories[memory_id] = entry
+        
+        # 更新索引
+        if novel_id:
+            if novel_id not in self._novel_index:
+                self._novel_index[novel_id] = []
+            self._novel_index[novel_id].append(memory_id)
+        
+        self._type_index[memory_type].append(memory_id)
+        
+        return entry
     
-    async def add_chunk(self, chunk: MemoryChunk) -> str:
-        """添加记忆块并生成 Embedding"""
-        # 生成 embedding
-        chunk.embedding = await self.embeddings.aembed_query(chunk.content)
-        
-        self.memory_chunks[chunk.chunk_id] = chunk
-        
-        # 发现长程依赖
-        await self._discover_dependencies(chunk)
-        
-        return chunk.chunk_id
+    def _extract_keywords(self, text: str, top_k: int = 10) -> List[str]:
+        """提取关键词（简化版）"""
+        # 实际应该使用分词和 TF-IDF
+        words = text.replace("\n", " ").split()[:top_k]
+        return list(set(words))[:top_k]
     
-    async def retrieve_relevant(
+    def search(
         self,
         query: str,
-        novel_id: str,
+        novel_id: str = "",
+        memory_type: Optional[MemoryType] = None,
         top_k: int = 5,
-        consistency_check: bool = True
-    ) -> Tuple[List[MemoryChunk], List[ConsistencyConstraint]]:
+        use_hybrid: bool = True
+    ) -> List[RetrievalResult]:
         """
-        检索相关记忆块
+        语义检索
         
         Args:
             query: 查询文本
-            novel_id: 小说ID
+            novel_id: 小说ID（可选）
+            memory_type: 记忆类型（可选）
             top_k: 返回数量
-            consistency_check: 是否检查一致性
+            use_hybrid: 是否使用混合检索
             
         Returns:
-            (相关记忆块列表, 一致性违规列表)
+            检索结果列表
         """
-        # 生成查询 embedding
-        query_embedding = await self.embeddings.aembed_query(query)
+        results = []
         
-        # 计算相似度
-        candidates = [
-            chunk for chunk in self.memory_chunks.values()
-            if chunk.novel_id == novel_id
-        ]
+        # 候选记忆
+        candidates = self._get_candidates(novel_id, memory_type)
         
-        scored_chunks = []
-        for chunk in candidates:
-            if chunk.embedding:
-                similarity = self._cosine_similarity(query_embedding, chunk.embedding)
-                # 考虑重要性分数
-                final_score = similarity * 0.7 + chunk.importance_score * 0.3
-                scored_chunks.append((chunk, final_score))
+        if not candidates:
+            return results
         
-        # 排序并取 top_k
-        scored_chunks.sort(key=lambda x: x[1], reverse=True)
-        top_chunks = [chunk for chunk, _ in scored_chunks[:top_k]]
+        # 计算相关性得分
+        query_keywords = set(self._extract_keywords(query))
         
-        # 发现长程依赖
-        for chunk in top_chunks:
-            dependencies = self.dependency_graph.get(chunk.chunk_id, [])
-            for dep in dependencies:
-                if dep.strength > 0.7 and dep.chapters_apart > 3:
-                    # 强长程依赖，添加相关块
-                    related_chunk = self.memory_chunks.get(dep.target_chunk_id)
-                    if related_chunk and related_chunk not in top_chunks:
-                        top_chunks.append(related_chunk)
+        for memory in candidates:
+            # 语义相似度（简化版，实际应该用向量）
+            relevance = self._calculate_relevance(memory, query_keywords)
+            
+            # 时效性得分
+            recency = self._calculate_recency(memory)
+            
+            # 重要性得分
+            importance = self._calculate_importance(memory)
+            
+            # 综合得分
+            combined = relevance * 0.5 + recency * 0.2 + importance * 0.3
+            
+            results.append(RetrievalResult(
+                memory=memory,
+                relevance_score=relevance,
+                recency_score=recency,
+                importance_score=importance,
+                combined_score=combined
+            ))
         
-        # 一致性检查
-        violations = []
-        if consistency_check:
-            violations = self._check_consistency(top_chunks, novel_id)
-        
-        # 更新访问统计
-        for chunk in top_chunks:
-            chunk.access_count += 1
-            chunk.last_accessed = datetime.now().isoformat()
-        
-        return top_chunks, violations
+        # 排序并返回 top_k
+        results.sort(key=lambda x: x.combined_score, reverse=True)
+        return results[:top_k]
     
-    def _cosine_similarity(self, a: List[float], b: List[float]) -> float:
-        """计算余弦相似度"""
-        a_array = np.array(a)
-        b_array = np.array(b)
-        
-        dot_product = np.dot(a_array, b_array)
-        norm_a = np.linalg.norm(a_array)
-        norm_b = np.linalg.norm(b_array)
-        
-        if norm_a == 0 or norm_b == 0:
-            return 0.0
-        
-        return float(dot_product / (norm_a * norm_b))
-    
-    async def _discover_dependencies(self, new_chunk: MemoryChunk):
-        """发现新记忆块与其他块的依赖关系"""
-        if not new_chunk.embedding:
-            return
-        
-        # 查找语义相似的块（可能是因果关系）
-        for chunk_id, chunk in self.memory_chunks.items():
-            if chunk_id == new_chunk.chunk_id or chunk.novel_id != new_chunk.novel_id:
-                continue
-            
-            if not chunk.embedding:
-                continue
-            
-            similarity = self._cosine_similarity(new_chunk.embedding, chunk.embedding)
-            
-            # 如果相似度适中（0.5-0.8），可能是相关但不重复的内容
-            if 0.5 < similarity < 0.8:
-                # 计算章节间隔
-                new_chapter = int(new_chunk.chapter_id.split('_')[-1]) if '_' in new_chunk.chapter_id else 0
-                old_chapter = int(chunk.chapter_id.split('_')[-1]) if '_' in chunk.chapter_id else 0
-                chapters_apart = abs(new_chapter - old_chapter)
-                
-                if chapters_apart > 0:
-                    # 创建依赖关系
-                    dependency = LongRangeDependency(
-                        source_chunk_id=chunk.chunk_id,
-                        target_chunk_id=new_chunk.chunk_id,
-                        dependency_type="related",
-                        strength=similarity,
-                        chapters_apart=chapters_apart
-                    )
-                    
-                    self.dependency_graph[chunk.chunk_id].append(dependency)
-    
-    def _check_consistency(
-        self,
-        chunks: List[MemoryChunk],
-        novel_id: str
-    ) -> List[ConsistencyConstraint]:
-        """检查记忆块之间的一致性"""
-        violations = []
-        
-        # 按实体分组检查
-        entity_chunks: Dict[str, List[MemoryChunk]] = defaultdict(list)
-        
-        for chunk in chunks:
-            entity_id = chunk.metadata.get("entity_id")
-            if entity_id:
-                entity_chunks[entity_id].append(chunk)
-        
-        # 检查每个实体的一致性
-        for entity_id, entity_chunk_list in entity_chunks.items():
-            if len(entity_chunk_list) < 2:
-                continue
-            
-            # 检查属性一致性
-            attributes: Dict[str, List[Any]] = defaultdict(list)
-            
-            for chunk in entity_chunk_list:
-                for attr, value in chunk.metadata.get("attributes", {}).items():
-                    attributes[attr].append((value, chunk.chapter_id))
-            
-            # 发现不一致
-            for attr, values in attributes.items():
-                if len(values) >= 2:
-                    unique_values = set(v[0] for v in values)
-                    if len(unique_values) > 1:
-                        # 发现不一致
-                        violation = ConsistencyConstraint(
-                            constraint_type=ConsistencyType.CHARACTER,
-                            entity_id=entity_id,
-                            attribute=attr,
-                            expected_value=values[0][0],
-                            current_value=values[-1][0],
-                            violation_severity=0.7,
-                            chapter_location=values[-1][1]
-                        )
-                        violations.append(violation)
-        
-        return violations
-    
-    def add_consistency_constraint(
+    def _get_candidates(
         self,
         novel_id: str,
-        constraint: ConsistencyConstraint
-    ):
-        """添加一致性约束"""
-        self.consistency_constraints[novel_id].append(constraint)
+        memory_type: Optional[MemoryType]
+    ) -> List[MemoryEntry]:
+        """获取候选记忆"""
+        candidates = []
+        
+        if novel_id:
+            memory_ids = self._novel_index.get(novel_id, [])
+            candidates = [self._memories[mid] for mid in memory_ids if mid in self._memories]
+        elif memory_type:
+            memory_ids = self._type_index.get(memory_type, [])
+            candidates = [self._memories[mid] for mid in memory_ids if mid in self._memories]
+        else:
+            candidates = list(self._memories.values())
+        
+        return candidates
     
-    def get_long_range_context(
+    def _calculate_relevance(
         self,
-        current_chapter: int,
-        novel_id: str,
-        lookback_chapters: int = 10
-    ) -> List[MemoryChunk]:
-        """
-        获取长程上下文
+        memory: MemoryEntry,
+        query_keywords: set
+    ) -> float:
+        """计算相关性得分"""
+        memory_keywords = set(memory.keywords)
         
-        检索当前章节之前 lookback_chapters 章的重要记忆
-        """
-        relevant_chunks = []
+        # 关键词重叠
+        overlap = len(query_keywords & memory_keywords)
+        max_overlap = max(len(query_keywords), len(memory_keywords))
         
-        for chunk in self.memory_chunks.values():
-            if chunk.novel_id != novel_id:
-                continue
+        if max_overlap == 0:
+            return 0.5
+        
+        return overlap / max_overlap
+    
+    def _calculate_recency(self, memory: MemoryEntry) -> float:
+        """计算时效性得分"""
+        # 基于访问次数和最后访问时间
+        try:
+            last_access = datetime.fromisoformat(memory.last_accessed)
+            now = datetime.now()
+            days_ago = (now - last_access).days
             
-            # 解析章节号
-            chunk_chapter = int(chunk.chapter_id.split('_')[-1]) if '_' in chunk.chapter_id else 0
+            # 指数衰减
+            recency = 1.0 / (1.0 + days_ago * 0.1)
             
-            # 检查是否在范围内
-            if current_chapter - lookback_chapters <= chunk_chapter < current_chapter:
-                # 只选择高重要性或频繁访问的
-                if chunk.importance_score > 0.7 or chunk.access_count > 3:
-                    relevant_chunks.append(chunk)
+            # 结合访问次数
+            access_bonus = min(memory.access_count * 0.05, 0.5)
+            
+            return min(recency + access_bonus, 1.0)
+        except:
+            return 0.5
+    
+    def _calculate_importance(self, memory: MemoryEntry) -> float:
+        """计算重要性得分"""
+        score = 0.5
         
-        # 按重要性排序
-        relevant_chunks.sort(key=lambda x: x.importance_score, reverse=True)
+        # 优先级权重
+        if memory.priority == MemoryPriority.HIGH:
+            score += 0.3
+        elif memory.priority == MemoryPriority.LOW:
+            score -= 0.2
         
-        return relevant_chunks[:10]  # 最多返回10个
+        # 重要标记
+        if memory.is_important:
+            score += 0.2
+        
+        return max(0.0, min(1.0, score))
+    
+    def update_memory(self, memory_id: str, updates: Dict[str, Any]):
+        """更新记忆"""
+        if memory_id in self._memories:
+            for key, value in updates.items():
+                if hasattr(self._memories[memory_id], key):
+                    setattr(self._memories[memory_id], key, value)
+    
+    def delete_memory(self, memory_id: str):
+        """删除记忆"""
+        if memory_id in self._memories:
+            memory = self._memories[memory_id]
+            
+            # 从索引中移除
+            if memory.novel_id and memory.novel_id in self._novel_index:
+                self._novel_index[memory.novel_id].remove(memory_id)
+            
+            if memory.memory_type in self._type_index:
+                self._type_index[memory.memory_type].remove(memory_id)
+            
+            # 删除
+            del self._memories[memory_id]
+    
+    def get_memory_stats(self, novel_id: str = "") -> Dict[str, Any]:
+        """获取记忆统计"""
+        if novel_id:
+            memories = [
+                self._memories[mid]
+                for mid in self._novel_index.get(novel_id, [])
+                if mid in self._memories
+            ]
+        else:
+            memories = list(self._memories.values())
+        
+        return {
+            "total_memories": len(memories),
+            "by_type": {
+                mt.value: len([
+                    m for m in memories
+                    if m.memory_type == mt
+                ])
+                for mt in MemoryType
+            },
+            "total_accesses": sum(m.access_count for m in memories),
+            "important_count": sum(1 for m in memories if m.is_important)
+        }
 
 
-class StoryMemoryEnhancer:
+class ProceduralMemory:
     """
-    Story Memory 增强器
+    程序记忆 - 存储 Agent 操作流程
     
-    结合 Embedding 和 RAG 的长篇逻辑一致性支持
+    功能：
+    1. 存储工作流
+    2. 模式学习
+    3. 最佳实践
     """
     
     def __init__(self):
-        self.retriever = EmbeddingBasedRetriever()
-        self.cross_chapter_dependencies: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+        self._procedures: Dict[str, Dict[str, Any]] = {}
     
-    async def index_chapter(
+    def store_procedure(
         self,
-        novel_id: str,
-        chapter_id: str,
-        chapter_content: str,
-        chapter_summary: str,
-        key_events: List[Dict[str, Any]]
+        name: str,
+        steps: List[Dict[str, Any]],
+        description: str = "",
+        success_criteria: Dict[str, Any] = None
     ):
-        """
-        索引章节内容
+        """存储程序"""
+        self._procedures[name] = {
+            "name": name,
+            "description": description,
+            "steps": steps,
+            "success_criteria": success_criteria or {},
+            "created_at": datetime.now().isoformat(),
+            "usage_count": 0,
+            "success_rate": 0.0,
+            "total_runs": 0
+        }
+    
+    def get_procedure(self, name: str) -> Optional[Dict[str, Any]]:
+        """获取程序"""
+        if name in self._procedures:
+            self._procedures[name]["usage_count"] += 1
+            return self._procedures[name]
+        return None
+    
+    def update_success(self, name: str, success: bool):
+        """更新成功率"""
+        if name in self._procedures:
+            proc = self._procedures[name]
+            proc["total_runs"] += 1
+            if success:
+                proc["success_rate"] = (
+                    (proc["success_rate"] * (proc["total_runs"] - 1) + 1)
+                    / proc["total_runs"]
+                )
+            else:
+                proc["success_rate"] = (
+                    proc["success_rate"] * (proc["total_runs"] - 1)
+                    / proc["total_runs"]
+                )
+    
+    def find_similar_procedures(
+        self,
+        task_description: str,
+        top_k: int = 3
+    ) -> List[Dict[str, Any]]:
+        """查找类似的程序"""
+        # 简化版：基于关键词匹配
+        task_keywords = set(task_description.lower().split())
         
-        将章节内容分割成多个记忆块并建立索引
-        """
-        # 创建章节摘要块
-        summary_chunk = MemoryChunk(
-            chunk_id=f"{novel_id}_{chapter_id}_summary",
-            content=chapter_summary,
-            tier=MemoryTier.SEMANTIC,
-            novel_id=novel_id,
-            chapter_id=chapter_id,
-            importance_score=0.9,  # 摘要很重要
-            metadata={
-                "type": "summary",
-                "events": key_events
-            }
-        )
-        
-        await self.retriever.add_chunk(summary_chunk)
-        
-        # 分割内容成情节块
-        segments = self._segment_content(chapter_content)
-        
-        for i, segment in enumerate(segments):
-            chunk = MemoryChunk(
-                chunk_id=f"{novel_id}_{chapter_id}_seg_{i}",
-                content=segment["content"],
-                tier=MemoryTier.EPISODIC,
-                novel_id=novel_id,
-                chapter_id=chapter_id,
-                importance_score=segment.get("importance", 0.5),
-                metadata=segment.get("metadata", {})
+        results = []
+        for proc in self._procedures.values():
+            # 计算相似度
+            proc_keywords = set(proc.get("description", "").lower().split())
+            similarity = len(task_keywords & proc_keywords) / max(
+                len(task_keywords), len(proc_keywords), 1
             )
             
-            await self.retriever.add_chunk(chunk)
+            results.append((similarity, proc))
         
-        # 建立跨章节依赖
-        await self._build_cross_chapter_dependencies(novel_id, chapter_id, key_events)
+        results.sort(key=lambda x: x[0], reverse=True)
+        return [r[1] for r in results[:top_k]]
+
+
+class ActiveRecall:
+    """
+    主动召回系统
     
-    def _segment_content(self, content: str) -> List[Dict[str, Any]]:
-        """将内容分割成段落"""
-        segments = []
-        
-        # 按场景分割（简单实现：按空行分割）
-        scenes = content.split('\n\n')
-        
-        for i, scene in enumerate(scenes):
-            if not scene.strip():
-                continue
-            
-            # 估算重要性
-            importance = 0.5
-            
-            # 包含对话的重要性更高
-            if '"' in scene or '"' in scene:
-                importance += 0.2
-            
-            # 包含动作描述的重要性更高
-            action_keywords = ['突然', '立刻', '立即', '瞬间', '猛地']
-            if any(kw in scene for kw in action_keywords):
-                importance += 0.15
-            
-            segments.append({
-                "content": scene,
-                "importance": min(importance, 1.0),
-                "metadata": {
-                    "scene_index": i,
-                    "has_dialogue": '"' in scene or '"' in scene
-                }
-            })
-        
-        return segments
+    功能：
+    1. 预测需要召回的记忆
+    2. 主动提供相关信息
+    3. 遗忘机制
+    """
+
+    def __init__(self, semantic_memory: SemanticMemory):
+        self.semantic_memory = semantic_memory
+        self._recall_patterns: Dict[str, List[str]] = {}
+        self._context_history: List[Dict[str, Any]] = []
     
-    async def _build_cross_chapter_dependencies(
+    def record_context(self, context: Dict[str, Any]):
+        """记录上下文"""
+        self._context_history.append({
+            "context": context,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+        # 只保留最近 20 个上下文
+        if len(self._context_history) > 20:
+            self._context_history = self._context_history[-20:]
+    
+    def predict_recall(
         self,
-        novel_id: str,
-        chapter_id: str,
-        key_events: List[Dict[str, Any]]
-    ):
-        """建立跨章节依赖关系"""
-        current_chapter_num = int(chapter_id.split('_')[-1]) if '_' in chapter_id else 0
-        
-        for event in key_events:
-            # 查找之前章节的关联事件
-            for dep in self.cross_chapter_dependencies[novel_id]:
-                if dep["event_type"] == event.get("type"):
-                    chapters_apart = current_chapter_num - dep["chapter_num"]
-                    
-                    if 0 < chapters_apart <= 10:  # 10章内的关联
-                        self.cross_chapter_dependencies[novel_id].append({
-                            "source_chapter": dep["chapter_id"],
-                            "target_chapter": chapter_id,
-                            "event_type": event.get("type"),
-                            "chapters_apart": chapters_apart,
-                            "relation": "continuation"
-                        })
-            
-            # 记录当前事件
-            self.cross_chapter_dependencies[novel_id].append({
-                "chapter_id": chapter_id,
-                "chapter_num": current_chapter_num,
-                "event_type": event.get("type"),
-                "event_description": event.get("description", "")
-            })
-    
-    async def get_enhanced_context(
-        self,
-        novel_id: str,
-        current_chapter: int,
-        query: str,
-        character_ids: List[str] = None
-    ) -> Dict[str, Any]:
+        current_context: Dict[str, Any],
+        novel_id: str = ""
+    ) -> List[RetrievalResult]:
         """
-        获取增强的写作上下文
+        预测需要召回的记忆
         
-        结合 RAG 检索和长程逻辑一致性检查
+        基于当前上下文，预测可能需要召回的相关记忆
         """
-        # 1. 语义检索相关记忆
-        relevant_chunks, violations = await self.retriever.retrieve_relevant(
+        # 提取当前上下文的关键信息
+        current_chapter = current_context.get("current_chapter", "")
+        active_characters = current_context.get("active_characters", [])
+        current_location = current_context.get("current_location", "")
+        
+        # 构建查询
+        query_parts = [
+            current_chapter,
+            " ".join(active_characters),
+            current_location
+        ]
+        query = " ".join([q for q in query_parts if q])
+        
+        # 语义检索
+        results = self.semantic_memory.search(
             query=query,
             novel_id=novel_id,
-            top_k=5,
-            consistency_check=True
+            top_k=5
         )
         
-        # 2. 获取长程上下文
-        long_range_chunks = self.retriever.get_long_range_context(
-            current_chapter=current_chapter,
-            novel_id=novel_id,
-            lookback_chapters=10
-        )
+        # 过滤：优先召回与当前上下文相关的
+        filtered = []
+        for result in results:
+            memory = result.memory
+            
+            # 检查是否与当前角色相关
+            char_match = any(
+                char in memory.entity_ids
+                for char in active_characters
+            ) if active_characters else True
+            
+            # 检查章节是否接近
+            chapter_match = (
+                not current_chapter or
+                abs(int(memory.chapter_id or 0) - int(current_chapter or 0)) <= 3
+            )
+            
+            if char_match or chapter_match:
+                filtered.append(result)
         
-        # 3. 获取跨章节依赖
-        cross_chapter_deps = [
-            dep for dep in self.cross_chapter_dependencies[novel_id]
-            if isinstance(dep, dict) and dep.get("target_chapter", "").endswith(str(current_chapter))
-        ]
+        return filtered[:3]
+    
+    def analyze_recall_effectiveness(self) -> Dict[str, Any]:
+        """分析召回效果"""
+        if not self._context_history:
+            return {"status": "no_data"}
         
-        # 4. 组装上下文
-        context = {
-            "relevant_memories": [c.to_dict() for c in relevant_chunks],
-            "long_range_context": [c.to_dict() for c in long_range_chunks],
-            "cross_chapter_dependencies": cross_chapter_deps[:5],  # 最多5个
-            "consistency_violations": [
-                {
-                    "entity_id": v.entity_id,
-                    "attribute": v.attribute,
-                    "expected": v.expected_value,
-                    "current": v.current_value,
-                    "severity": v.violation_severity
-                }
-                for v in violations
-            ],
-            "warnings": self._generate_warnings(violations),
-            "suggestions": self._generate_suggestions(relevant_chunks, long_range_chunks)
+        # 简化版分析
+        return {
+            "total_contexts": len(self._context_history),
+            "avg_context_length": sum(
+                len(str(c.get("context", {})))
+                for c in self._context_history
+            ) / len(self._context_history)
         }
-        
-        return context
-    
-    def _generate_warnings(self, violations: List[ConsistencyConstraint]) -> List[str]:
-        """生成一致性警告"""
-        warnings = []
-        
-        for v in violations:
-            if v.violation_severity > 0.8:
-                warnings.append(
-                    f"⚠️ 严重不一致：{v.entity_id} 的 {v.attribute} "
-                    f"从 '{v.expected_value}' 变为 '{v.current_value}'"
-                )
-            elif v.violation_severity > 0.5:
-                warnings.append(
-                    f"💡 可能不一致：{v.entity_id} 的 {v.attribute} 有变化"
-                )
-        
-        return warnings
-    
-    def _generate_suggestions(
-        self,
-        relevant_chunks: List[MemoryChunk],
-        long_range_chunks: List[MemoryChunk]
-    ) -> List[str]:
-        """生成写作建议"""
-        suggestions = []
-        
-        # 基于长程上下文建议
-        if long_range_chunks:
-            important_past = [c for c in long_range_chunks if c.importance_score > 0.8]
-            if important_past:
-                suggestions.append(
-                    f"📚 建议回顾：第{important_past[0].chapter_id}章的重要情节 "
-                    f"'{important_past[0].content[:50]}...'"
-                )
-        
-        # 基于相关记忆建议
-        if relevant_chunks:
-            foreshadowing_chunks = [
-                c for c in relevant_chunks
-                if c.metadata.get("type") == "foreshadowing"
-            ]
-            if foreshadowing_chunks:
-                suggestions.append(
-                    f"🔮 伏笔提醒：之前埋下的伏笔 "
-                    f"'{foreshadowing_chunks[0].content[:50]}...' 还未解决"
-                )
-        
-        return suggestions
 
 
 # 全局实例
-_enhanced_memory: Optional[StoryMemoryEnhancer] = None
+_semantic_memory: Optional[SemanticMemory] = None
+_procedural_memory: Optional[ProceduralMemory] = None
+_active_recall: Optional[ActiveRecall] = None
 
 
-def get_enhanced_memory() -> StoryMemoryEnhancer:
-    """获取增强版记忆系统实例"""
-    global _enhanced_memory
-    if _enhanced_memory is None:
-        _enhanced_memory = StoryMemoryEnhancer()
-    return _enhanced_memory
+def get_semantic_memory() -> SemanticMemory:
+    """获取语义记忆实例"""
+    global _semantic_memory
+    if _semantic_memory is None:
+        _semantic_memory = SemanticMemory()
+    return _semantic_memory
+
+
+def get_procedural_memory() -> ProceduralMemory:
+    """获取程序记忆实例"""
+    global _procedural_memory
+    if _procedural_memory is None:
+        _procedural_memory = ProceduralMemory()
+    return _procedural_memory
+
+
+def get_active_recall() -> ActiveRecall:
+    """获取主动召回实例"""
+    global _active_recall
+    if _active_recall is None:
+        _active_recall = ActiveRecall(get_semantic_memory())
+    return _active_recall
+
+
+# 便捷函数
+def store_memory(
+    content: str,
+    memory_type: MemoryType,
+    novel_id: str = "",
+    chapter_id: str = "",
+    **kwargs
+) -> MemoryEntry:
+    """存储记忆的便捷函数"""
+    return get_semantic_memory().add_memory(
+        content=content,
+        memory_type=memory_type,
+        novel_id=novel_id,
+        chapter_id=chapter_id,
+        metadata=kwargs
+    )
+
+
+def recall_memories(
+    query: str,
+    novel_id: str = "",
+    top_k: int = 5
+) -> List[RetrievalResult]:
+    """召回记忆的便捷函数"""
+    return get_semantic_memory().search(
+        query=query,
+        novel_id=novel_id,
+        top_k=top_k
+    )
+
+
+def predict_and_recall(
+    current_context: Dict[str, Any],
+    novel_id: str = ""
+) -> List[RetrievalResult]:
+    """预测并召回的便捷函数"""
+    recall = get_active_recall()
+    recall.record_context(current_context)
+    return recall.predict_recall(current_context, novel_id)

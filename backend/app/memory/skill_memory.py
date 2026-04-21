@@ -4,8 +4,24 @@ Skill 存储管理模块 - 使用 Supabase
 import os
 import sys
 import subprocess
-from typing import List, Optional, Dict, Any
+import time
+import logging
+from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime
+
+# 创建模块级别的 logger
+_logger = logging.getLogger(__name__)
+
+# 日志级别控制
+_DEBUG = os.getenv("SKILL_MEMORY_DEBUG", "false").lower() == "true"
+
+
+def _log(level: str, msg: str):
+    """统一日志输出"""
+    if _DEBUG or level in ("ERROR", "WARNING"):
+        print(f"[SkillMemory] {msg}")
+    else:
+        getattr(_logger, level.lower(), _logger.info)(msg)
 
 from app.models.skill import Skill, SkillCategory, SkillConstraint, SkillTestResult
 
@@ -14,14 +30,14 @@ try:
     from supabase import create_client
     SUPABASE_AVAILABLE = True
 except ImportError:
-    print("[SkillMemory] Failed to import supabase, attempting to install...")
+    _log("INFO", "Failed to import supabase, attempting to install...")
     try:
         subprocess.check_call([sys.executable, "-m", "pip", "install", "supabase", "-q"])
         from supabase import create_client
         SUPABASE_AVAILABLE = True
-        print("[SkillMemory] Supabase installed and imported successfully")
+        _log("INFO", "Supabase installed and imported successfully")
     except Exception as e:
-        print(f"[SkillMemory] Failed to install supabase: {e}")
+        _log("ERROR", f"Failed to install supabase: {e}")
         SUPABASE_AVAILABLE = False
 
 
@@ -49,6 +65,10 @@ def _process_constraints(raw_constraints: Any) -> List[Dict[str, Any]]:
 
 class SkillMemory:
     """技能存储管理器 - Supabase 版本"""
+    
+    # 类级别的缓存
+    _skills_cache: Dict[str, Tuple[List["Skill"], float]] = {}
+    _CACHE_TTL = 300  # 5分钟缓存
 
     def __init__(self):
         self.supabase = None
@@ -58,7 +78,7 @@ class SkillMemory:
     def _init_supabase(self):
         """初始化 Supabase 客户端"""
         if not SUPABASE_AVAILABLE:
-            print("Warning: Supabase not available, skill management will be limited")
+            _log("WARNING", "Supabase not available, skill management will be limited")
             return
 
         # 支持多种环境变量名（本地开发和 Vercel 部署）
@@ -66,33 +86,33 @@ class SkillMemory:
         supabase_key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_ANON_KEY") or os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY")
 
         # 调试日志
-        print(f"SkillMemory: Checking Supabase credentials...")
-        print(f"  SUPABASE_URL: {'Set' if os.getenv('SUPABASE_URL') else 'Not set'}")
-        print(f"  NEXT_PUBLIC_SUPABASE_URL: {'Set' if os.getenv('NEXT_PUBLIC_SUPABASE_URL') else 'Not set'}")
-        print(f"  SUPABASE_SERVICE_KEY: {'Set' if os.getenv('SUPABASE_SERVICE_KEY') else 'Not set'}")
-        print(f"  SUPABASE_ANON_KEY: {'Set' if os.getenv('SUPABASE_ANON_KEY') else 'Not set'}")
-        print(f"  NEXT_PUBLIC_SUPABASE_ANON_KEY: {'Set' if os.getenv('NEXT_PUBLIC_SUPABASE_ANON_KEY') else 'Not set'}")
-        print(f"  Final URL: {'Set' if supabase_url else 'Not set'}")
-        print(f"  Final KEY: {'Set' if supabase_key else 'Not set'}")
+        _log("DEBUG", "Checking Supabase credentials...")
+        _log("DEBUG", f"  SUPABASE_URL: {'Set' if os.getenv('SUPABASE_URL') else 'Not set'}")
+        _log("DEBUG", f"  NEXT_PUBLIC_SUPABASE_URL: {'Set' if os.getenv('NEXT_PUBLIC_SUPABASE_URL') else 'Not set'}")
+        _log("DEBUG", f"  SUPABASE_SERVICE_KEY: {'Set' if os.getenv('SUPABASE_SERVICE_KEY') else 'Not set'}")
+        _log("DEBUG", f"  SUPABASE_ANON_KEY: {'Set' if os.getenv('SUPABASE_ANON_KEY') else 'Not set'}")
+        _log("DEBUG", f"  NEXT_PUBLIC_SUPABASE_ANON_KEY: {'Set' if os.getenv('NEXT_PUBLIC_SUPABASE_ANON_KEY') else 'Not set'}")
+        _log("DEBUG", f"  Final URL: {'Set' if supabase_url else 'Not set'}")
+        _log("DEBUG", f"  Final KEY: {'Set' if supabase_key else 'Not set'}")
 
         if supabase_url and supabase_key:
             try:
                 self.supabase = create_client(supabase_url, supabase_key)
                 self._initialized = True
-                print("SkillMemory: Connected to Supabase successfully")
+                _log("INFO", "Connected to Supabase successfully")
             except Exception as e:
-                print(f"SkillMemory: Error connecting to Supabase: {e}")
+                _log("ERROR", f"Error connecting to Supabase: {e}")
                 self.supabase = None
                 self._initialized = False
         else:
-            print("SkillMemory: Warning - Supabase credentials not found, skill management will not work")
+            _log("WARNING", "Supabase credentials not found, skill management will not work")
             self.supabase = None
             self._initialized = False
     
     def _ensure_connected(self):
         """确保 Supabase 已连接，如果未连接则尝试重新连接"""
         if not self._initialized or self.supabase is None:
-            print("SkillMemory: Attempting to reconnect to Supabase...")
+            _log("DEBUG", "Attempting to reconnect to Supabase...")
             self._init_supabase()
         return self.supabase is not None
 
@@ -104,16 +124,16 @@ class SkillMemory:
 
     def get_all_categories(self) -> List[SkillCategory]:
         """获取所有分类"""
-        print(f"[SkillMemory] get_all_categories called, connected: {self._ensure_connected()}")
+        _log("DEBUG", f"get_all_categories called, connected: {self._ensure_connected()}")
         
         if not self._ensure_connected():
-            print("[SkillMemory] Error: Cannot fetch categories - Supabase not connected")
+            _log("ERROR", "Cannot fetch categories - Supabase not connected")
             return []
 
         try:
-            print("[SkillMemory] Querying skill_categories from Supabase...")
+            _log("DEBUG", "Querying skill_categories from Supabase...")
             response = self.supabase.table("skill_categories").select("*").order("order").execute()
-            print(f"[SkillMemory] Fetched {len(response.data) if response.data else 0} raw categories")
+            _log("DEBUG", f"Fetched {len(response.data) if response.data else 0} raw categories")
             
             if response.data:
                 categories = []
@@ -122,13 +142,13 @@ class SkillMemory:
                         cat = SkillCategory(**cat_data)
                         categories.append(cat)
                     except Exception as e:
-                        print(f"[SkillMemory] Error parsing category {cat_data.get('id')}: {e}")
-                        print(f"[SkillMemory] Category data: {cat_data}")
+                        _log("ERROR", f"Error parsing category {cat_data.get('id')}: {e}")
+                        _log("DEBUG", f"Category data: {cat_data}")
                 
-                print(f"[SkillMemory] Successfully parsed {len(categories)} categories")
+                _log("DEBUG", f"Successfully parsed {len(categories)} categories")
                 return categories
         except Exception as e:
-            print(f"[SkillMemory] Error fetching categories: {e}")
+            _log("ERROR", f"Error fetching categories: {e}")
             import traceback
             traceback.print_exc()
         return []
@@ -143,7 +163,7 @@ class SkillMemory:
             if response.data:
                 return SkillCategory(**response.data)
         except Exception as e:
-            print(f"Error fetching category: {e}")
+            _log("ERROR", f"Error fetching category: {e}")
         return None
 
     def create_category(self, category: SkillCategory) -> SkillCategory:
@@ -157,7 +177,7 @@ class SkillMemory:
             if response.data:
                 return SkillCategory(**response.data[0])
         except Exception as e:
-            print(f"Error creating category: {e}")
+            _log("ERROR", f"Error creating category: {e}")
             raise
         return category
 
@@ -172,7 +192,7 @@ class SkillMemory:
             if response.data:
                 return SkillCategory(**response.data[0])
         except Exception as e:
-            print(f"Error updating category: {e}")
+            _log("ERROR", f"Error updating category: {e}")
         return None
 
     def delete_category(self, category_id: str) -> bool:
@@ -193,7 +213,7 @@ class SkillMemory:
             self.supabase.table("skill_categories").delete().eq("id", category_id).execute()
             return True
         except Exception as e:
-            print(f"Error deleting category: {e}")
+            _log("ERROR", f"Error deleting category: {e}")
         return False
 
     def move_category(self, category_id: str, new_parent_id: Optional[str], new_order: int) -> bool:
@@ -208,24 +228,24 @@ class SkillMemory:
             }).eq("id", category_id).execute()
             return True
         except Exception as e:
-            print(f"Error moving category: {e}")
+            _log("ERROR", f"Error moving category: {e}")
         return False
 
     # ========== 技能操作 ==========
 
     def get_all_skills(self) -> List[Skill]:
         """获取所有技能"""
-        print(f"[SkillMemory] get_all_skills called, connected: {self._ensure_connected()}")
+        _log("DEBUG", f"get_all_skills called, connected: {self._ensure_connected()}")
         
         if not self._ensure_connected():
-            print("[SkillMemory] Error: Supabase not connected")
+            _log("ERROR", "Supabase not connected")
             return []
 
         try:
             # 获取所有技能
-            print("[SkillMemory] Querying skills from Supabase...")
+            _log("DEBUG", "Querying skills from Supabase...")
             response = self.supabase.table("skills").select("*").execute()
-            print(f"[SkillMemory] Fetched {len(response.data) if response.data else 0} raw skills")
+            _log("DEBUG", f"Fetched {len(response.data) if response.data else 0} raw skills")
             
             if not response.data:
                 return []
@@ -260,13 +280,13 @@ class SkillMemory:
                     skill = Skill(**skill_data)
                     skills.append(skill)
                 except Exception as e:
-                    print(f"[SkillMemory] Error parsing skill {skill_id}: {e}")
-                    print(f"[SkillMemory] Skill data: {skill_data}")
+                    _log("ERROR", f"Error parsing skill {skill_id}: {e}")
+                    _log("DEBUG", f"Skill data: {skill_data}")
             
-            print(f"[SkillMemory] Successfully parsed {len(skills)} skills")
+            _log("DEBUG", f"Successfully parsed {len(skills)} skills")
             return skills
         except Exception as e:
-            print(f"[SkillMemory] Error fetching skills: {e}")
+            _log("ERROR", f"Error fetching skills: {e}")
             import traceback
             traceback.print_exc()
         return []
@@ -289,7 +309,7 @@ class SkillMemory:
 
             return Skill(**skill_data)
         except Exception as e:
-            print(f"Error fetching skill: {e}")
+            _log("ERROR", f"Error fetching skill: {e}")
         return None
 
     def get_skills_by_category(self, category_id: str) -> List[Skill]:
@@ -310,7 +330,7 @@ class SkillMemory:
 
             return skills
         except Exception as e:
-            print(f"Error fetching skills by category: {e}")
+            _log("ERROR", f"Error fetching skills by category: {e}")
         return []
 
     def create_skill(self, skill: Skill) -> Skill:
@@ -329,7 +349,7 @@ class SkillMemory:
 
             return skill
         except Exception as e:
-            print(f"Error creating skill: {e}")
+            _log("ERROR", f"Error creating skill: {e}")
             raise
 
     def update_skill(self, skill_id: str, updates: Dict[str, Any]) -> Optional[Skill]:
@@ -346,7 +366,7 @@ class SkillMemory:
 
             return self.get_skill_by_id(skill_id)
         except Exception as e:
-            print(f"Error updating skill: {e}")
+            _log("ERROR", f"Error updating skill: {e}")
         return None
 
     def delete_skill(self, skill_id: str) -> bool:
@@ -359,7 +379,7 @@ class SkillMemory:
             self.supabase.table("skills").delete().eq("id", skill_id).execute()
             return True
         except Exception as e:
-            print(f"Error deleting skill: {e}")
+            _log("ERROR", f"Error deleting skill: {e}")
         return False
 
     def test_skill(self, skill_id: str, test_text: str) -> SkillTestResult:
@@ -396,7 +416,10 @@ class SkillMemory:
         )
 
     def mount_skill_to_novel(self, skill_id: str, novel_id: str) -> bool:
-        """挂载技能到小说"""
+        """挂载技能到小说（清除缓存）"""
+        # 清除所有缓存
+        self._skills_cache.clear()
+        
         if not self.supabase:
             return False
 
@@ -416,7 +439,7 @@ class SkillMemory:
             }).eq("id", skill_id).execute()
             return True
         except Exception as e:
-            print(f"Error mounting skill to novel: {e}")
+            _log("ERROR", f"Error mounting skill to novel: {e}")
         return False
 
     def unmount_skill_from_novel(self, skill_id: str, novel_id: str) -> bool:
@@ -440,17 +463,25 @@ class SkillMemory:
             }).eq("id", skill_id).execute()
             return True
         except Exception as e:
-            print(f"Error unmounting skill from novel: {e}")
+            _log("ERROR", f"Error unmounting skill from novel: {e}")
         return False
 
     def get_active_skills_for_novel(self, novel_id: str) -> List[Skill]:
-        """获取小说的所有激活技能"""
+        """获取小说的所有激活技能（带缓存）"""
+        # 检查缓存
+        cache_key = f"novel_{novel_id}"
+        if cache_key in self._skills_cache:
+            cached_skills, timestamp = self._skills_cache[cache_key]
+            if time.time() - timestamp < self._CACHE_TTL:
+                return cached_skills
+        
         if not self.supabase:
             return []
 
         try:
             response = self.supabase.table("skills").select("*").contains("applicable_novels", [novel_id]).eq("is_active", True).execute()
             if not response.data:
+                self._skills_cache[cache_key] = ([], time.time())
                 return []
 
             # 组装技能数据（constraints 已从 skills 表的 JSONB 字段中读取）
@@ -459,9 +490,11 @@ class SkillMemory:
                 skill_data["constraints"] = _process_constraints(skill_data.get("constraints"))
                 skills.append(Skill(**skill_data))
 
+            # 存入缓存
+            self._skills_cache[cache_key] = (skills, time.time())
             return skills
         except Exception as e:
-            print(f"Error fetching active skills for novel: {e}")
+            _log("ERROR", f"Error fetching active skills for novel: {e}")
         return []
 
     def get_system_skills(self) -> List[Skill]:
@@ -482,7 +515,7 @@ class SkillMemory:
 
             return skills
         except Exception as e:
-            print(f"Error fetching system skills: {e}")
+            _log("ERROR", f"Error fetching system skills: {e}")
         return []
 
     def link_asset_to_skill(self, skill_id: str, asset_id: str) -> bool:
@@ -506,7 +539,7 @@ class SkillMemory:
             }).eq("id", skill_id).execute()
             return True
         except Exception as e:
-            print(f"Error linking asset to skill: {e}")
+            _log("ERROR", f"Error linking asset to skill: {e}")
         return False
 
     def unlink_asset_from_skill(self, skill_id: str, asset_id: str) -> bool:
@@ -530,7 +563,7 @@ class SkillMemory:
             }).eq("id", skill_id).execute()
             return True
         except Exception as e:
-            print(f"Error unlinking asset from skill: {e}")
+            _log("ERROR", f"Error unlinking asset from skill: {e}")
         return False
 
     def get_skills_by_asset(self, asset_id: str) -> List[Skill]:
@@ -550,7 +583,7 @@ class SkillMemory:
 
             return skills
         except Exception as e:
-            print(f"Error fetching skills by asset: {e}")
+            _log("ERROR", f"Error fetching skills by asset: {e}")
         return []
 
     def get_skills_for_agent(self, novel_id: str, agent_type: str) -> List[Skill]:
@@ -575,6 +608,9 @@ class SkillMemory:
 
     def toggle_skill_active(self, skill_id: str) -> Optional[bool]:
         """切换技能激活状态"""
+        # 清除所有缓存
+        self._skills_cache.clear()
+        
         if not self.supabase:
             return None
 
@@ -592,7 +628,7 @@ class SkillMemory:
 
             return new_status
         except Exception as e:
-            print(f"Error toggling skill active: {e}")
+            _log("ERROR", f"Error toggling skill active: {e}")
         return None
 
     def create_skill_from_asset(

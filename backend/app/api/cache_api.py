@@ -77,10 +77,11 @@ async def clear_cache(request: CacheClearRequest):
 async def warmup_cache(request: CacheWarmupRequest):
     """预热缓存"""
     cm = get_cache_manager()
-    await cm.warmup(request.data, request.ttl)
+    result = cm.warmup(request.data, request.ttl)
     return {
         "message": f"Cache warmed up with {len(request.data)} items",
-        "ttl": request.ttl
+        "ttl": request.ttl,
+        "result": result
     }
 
 

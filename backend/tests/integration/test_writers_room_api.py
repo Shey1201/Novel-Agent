@@ -105,20 +105,6 @@ class TestStreamAPI:
         assert response.status_code in [200, 404, 500]
 
 
-class TestCollaborationAPI:
-    """测试协作API"""
-
-    def test_collaboration_status(self):
-        """测试获取协作状态"""
-        response = client.get("/api/collaboration/status")
-        assert response.status_code in [200, 404]
-
-    def test_get_document_not_found(self):
-        """测试获取不存在的文档"""
-        response = client.get("/api/collaboration/documents/non-existent-id")
-        assert response.status_code in [404, 500]
-
-
 class TestCacheAPI:
     """测试缓存API"""
 

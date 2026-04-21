@@ -5,13 +5,15 @@ class DummyService:
     def __init__(self):
         self.kwargs = None
 
-    def chat(self, message, story_id, chapter_id=None, word_count_range=None, conversation_state=None):
+    def chat(self, message, story_id, chapter_id=None, chapter_name=None, word_count_range=None, conversation_state=None, story_name=None):
         self.kwargs = {
             "message": message,
             "story_id": story_id,
             "chapter_id": chapter_id,
+            "chapter_name": chapter_name,
             "word_count_range": word_count_range,
             "conversation_state": conversation_state,
+            "story_name": story_name,
         }
         return {"ok": True, "conversation_state": conversation_state}
 

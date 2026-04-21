@@ -60,6 +60,35 @@ class CacheManager:
             for key in expired_keys:
                 del self.cache[key]
 
+    def get_stats(self) -> Dict[str, Any]:
+        """获取缓存统计信息"""
+        with self.lock:
+            total_items = len(self.cache)
+            expired_items = sum(1 for _, expiry in self.cache.values() if time.time() >= expiry)
+            return {
+                "l1_memory": {
+                    "total_items": total_items,
+                    "expired_items": expired_items,
+                    "active_items": total_items - expired_items
+                },
+                "l2_disk": {
+                    "enabled": False,
+                    "items": 0
+                }
+            }
+
+    def warmup(self, data: Dict[str, Any], ttl: int = 3600) -> Dict[str, Any]:
+        """预热缓存，批量设置多个缓存项"""
+        results = {}
+        for key, value in data.items():
+            try:
+                self.set(key, value, ttl)
+                results[key] = True
+            except Exception as e:
+                results[key] = False
+                print(f"Warning: Failed to warmup cache for key {key}: {e}")
+        return {"success": True, "items_warmed": len(results), "details": results}
+
 
 # 全局缓存管理器实例
 cache_manager = CacheManager(default_ttl=300)

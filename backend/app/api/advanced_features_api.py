@@ -11,7 +11,8 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 
-from app.memory.enhanced_memory import get_enhanced_memory, MemoryTier
+from app.memory.enhanced_memory import get_semantic_memory, get_procedural_memory, get_active_recall
+from app.memory.enhanced_memory import SemanticMemory, ProceduralMemory, ActiveRecall, MemoryEntry, RetrievalResult, MemoryType, MemoryPriority
 from app.core.originality_tracker import (
     get_originality_analyzer, 
     get_certificate_generator,
